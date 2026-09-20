@@ -1,0 +1,81 @@
+[
+  {
+    "id": "qz_1785726123836",
+    "title": "Hand-Picked Special Exam Paper",
+    "description": "Faculty selected exact items #1, #5, #10, #15",
+    "module": "Module 1 - Power Plant Elements",
+    "questionCount": 4,
+    "durationMins": 20,
+    "passingScorePct": 75,
+    "status": "published",
+    "selectionMode": "manual",
+    "specificQuestionIds": [
+      "1",
+      "5",
+      "10",
+      "15"
+    ],
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-08-03"
+  },
+  {
+    "id": "qz_1785725408616",
+    "title": "Combined Power Plant & Refrigeration Block Exam",
+    "description": "Faculty quiz combining Module 1 (Power Plant) and Module 5 (Refrigeration)",
+    "module": "Module 1 - Power Plant Elements, Module 5 - Refrigeration Engineering",
+    "questionCount": 30,
+    "durationMins": 30,
+    "passingScorePct": 75,
+    "status": "published",
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-08-03"
+  },
+  {
+    "id": "qz_01",
+    "title": "Module 1: Power Plant Engineering Comprehensive Quiz",
+    "description": "Official faculty assessment covering Thermodynamics, Heat Transfer, Steam/Gas Turbines, and Boilers.",
+    "module": "Module 1 - Power Plant Elements",
+    "questionCount": 50,
+    "durationMins": 50,
+    "passingScorePct": 70,
+    "status": "published",
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-07-28"
+  },
+  {
+    "id": "qz_02",
+    "title": "Module 2: Thermal Cycles & Power Plant Design Quiz",
+    "description": "Assessment on Rankine, Brayton, and Combined Cycles, Hydroelectric systems, and Chimney Sizing.",
+    "module": "Module 2 - Power Plant Design",
+    "questionCount": 50,
+    "durationMins": 50,
+    "passingScorePct": 70,
+    "status": "published",
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-07-30"
+  },
+  {
+    "id": "qz_03",
+    "title": "Refrigeration & Air Conditioning Board Exam Practice Quiz",
+    "description": "Vapor compression cycles, Absorption systems, Psychrometric chart analysis, and COP calculations.",
+    "module": "Module 5 - Refrigeration Engineering",
+    "questionCount": 30,
+    "durationMins": 30,
+    "passingScorePct": 75,
+    "status": "published",
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-08-01"
+  },
+  {
+    "id": "qz_04",
+    "title": "Full Licensure Exam Simulation Mock Board Quiz",
+    "description": "Comprehensive 100-question mixed assessment across all 6 Mechanical Engineering Licensure modules.",
+    "module": "",
+    "questionCount": 100,
+    "durationMins": 100,
+    "passingScorePct": 70,
+    "status": "published",
+    "createdBy": "Dr. Roberto Santos, PE",
+    "createdDate": "2026-08-02"
+  }
+]

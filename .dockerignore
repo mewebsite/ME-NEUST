@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.env
+data/
+scratch/
+brain/
+.git
+.github
+*.ps1

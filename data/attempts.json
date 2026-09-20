@@ -1,0 +1,712 @@
+[
+  {
+    "id": "att_sim_1787791492449",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1787791492377",
+    "studentName": "Test Student",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 10,
+    "submittedAt": "2026-08-27 00:44:52",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 100,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_smart_1787791492413",
+    "quizId": "adaptive_smart_quiz",
+    "quizTitle": "Adaptive Smart-Quiz (Module 1 - Power Plant Elements)",
+    "studentId": "usr_1787791492377",
+    "studentName": "Test Student",
+    "score": 1,
+    "totalQuestions": 1,
+    "percentage": "100",
+    "passed": true,
+    "timeSpentSeconds": 10,
+    "submittedAt": "2026-08-27 00:44:52",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 1,
+        "correct": 1
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_diag_1787791492396",
+    "quizId": "diagnostic_benchmark",
+    "quizTitle": "Diagnostic Benchmark Assessment",
+    "studentId": "usr_1787791492377",
+    "studentName": "Test Student",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 10,
+    "submittedAt": "2026-08-27 00:44:52",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_smart_1786436771941",
+    "quizId": "adaptive_smart_quiz",
+    "quizTitle": "Adaptive Smart-Quiz (Module 2 - Power Plant Design)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 3,
+    "totalQuestions": 25,
+    "percentage": "12",
+    "passed": false,
+    "timeSpentSeconds": 19,
+    "submittedAt": "2026-08-11 08:26:11",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 4,
+        "correct": 1
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 19,
+        "correct": 2
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_smart_1786436577523",
+    "quizId": "adaptive_smart_quiz",
+    "quizTitle": "Adaptive Smart-Quiz (Module 2 - Power Plant Design)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 0,
+    "totalQuestions": 25,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 6,
+    "submittedAt": "2026-08-11 08:22:57",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 18,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 3,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 1,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 1,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_smart_1786436493086",
+    "quizId": "adaptive_smart_quiz",
+    "quizTitle": "Adaptive Smart-Quiz (Module 1 - Power Plant Elements)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 1,
+    "totalQuestions": 25,
+    "percentage": "4",
+    "passed": false,
+    "timeSpentSeconds": 5,
+    "submittedAt": "2026-08-11 08:21:33",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 21,
+        "correct": 1
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 1,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 1,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_diag_1786435543620",
+    "quizId": "diagnostic_benchmark",
+    "quizTitle": "Diagnostic Benchmark Assessment",
+    "studentId": "usr_1786435508595",
+    "studentName": "lorenz",
+    "score": 1,
+    "totalQuestions": 100,
+    "percentage": "1",
+    "passed": false,
+    "timeSpentSeconds": 19,
+    "submittedAt": "2026-08-11 08:05:43",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 17,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 17,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 17,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 17,
+        "correct": 1
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 16,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 16,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_diag_1786435085889",
+    "quizId": "diagnostic_benchmark",
+    "quizTitle": "Diagnostic Benchmark Assessment",
+    "studentId": "usr_1786434961655",
+    "studentName": "Frans",
+    "score": 13,
+    "totalQuestions": 100,
+    "percentage": "13",
+    "passed": false,
+    "timeSpentSeconds": 100,
+    "submittedAt": "2026-08-11 07:58:05",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 17,
+        "correct": 2
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 17,
+        "correct": 2
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 17,
+        "correct": 2
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 17,
+        "correct": 1
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 17,
+        "correct": 5
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 15,
+        "correct": 1
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786434447520",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 4,
+    "totalQuestions": 100,
+    "percentage": "4",
+    "passed": false,
+    "timeSpentSeconds": 38,
+    "submittedAt": "2026-08-11 07:47:27",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 59,
+        "correct": 3
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 20,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 15,
+        "correct": 1
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 2,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_diag_1786433297268",
+    "quizId": "diagnostic_benchmark",
+    "quizTitle": "Diagnostic Benchmark Assessment",
+    "studentId": "usr_1785127116553",
+    "studentName": "John Lorenz Castro",
+    "score": 14,
+    "totalQuestions": 100,
+    "percentage": "14",
+    "passed": false,
+    "timeSpentSeconds": 98,
+    "submittedAt": "2026-08-11 07:28:17",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 17,
+        "correct": 3
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 16,
+        "correct": 3
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 17,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 17,
+        "correct": 1
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 17,
+        "correct": 2
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 16,
+        "correct": 5
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786432798388",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_admin_01",
+    "studentName": "Dr. Roberto Santos, PE",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 10,
+    "submittedAt": "2026-08-11 07:19:58",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 41,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 15,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 14,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 15,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 2,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 13,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786432761486",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_admin_01",
+    "studentName": "Dr. Roberto Santos, PE",
+    "score": 83,
+    "totalQuestions": 100,
+    "percentage": "83",
+    "passed": true,
+    "timeSpentSeconds": 1940,
+    "submittedAt": "2026-08-11 07:19:21",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 47,
+        "correct": 39
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 21,
+        "correct": 18
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 15,
+        "correct": 14
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 10,
+        "correct": 8
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 1,
+        "correct": 1
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 5,
+        "correct": 2
+      },
+      "Unclassified": {
+        "total": 1,
+        "correct": 1
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786430606005",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 3,
+    "submittedAt": "2026-08-11 06:43:26",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 59,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 15,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 4,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 22,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786430595324",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 5,
+    "submittedAt": "2026-08-11 06:43:15",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 35,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 21,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 9,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 16,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 3,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 16,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786430585852",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 7,
+    "submittedAt": "2026-08-11 06:43:05",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 35,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 49,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 8,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 3,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 5,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_sim_1786430505540",
+    "quizId": "board_exam_simulation",
+    "quizTitle": "Simulated Board Exam (Final Assessment)",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 0,
+    "totalQuestions": 100,
+    "percentage": "0",
+    "passed": false,
+    "timeSpentSeconds": 10,
+    "submittedAt": "2026-08-11 06:41:45",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 74,
+        "correct": 0
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 3,
+        "correct": 0
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 5,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 18,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_diag_1786429756385",
+    "quizId": "diagnostic_benchmark",
+    "quizTitle": "Diagnostic Benchmark Assessment",
+    "studentId": "usr_1786429568399",
+    "studentName": "renz",
+    "score": 16,
+    "totalQuestions": 100,
+    "percentage": "16",
+    "passed": false,
+    "timeSpentSeconds": 159,
+    "submittedAt": "2026-08-11 06:29:16",
+    "moduleBreakdown": {
+      "Module 1 - Power Plant Elements": {
+        "total": 16,
+        "correct": 4
+      },
+      "Module 2 - Power Plant Design": {
+        "total": 17,
+        "correct": 3
+      },
+      "Module 3 - Industrial Plant Engineering": {
+        "total": 17,
+        "correct": 4
+      },
+      "Module 4 - Industrial Plant Design": {
+        "total": 17,
+        "correct": 3
+      },
+      "Module 5 - Refrigeration Engineering": {
+        "total": 0,
+        "correct": 0
+      },
+      "Module 6 - Air Conditioning": {
+        "total": 17,
+        "correct": 2
+      },
+      "Module 5 - Refrigeration Engineering and Its Application": {
+        "total": 16,
+        "correct": 0
+      }
+    }
+  },
+  {
+    "id": "att_1785723259270",
+    "quizId": "qz_03",
+    "quizTitle": "Refrigeration & Air Conditioning Board Exam Practice Quiz",
+    "studentId": "usr_1785723259255",
+    "studentName": "Maria Santos",
+    "studentEmail": "teststudent_1785723259138@me-boardprep.edu",
+    "school": "UP Diliman",
+    "score": 25,
+    "totalQuestions": 30,
+    "percentage": "83.3",
+    "passed": true,
+    "timeSpentSeconds": 1200,
+    "submittedAt": "2026-08-03 02:14:19"
+  }
+]

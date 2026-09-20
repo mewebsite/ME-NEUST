@@ -478,7 +478,7 @@ function App() {
       {/* NAVBAR */}
       <header className="navbar">
         <div className="nav-brand" onClick={() => setView('dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <img src="/images/neust_coe_seal.png" alt="NEUST COE Seal" style={{ width: '38px', height: '38px', objectFit: 'contain' }} />
+          <img src="images/neust_coe_seal.png" alt="NEUST COE Seal" style={{ width: '38px', height: '38px', objectFit: 'contain' }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '1.25rem', fontWeight: '800', lineHeight: '1.1' }}>
               ME <span className="gradient-text">BoardPrep</span>
@@ -769,8 +769,8 @@ function CreatorAttributionBanner() {
   return (
     <div className="creator-banner">
       <div className="creator-seals">
-        <img src="/images/neust_seal.png" alt="NEUST University Seal" className="creator-seal-img" />
-        <img src="/images/neust_coe_seal.png" alt="NEUST College of Engineering Seal" className="creator-seal-img" />
+        <img src="images/neust_seal.png" alt="NEUST University Seal" className="creator-seal-img" />
+        <img src="images/neust_coe_seal.png" alt="NEUST College of Engineering Seal" className="creator-seal-img" />
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ color: '#fbbf24', fontWeight: '800', fontSize: '0.78rem', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '0.2rem' }}>
@@ -792,8 +792,8 @@ function Footer() {
   return (
     <footer style={{ marginTop: '4rem', padding: '2.5rem 1rem', borderTop: '1px solid var(--border-color)', textAlign: 'center', background: 'rgba(15, 23, 42, 0.75)', position: 'relative', zIndex: 2 }}>
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.25rem', marginBottom: '1rem' }}>
-        <img src="/images/neust_seal.png" alt="NEUST Seal" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
-        <img src="/images/neust_coe_seal.png" alt="NEUST COE Seal" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+        <img src="images/neust_seal.png" alt="NEUST Seal" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
+        <img src="images/neust_coe_seal.png" alt="NEUST COE Seal" style={{ width: '48px', height: '48px', objectFit: 'contain' }} />
       </div>
       <p style={{ fontWeight: '800', color: '#ffffff', fontSize: '1.05rem' }}>
         Nueva Ecija University of Science and Technology (NEUST)

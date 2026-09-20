@@ -89,7 +89,7 @@ body::before {
   right: -120px;
   width: 600px;
   height: 600px;
-  background: url('/images/neust_coe_seal.png') no-repeat center center;
+  background: url('images/neust_coe_seal.png') no-repeat center center;
   background-size: contain;
   opacity: 0.05;
   pointer-events: none;
@@ -104,7 +104,7 @@ body::after {
   left: -140px;
   width: 550px;
   height: 550px;
-  background: url('/images/neust_seal.png') no-repeat center center;
+  background: url('images/neust_seal.png') no-repeat center center;
   background-size: contain;
   opacity: 0.04;
   pointer-events: none;

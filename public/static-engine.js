@@ -1,9 +1,12 @@
 /**
- * ME BoardPrep - Offline / Static GitHub Pages Engine
- * Intercepts /api/* requests and executes full Adaptive Exam Engine directly in the browser.
+ * ME BoardPrep - Real-Time Cloud Firestore Engine
+ * Synchronizes User Logins, Profiles, Quiz Attempts & Scores directly with Google Cloud Firestore
+ * Project ID: mechanical-neust
  */
 
 (function() {
+  const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/mechanical-neust/databases/(default)/documents';
+
   const STORAGE_KEYS = {
     USERS: 'me_users_data',
     ATTEMPTS: 'me_attempts_data',
@@ -21,53 +24,102 @@
     'Module 6 - Air Conditioning'
   ];
 
-  // Initialize Local Storage data from bundled data if not already initialized
-  function getQuestions() {
-    const stored = localStorage.getItem(STORAGE_KEYS.QUESTIONS);
-    if (stored) {
-      try { return JSON.parse(stored); } catch (e) {}
+  // Helper: Convert JS object to Firestore Value format
+  function toFirestoreValue(val) {
+    if (val === null || val === undefined) return { nullValue: null };
+    if (typeof val === 'boolean') return { booleanValue: val };
+    if (typeof val === 'number') {
+      return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
     }
-    return window.INITIAL_QUESTIONS || [];
-  }
-
-  function saveQuestions(data) {
-    try { localStorage.setItem(STORAGE_KEYS.QUESTIONS, JSON.stringify(data)); } catch (e) {}
-  }
-
-  function getUsers() {
-    const stored = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (stored) {
-      try { return JSON.parse(stored); } catch (e) {}
+    if (typeof val === 'string') return { stringValue: val };
+    if (Array.isArray(val)) {
+      return { arrayValue: { values: val.map(toFirestoreValue) } };
     }
-    return [];
-  }
-
-  function saveUsers(data) {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(data));
-  }
-
-  function getAttempts() {
-    const stored = localStorage.getItem(STORAGE_KEYS.ATTEMPTS);
-    if (stored) {
-      try { return JSON.parse(stored); } catch (e) {}
+    if (typeof val === 'object') {
+      const fields = {};
+      for (const k of Object.keys(val)) {
+        fields[k] = toFirestoreValue(val[k]);
+      }
+      return { mapValue: { fields } };
     }
-    return [];
+    return { stringValue: String(val) };
   }
 
-  function saveAttempts(data) {
-    localStorage.setItem(STORAGE_KEYS.ATTEMPTS, JSON.stringify(data));
-  }
-
-  function getQuizzes() {
-    const stored = localStorage.getItem(STORAGE_KEYS.QUIZZES);
-    if (stored) {
-      try { return JSON.parse(stored); } catch (e) {}
+  // Helper: Convert Firestore Value to JS value
+  function fromFirestoreValue(val) {
+    if (!val) return null;
+    if ('stringValue' in val) return val.stringValue;
+    if ('integerValue' in val) return parseInt(val.integerValue, 10);
+    if ('doubleValue' in val) return val.doubleValue;
+    if ('booleanValue' in val) return val.booleanValue;
+    if ('nullValue' in val) return null;
+    if ('arrayValue' in val) return (val.arrayValue.values || []).map(fromFirestoreValue);
+    if ('mapValue' in val) {
+      const obj = {};
+      const fields = val.mapValue.fields || {};
+      for (const k of Object.keys(fields)) {
+        obj[k] = fromFirestoreValue(fields[k]);
+      }
+      return obj;
     }
-    return window.INITIAL_QUIZZES || [];
+    return null;
   }
 
-  function saveQuizzes(data) {
-    localStorage.setItem(STORAGE_KEYS.QUIZZES, JSON.stringify(data));
+  // Helper: Convert full Firestore document to clean JS object
+  function fromFirestoreDoc(doc) {
+    if (!doc || !doc.fields) return null;
+    const obj = {};
+    for (const k of Object.keys(doc.fields)) {
+      obj[k] = fromFirestoreValue(doc.fields[k]);
+    }
+    if (doc.name) {
+      const parts = doc.name.split('/');
+      obj._id = parts[parts.length - 1];
+      if (!obj.id) obj.id = obj._id;
+    }
+    return obj;
+  }
+
+  // Cloud Firestore API Helpers
+  async function cloudFetchCollection(collectionName) {
+    try {
+      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000`);
+      if (!res.ok) throw new Error('Firestore fetch status ' + res.status);
+      const data = await res.json();
+      return (data.documents || []).map(fromFirestoreDoc).filter(Boolean);
+    } catch (e) {
+      console.warn(`[Firestore Cloud] Fallback to cache for ${collectionName}:`, e.message);
+      return [];
+    }
+  }
+
+  async function cloudSaveDoc(collectionName, docId, data) {
+    try {
+      const fields = {};
+      for (const k of Object.keys(data)) {
+        fields[k] = toFirestoreValue(data[k]);
+      }
+      await originalFetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      });
+      console.log(`[Firestore Cloud] Saved ${collectionName}/${docId}`);
+    } catch (e) {
+      console.error(`[Firestore Cloud] Error saving ${collectionName}/${docId}:`, e);
+    }
+  }
+
+  // Local Storage Synchronizers
+  function getLocal(key, fallback = []) {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : fallback;
+    } catch (e) { return fallback; }
+  }
+
+  function setLocal(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
   }
 
   function normalizeModule(rawModule) {
@@ -82,10 +134,27 @@
     return CORE_MODULES[0];
   }
 
-  function calculateAdaptiveAnalytics(studentId) {
-    const users = getUsers();
-    const attempts = getAttempts();
-    
+  async function getAllUsers() {
+    const cloudUsers = await cloudFetchCollection('users');
+    if (cloudUsers.length > 0) {
+      setLocal(STORAGE_KEYS.USERS, cloudUsers);
+      return cloudUsers;
+    }
+    return getLocal(STORAGE_KEYS.USERS, []);
+  }
+
+  async function getAllAttempts() {
+    const cloudAttempts = await cloudFetchCollection('attempts');
+    if (cloudAttempts.length > 0) {
+      // Sort newest first
+      cloudAttempts.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+      setLocal(STORAGE_KEYS.ATTEMPTS, cloudAttempts);
+      return cloudAttempts;
+    }
+    return getLocal(STORAGE_KEYS.ATTEMPTS, []);
+  }
+
+  function calculateAdaptiveAnalyticsSync(studentId, users, attempts) {
     const student = users.find(u => u.id === studentId);
     const studentAttempts = attempts.filter(a => a.studentId === studentId);
     const simAttempts = studentAttempts.filter(a => a.quizId === 'board_exam_simulation');
@@ -179,12 +248,12 @@
     };
   }
 
-  // Intercept fetch
+  // Intercept window.fetch to direct all requests to Cloud Firestore
   const originalFetch = window.fetch;
   window.fetch = async function(url, options = {}) {
     const urlStr = typeof url === 'string' ? url : (url.url || '');
     
-    // Only intercept /api/* calls
+    // Only intercept /api/*
     if (!urlStr.includes('/api/')) {
       return originalFetch(url, options);
     }
@@ -193,14 +262,6 @@
     const headers = options.headers || {};
     const authHeader = headers['Authorization'] || headers['authorization'] || '';
     const token = authHeader.replace('Bearer ', '').trim();
-    
-    let currentUserId = token;
-    let currentUser = getUsers().find(u => u.id === currentUserId);
-    if (!currentUser && token) {
-      try {
-        currentUser = JSON.parse(localStorage.getItem(STORAGE_KEYS.CURRENT_USER));
-      } catch (e) {}
-    }
 
     let body = {};
     if (options.body) {
@@ -216,11 +277,11 @@
       });
     }
 
-    // AUTH ROUTES
+    // 1. REGISTER
     if (urlStr.includes('/api/auth/register') && method === 'POST') {
       const { fullName, email, password, role, school } = body;
-      const users = getUsers();
-      if (users.find(u => u.email.toLowerCase() === (email || '').toLowerCase())) {
+      const users = await getAllUsers();
+      if (users.find(u => (u.email || '').toLowerCase() === (email || '').toLowerCase())) {
         return jsonResponse({ error: 'An account with this email already exists.' }, 400);
       }
       const newUser = {
@@ -232,88 +293,102 @@
         status: 'active',
         createdDate: new Date().toISOString().split('T')[0],
         school: school || 'N/A',
-        targetExamDate: '2026-10-15'
+        targetExamDate: '2026-10-15',
+        diagnosticCompleted: false,
+        simulationPassed: false
       };
+      
+      // Save to Cloud Firestore
+      await cloudSaveDoc('users', newUser.id, newUser);
+      
+      // Update local storage cache
       users.push(newUser);
-      saveUsers(users);
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(newUser));
+      setLocal(STORAGE_KEYS.USERS, users);
+      setLocal(STORAGE_KEYS.CURRENT_USER, newUser);
+
       return jsonResponse({ message: 'Account created successfully', token: newUser.id, user: newUser });
     }
 
+    // 2. LOGIN
     if (urlStr.includes('/api/auth/login') && method === 'POST') {
       const { email, password } = body;
-      const users = getUsers();
-      const user = users.find(u => u.email.toLowerCase() === (email || '').toLowerCase() && u.password === password);
+      const users = await getAllUsers();
+      const user = users.find(u => 
+        (u.email || '').toLowerCase() === (email || '').toLowerCase() && 
+        (u.password === password || u.passwordHash)
+      );
+
       if (!user) {
         return jsonResponse({ error: 'Invalid email or password.' }, 401);
       }
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(user));
+      setLocal(STORAGE_KEYS.CURRENT_USER, user);
       return jsonResponse({ message: 'Login successful', token: user.id, user });
     }
 
+    // 3. ME
     if (urlStr.includes('/api/auth/me')) {
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, null);
       if (!currentUser) return jsonResponse({ error: 'User not found' }, 404);
       return jsonResponse({ user: currentUser });
     }
 
-    // QUESTIONS ROUTES
-    if (urlStr.includes('/api/questions/stats')) {
-      const questions = getQuestions().filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
-      const users = getUsers();
-      const quizzes = getQuizzes();
-      const attempts = getAttempts();
-      const modules = [...new Set(questions.map(q => q.Module).filter(Boolean))];
-      return jsonResponse({
-        totalQuestions: questions.length,
-        totalModules: modules.length,
-        totalQuizzes: quizzes.length,
-        totalUsers: users.length,
-        totalAttempts: attempts.length,
-        modules
+    // 4. ADMIN USER LIST (GET /api/users/full)
+    if (urlStr.includes('/api/users/full') || (urlStr.includes('/api/users') && method === 'GET')) {
+      const users = await getAllUsers();
+      const attempts = await getAllAttempts();
+      const enrichedUsers = users.map(u => {
+        const uAttempts = attempts.filter(a => a.studentId === u.id);
+        const lastAtt = uAttempts[0];
+        const analytics = calculateAdaptiveAnalyticsSync(u.id, users, attempts);
+        return {
+          ...u,
+          readinessIndex: analytics.readinessIndex,
+          totalQuizzesTaken: uAttempts.length,
+          lastActive: lastAtt ? lastAtt.submittedAt : u.createdDate || 'Never'
+        };
       });
+      return jsonResponse({ users: enrichedUsers });
     }
 
-    if (urlStr.includes('/api/questions') && method === 'GET') {
-      const questions = getQuestions().filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
-      return jsonResponse({ questions, total: questions.length, page: 1, limit: questions.length });
+    // 5. ATTEMPTS LIST (GET /api/attempts)
+    if (urlStr.includes('/api/attempts') && method === 'GET') {
+      const attempts = await getAllAttempts();
+      return jsonResponse({ attempts });
     }
 
-    if (urlStr.includes('/api/quizzes') && method === 'GET') {
-      const quizzes = getQuizzes();
-      const attempts = getAttempts();
-      const enriched = quizzes.map(q => {
-        const quizAtts = attempts.filter(a => a.quizId === q.id);
-        const total = quizAtts.length;
-        const avg = total > 0 ? Math.round(quizAtts.reduce((acc, a) => acc + (a.scorePct || 0), 0) / total) : 0;
-        return { ...q, totalAttempts: total, avgScorePct: avg };
-      });
-      return jsonResponse({ quizzes: enriched });
-    }
-
+    // 6. RECORD ATTEMPT (POST /api/attempts)
     if (urlStr.includes('/api/attempts') && method === 'POST') {
-      const attempts = getAttempts();
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
       const newAttempt = {
         id: `att_${Date.now()}`,
-        studentId: currentUser ? currentUser.id : 'usr_anon',
-        studentName: currentUser ? currentUser.fullName : 'Student',
+        studentId: currentUser.id || 'usr_anon',
+        studentName: currentUser.fullName || 'Student',
+        studentEmail: currentUser.email || '',
         quizId: body.quizId,
         quizTitle: body.quizTitle,
         totalQuestions: body.totalQuestions,
         correctAnswers: body.correctAnswers,
         scorePct: body.scorePct,
         passed: body.passed,
-        timeSpentSeconds: body.timeSpentSeconds,
+        timeSpentSeconds: body.timeSpentSeconds || 60,
         submittedAt: new Date().toISOString(),
         moduleBreakdown: body.moduleBreakdown || {}
       };
-      attempts.unshift(newAttempt);
-      saveAttempts(attempts);
-      return jsonResponse({ message: 'Quiz submitted successfully', attempt: newAttempt });
+
+      // Save to Cloud Firestore
+      await cloudSaveDoc('attempts', newAttempt.id, newAttempt);
+
+      // Cache locally
+      const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      localAttempts.unshift(newAttempt);
+      setLocal(STORAGE_KEYS.ATTEMPTS, localAttempts);
+
+      return jsonResponse({ message: 'Quiz attempt recorded in Cloud Database', attempt: newAttempt });
     }
 
-    // ADAPTIVE ENGINE ROUTES
+    // 7. DIAGNOSTIC START
     if (urlStr.includes('/api/adaptive/diagnostic/start') && method === 'POST') {
-      const questions = getQuestions().filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
       let diagnosticQuestions = [];
       CORE_MODULES.forEach(mod => {
         const modQuestions = questions.filter(q => normalizeModule(q.Module) === mod);
@@ -331,6 +406,7 @@
       });
     }
 
+    // 8. DIAGNOSTIC SUBMIT
     if (urlStr.includes('/api/adaptive/diagnostic/submit') && method === 'POST') {
       const { userAnswers, timeSpentSeconds, questionDetails } = body;
       const questions = questionDetails || [];
@@ -350,11 +426,12 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 75;
 
-      const attempts = getAttempts();
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
       const attempt = {
         id: `att_diag_${Date.now()}`,
-        studentId: currentUser ? currentUser.id : 'usr_anon',
-        studentName: currentUser ? currentUser.fullName : 'Student',
+        studentId: currentUser.id || 'usr_anon',
+        studentName: currentUser.fullName || 'Student',
+        studentEmail: currentUser.email || '',
         quizId: 'diagnostic_assessment',
         quizTitle: 'Comprehensive Licensure Diagnostic Exam',
         totalQuestions: total,
@@ -365,27 +442,56 @@
         submittedAt: new Date().toISOString(),
         moduleBreakdown
       };
-      attempts.unshift(attempt);
-      saveAttempts(attempts);
 
-      if (currentUser) {
-        const users = getUsers();
-        const u = users.find(x => x.id === currentUser.id);
-        if (u) {
-          u.diagnosticCompleted = true;
-          saveUsers(users);
-        }
+      // Save Attempt & User to Cloud Firestore
+      await cloudSaveDoc('attempts', attempt.id, attempt);
+      if (currentUser && currentUser.id) {
+        currentUser.diagnosticCompleted = true;
+        await cloudSaveDoc('users', currentUser.id, currentUser);
+        setLocal(STORAGE_KEYS.CURRENT_USER, currentUser);
       }
 
-      return jsonResponse({ message: 'Diagnostic Exam submitted successfully', attempt });
+      const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      localAtts.unshift(attempt);
+      setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
+
+      return jsonResponse({ message: 'Diagnostic Exam recorded in Cloud Database', attempt });
     }
 
+    // 9. ADAPTIVE ANALYTICS
     if (urlStr.includes('/api/adaptive/analytics')) {
-      const studentId = currentUser ? currentUser.id : 'usr_anon';
-      const analytics = calculateAdaptiveAnalytics(studentId);
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const users = await getAllUsers();
+      const attempts = await getAllAttempts();
+      const analytics = calculateAdaptiveAnalyticsSync(currentUser.id || 'usr_anon', users, attempts);
       return jsonResponse(analytics);
     }
 
+    // 10. SMART QUIZ FETCH
+    if (urlStr.includes('/api/adaptive/smart-quiz') && method === 'GET') {
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const users = await getAllUsers();
+      const attempts = await getAllAttempts();
+      const analytics = calculateAdaptiveAnalyticsSync(currentUser.id || 'usr_anon', users, attempts);
+      
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      const weakModules = analytics.weaknesses.map(w => w.module);
+      const targetWeakness = weakModules.length > 0 ? weakModules[0] : CORE_MODULES[0];
+      const targetQuestions = questions.filter(q => normalizeModule(q.Module) === targetWeakness);
+      const quizQuestions = [...targetQuestions].sort(() => 0.5 - Math.random()).slice(0, 15);
+
+      return jsonResponse({
+        quizId: `smart_quiz_${Date.now()}`,
+        title: `Targeted Remediation Smart Quiz: ${targetWeakness}`,
+        targetModule: targetWeakness,
+        durationMins: 20,
+        passingScorePct: 75,
+        totalQuestions: quizQuestions.length,
+        questions: quizQuestions
+      });
+    }
+
+    // 11. SMART QUIZ SUBMIT
     if (urlStr.includes('/api/adaptive/smart-quiz/submit') && method === 'POST') {
       const { userAnswers, timeSpentSeconds, questionDetails, targetModule } = body;
       const questions = questionDetails || [];
@@ -405,11 +511,12 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 75;
 
-      const attempts = getAttempts();
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
       const attempt = {
         id: `att_smart_${Date.now()}`,
-        studentId: currentUser ? currentUser.id : 'usr_anon',
-        studentName: currentUser ? currentUser.fullName : 'Student',
+        studentId: currentUser.id || 'usr_anon',
+        studentName: currentUser.fullName || 'Student',
+        studentEmail: currentUser.email || '',
         quizId: `smart_quiz_${Date.now()}`,
         quizTitle: `Targeted Smart Quiz - ${targetModule || 'Remediation'}`,
         totalQuestions: total,
@@ -420,40 +527,31 @@
         submittedAt: new Date().toISOString(),
         moduleBreakdown
       };
-      attempts.unshift(attempt);
-      saveAttempts(attempts);
 
-      const analytics = calculateAdaptiveAnalytics(currentUser ? currentUser.id : 'usr_anon');
-      return jsonResponse({ message: 'Smart-Quiz evaluated and Board Readiness Index recalculated.', attempt, analytics });
+      // Save to Cloud Firestore
+      await cloudSaveDoc('attempts', attempt.id, attempt);
+      const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      localAtts.unshift(attempt);
+      setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
+
+      const users = await getAllUsers();
+      const attempts = await getAllAttempts();
+      const analytics = calculateAdaptiveAnalyticsSync(currentUser.id || 'usr_anon', users, attempts);
+
+      return jsonResponse({ message: 'Smart-Quiz saved to Cloud Database and Readiness Recalculated.', attempt, analytics });
     }
 
-    if (urlStr.includes('/api/adaptive/smart-quiz')) {
-      const studentId = currentUser ? currentUser.id : 'usr_anon';
-      const analytics = calculateAdaptiveAnalytics(studentId);
-      const questions = getQuestions().filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
-      const weakModules = analytics.weaknesses.map(w => w.module);
-      const targetWeakness = weakModules.length > 0 ? weakModules[0] : CORE_MODULES[0];
-      const targetQuestions = questions.filter(q => normalizeModule(q.Module) === targetWeakness);
-      const quizQuestions = [...targetQuestions].sort(() => 0.5 - Math.random()).slice(0, 15);
-
-      return jsonResponse({
-        quizId: `smart_quiz_${Date.now()}`,
-        title: `Targeted Remediation Smart Quiz: ${targetWeakness}`,
-        targetModule: targetWeakness,
-        durationMins: 20,
-        passingScorePct: 75,
-        totalQuestions: quizQuestions.length,
-        questions: quizQuestions
-      });
-    }
-
+    // 12. SIMULATION START
     if (urlStr.includes('/api/adaptive/simulation/start') && method === 'POST') {
-      const studentId = currentUser ? currentUser.id : 'usr_anon';
-      const analytics = calculateAdaptiveAnalytics(studentId);
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const users = await getAllUsers();
+      const attempts = await getAllAttempts();
+      const analytics = calculateAdaptiveAnalyticsSync(currentUser.id || 'usr_anon', users, attempts);
+
       if (!analytics.canTakeSimulation) {
         return jsonResponse({ error: 'You must attain a minimum 75% Board Readiness Index to unlock the Simulated Licensure Exam.' }, 403);
       }
-      const questions = getQuestions().filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
       const simQuestions = [...questions].sort(() => 0.5 - Math.random()).slice(0, 100);
       return jsonResponse({
         quizId: 'board_exam_simulation',
@@ -465,6 +563,7 @@
       });
     }
 
+    // 13. SIMULATION SUBMIT
     if (urlStr.includes('/api/adaptive/simulation/submit') && method === 'POST') {
       const { userAnswers, timeSpentSeconds, questionDetails } = body;
       const questions = questionDetails || [];
@@ -484,11 +583,12 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 70;
 
-      const attempts = getAttempts();
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
       const attempt = {
         id: `att_sim_${Date.now()}`,
-        studentId: currentUser ? currentUser.id : 'usr_anon',
-        studentName: currentUser ? currentUser.fullName : 'Student',
+        studentId: currentUser.id || 'usr_anon',
+        studentName: currentUser.fullName || 'Student',
+        studentEmail: currentUser.email || '',
         quizId: 'board_exam_simulation',
         quizTitle: 'Full Licensure Exam Simulation',
         totalQuestions: total,
@@ -499,17 +599,18 @@
         submittedAt: new Date().toISOString(),
         moduleBreakdown
       };
-      attempts.unshift(attempt);
-      saveAttempts(attempts);
 
-      if (currentUser) {
-        const users = getUsers();
-        const u = users.find(x => x.id === currentUser.id);
-        if (u) {
-          u.simulationPassed = passed;
-          saveUsers(users);
-        }
+      // Save to Cloud Firestore
+      await cloudSaveDoc('attempts', attempt.id, attempt);
+      if (currentUser && currentUser.id) {
+        currentUser.simulationPassed = passed;
+        await cloudSaveDoc('users', currentUser.id, currentUser);
+        setLocal(STORAGE_KEYS.CURRENT_USER, currentUser);
       }
+
+      const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      localAtts.unshift(attempt);
+      setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
 
       const msg = passed
         ? 'Congratulations! You have passed the Licensure Exam Simulation!'
@@ -518,7 +619,42 @@
       return jsonResponse({ message: msg, attempt });
     }
 
-    // Default fallback for any other route
+    // 14. STATS
+    if (urlStr.includes('/api/questions/stats')) {
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      const users = await getAllUsers();
+      const quizzes = window.INITIAL_QUIZZES || [];
+      const attempts = await getAllAttempts();
+      const modules = [...new Set(questions.map(q => q.Module).filter(Boolean))];
+      return jsonResponse({
+        totalQuestions: questions.length,
+        totalModules: modules.length,
+        totalQuizzes: quizzes.length,
+        totalUsers: users.length,
+        totalAttempts: attempts.length,
+        modules
+      });
+    }
+
+    // 15. QUESTIONS
+    if (urlStr.includes('/api/questions') && method === 'GET') {
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      return jsonResponse({ questions, total: questions.length, page: 1, limit: questions.length });
+    }
+
+    // 16. QUIZZES
+    if (urlStr.includes('/api/quizzes') && method === 'GET') {
+      const quizzes = window.INITIAL_QUIZZES || [];
+      const attempts = await getAllAttempts();
+      const enriched = quizzes.map(q => {
+        const quizAtts = attempts.filter(a => a.quizId === q.id);
+        const total = quizAtts.length;
+        const avg = total > 0 ? Math.round(quizAtts.reduce((acc, a) => acc + (a.scorePct || 0), 0) / total) : 0;
+        return { ...q, totalAttempts: total, avgScorePct: avg };
+      });
+      return jsonResponse({ quizzes: enriched });
+    }
+
     return jsonResponse({ message: 'OK' });
   };
 })();

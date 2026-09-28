@@ -4,3 +4,4 @@ cloudflared.exe
 .env
 .DS_Store
 *.log
+scripts/

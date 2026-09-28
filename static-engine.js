@@ -144,14 +144,27 @@
   }
 
   async function getAllAttempts() {
+    let attempts = [];
     const cloudAttempts = await cloudFetchCollection('attempts');
     if (cloudAttempts.length > 0) {
-      // Sort newest first
-      cloudAttempts.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
-      setLocal(STORAGE_KEYS.ATTEMPTS, cloudAttempts);
-      return cloudAttempts;
+      attempts = cloudAttempts;
+    } else {
+      attempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
     }
-    return getLocal(STORAGE_KEYS.ATTEMPTS, []);
+    const normalized = attempts.map(a => {
+      let pct = a.percentage !== undefined ? parseFloat(a.percentage) : (a.scorePct !== undefined ? parseFloat(a.scorePct) : null);
+      if (pct === null || isNaN(pct)) {
+        pct = (a.totalQuestions && a.totalQuestions > 0) ? Math.round(((a.score || 0) / a.totalQuestions) * 100) : 0;
+      }
+      return {
+        ...a,
+        percentage: pct,
+        scorePct: pct
+      };
+    });
+    normalized.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+    setLocal(STORAGE_KEYS.ATTEMPTS, normalized);
+    return normalized;
   }
 
   function calculateAdaptiveAnalyticsSync(studentId, users, attempts) {
@@ -646,13 +659,15 @@
     if (urlStr.includes('/api/quizzes') && method === 'GET') {
       const quizzes = window.INITIAL_QUIZZES || [];
       const attempts = await getAllAttempts();
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const myAttempts = attempts.filter(a => a.studentId === currentUser.id || (currentUser.email && a.studentEmail === currentUser.email));
       const enriched = quizzes.map(q => {
         const quizAtts = attempts.filter(a => a.quizId === q.id);
         const total = quizAtts.length;
-        const avg = total > 0 ? Math.round(quizAtts.reduce((acc, a) => acc + (a.scorePct || 0), 0) / total) : 0;
+        const avg = total > 0 ? Math.round(quizAtts.reduce((acc, a) => acc + (a.scorePct || a.percentage || 0), 0) / total) : 0;
         return { ...q, totalAttempts: total, avgScorePct: avg };
       });
-      return jsonResponse({ quizzes: enriched });
+      return jsonResponse({ quizzes: enriched, myAttempts });
     }
 
     return jsonResponse({ message: 'OK' });

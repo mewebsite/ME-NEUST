@@ -3088,6 +3088,23 @@ function AdminView({
       })
     }).then(() => loadUsers());
   };
+  const deleteUser = u => {
+    if (u.role === 'admin') {
+      alert('System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.');
+      return;
+    }
+    if (confirm(`Are you sure you want to permanently delete user account: ${u.fullName || u.email}? This will erase their user record and quiz history.`)) {
+      fetch(`${API_BASE}/api/users/${u.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      }).then(res => res.json()).then(data => {
+        if (data.error) alert(data.error);
+        loadUsers();
+      }).catch(err => alert(err.message));
+    }
+  };
   const deleteQuestion = id => {
     if (confirm('Are you sure you want to delete question #' + id + '?')) {
       fetch(`${API_BASE}/api/questions/${id}`, {
@@ -3398,7 +3415,14 @@ function AdminView({
         fontSize: '0.8rem'
       },
       onClick: () => toggleUserStatus(u)
-    }, u.status === 'active' ? 'Deactivate' : 'Activate'))));
+    }, u.status === 'active' ? 'Deactivate' : 'Activate'), u.role !== 'admin' && /*#__PURE__*/React.createElement("button", {
+      className: "btn-danger",
+      style: {
+        padding: '0.35rem 0.65rem',
+        fontSize: '0.8rem'
+      },
+      onClick: () => deleteUser(u)
+    }, "\uD83D\uDDD1\uFE0F Delete"))));
   }))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
@@ -4331,7 +4355,12 @@ function UserModal({
     className: "grid-2col"
   }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Role"), /*#__PURE__*/React.createElement("select", {
+  }, /*#__PURE__*/React.createElement("label", null, "Role ", /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.75rem',
+      color: 'var(--text-muted)'
+    }
+  }, "(Max 4 Admins Allowed)")), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
     value: role,
     onChange: e => setRole(e.target.value)
@@ -4339,7 +4368,7 @@ function UserModal({
     value: "student"
   }, "Student"), /*#__PURE__*/React.createElement("option", {
     value: "admin"
-  }, "Administrator"))), /*#__PURE__*/React.createElement("div", {
+  }, "Administrator (Max 4 Limit)"))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Status"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",

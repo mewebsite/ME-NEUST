@@ -1033,13 +1033,21 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Email is already registered.' });
   }
 
+  const assignedRole = role === 'admin' ? 'admin' : 'student';
+  if (assignedRole === 'admin') {
+    const adminCount = users.filter(u => u.role === 'admin').length;
+    if (adminCount >= 4) {
+      return res.status(400).json({ error: 'Maximum limit of 4 administrators reached. Only 4 admin accounts are allowed on this platform.' });
+    }
+  }
+
   const passwordHash = bcrypt.hashSync(password, 10);
   const newUser = {
     id: `usr_${Date.now()}`,
     fullName,
     email: email.toLowerCase(),
     passwordHash,
-    role: role || 'student',
+    role: assignedRole,
     status: 'active',
     createdDate: new Date().toISOString().split('T')[0],
     school: school || 'N/A',
@@ -1062,6 +1070,13 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
 
   if (idx === -1) return res.status(404).json({ error: 'User not found' });
 
+  if (role === 'admin' && users[idx].role !== 'admin') {
+    const adminCount = users.filter(u => u.role === 'admin').length;
+    if (adminCount >= 4) {
+      return res.status(400).json({ error: 'Maximum limit of 4 administrators reached. Only 4 admin accounts are allowed on this platform.' });
+    }
+  }
+
   if (fullName) users[idx].fullName = fullName;
   if (role) users[idx].role = role;
   if (status) users[idx].status = status;
@@ -1073,20 +1088,23 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   res.json({ message: 'User updated successfully', user: sanitized });
 });
 
-// DELETE /api/users/:id (Admin Deactivate/Delete User)
+// DELETE /api/users/:id (Admin Permanently Delete User)
 app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const users = await fetchCollection('users');
+  let users = await fetchCollection('users');
   const idx = users.findIndex(u => u.id === id);
 
   if (idx === -1) return res.status(404).json({ error: 'User not found' });
   if (users[idx].id === req.user.id) {
-    return res.status(400).json({ error: 'You cannot delete or deactivate your own admin account.' });
+    return res.status(400).json({ error: 'You cannot delete your own active administrator account.' });
+  }
+  if (users[idx].role === 'admin') {
+    return res.status(400).json({ error: 'System Protection: Administrator accounts cannot be deleted directly.' });
   }
 
-  users[idx].status = 'deactivated';
+  users = users.filter(u => u.id !== id);
   await saveToCollection('users', users, 'id');
-  res.json({ message: 'User account deactivated successfully' });
+  res.json({ message: 'User account permanently deleted successfully' });
 });
 
 

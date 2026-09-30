@@ -110,6 +110,19 @@
     }
   }
 
+  async function cloudDeleteDoc(collectionName, docId) {
+    try {
+      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+        method: 'DELETE'
+      });
+      console.log(`[Firestore Cloud] Deleted ${collectionName}/${docId} -> status ${res.status}`);
+      return res.ok;
+    } catch (e) {
+      console.error(`[Firestore Cloud] Error deleting ${collectionName}/${docId}:`, e);
+      return false;
+    }
+  }
+
   // Local Storage Synchronizers
   function getLocal(key, fallback = []) {
     try {
@@ -165,6 +178,17 @@
     normalized.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
     setLocal(STORAGE_KEYS.ATTEMPTS, normalized);
     return normalized;
+  }
+
+  async function getAllQuizzes() {
+    const cloudQuizzes = await cloudFetchCollection('quizzes');
+    if (cloudQuizzes.length > 0) {
+      setLocal(STORAGE_KEYS.QUIZZES, cloudQuizzes);
+      return cloudQuizzes;
+    }
+    const local = getLocal(STORAGE_KEYS.QUIZZES, null);
+    if (local && local.length > 0) return local;
+    return window.INITIAL_QUIZZES || [];
   }
 
   function calculateAdaptiveAnalyticsSync(studentId, users, attempts) {
@@ -292,7 +316,7 @@
 
     // 1. REGISTER
     if (urlStr.includes('/api/auth/register') && method === 'POST') {
-      const { fullName, email, password, role, school } = body;
+      const { fullName, email, password, school } = body;
       const users = await getAllUsers();
       if (users.find(u => (u.email || '').toLowerCase() === (email || '').toLowerCase())) {
         return jsonResponse({ error: 'An account with this email already exists.' }, 400);
@@ -302,7 +326,7 @@
         fullName,
         email: email.toLowerCase(),
         password,
-        role: role === 'admin' ? 'admin' : 'student',
+        role: 'student', // Strict: Public registration is always student; 4 admins are pre-assigned
         status: 'active',
         createdDate: new Date().toISOString().split('T')[0],
         school: school || 'N/A',
@@ -346,7 +370,7 @@
     }
 
     // 4. ADMIN USER LIST (GET /api/users/full)
-    if (urlStr.includes('/api/users/full') || (urlStr.includes('/api/users') && method === 'GET')) {
+    if (urlStr.includes('/api/users/full') || (urlStr.endsWith('/api/users') && method === 'GET')) {
       const users = await getAllUsers();
       const attempts = await getAllAttempts();
       const enrichedUsers = users.map(u => {
@@ -361,6 +385,96 @@
         };
       });
       return jsonResponse({ users: enrichedUsers });
+    }
+
+    // 4a. ADMIN CREATE USER (POST /api/users)
+    if (urlStr.endsWith('/api/users') && method === 'POST') {
+      const { fullName, email, password, role, school, targetExamDate } = body;
+      if (!fullName || !email || !password) {
+        return jsonResponse({ error: 'Full name, email, and password are required.' }, 400);
+      }
+      const users = await getAllUsers();
+      if (users.find(u => (u.email || '').toLowerCase() === (email || '').toLowerCase())) {
+        return jsonResponse({ error: 'Email is already registered.' }, 400);
+      }
+
+      const assignedRole = role === 'admin' ? 'admin' : 'student';
+      if (assignedRole === 'admin') {
+        const adminCount = users.filter(u => u.role === 'admin').length;
+        if (adminCount >= 4) {
+          return jsonResponse({ error: 'Maximum limit of 4 administrators reached. Only 4 admin accounts are allowed on this platform.' }, 400);
+        }
+      }
+
+      const newUser = {
+        id: `usr_${Date.now()}`,
+        fullName,
+        email: email.toLowerCase(),
+        password,
+        role: assignedRole,
+        status: 'active',
+        school: school || 'NEUST',
+        createdDate: new Date().toISOString().split('T')[0],
+        targetExamDate: targetExamDate || '2026-10-15',
+        diagnosticCompleted: false,
+        simulationPassed: false
+      };
+
+      await cloudSaveDoc('users', newUser.id, newUser);
+      users.push(newUser);
+      setLocal(STORAGE_KEYS.USERS, users);
+
+      return jsonResponse({ message: 'User account created successfully', user: newUser });
+    }
+
+    // 4b. ADMIN UPDATE USER (PUT /api/users/:id)
+    if (urlStr.match(/\/api\/users\/[^\/\?]+/) && method === 'PUT') {
+      const parts = urlStr.split('/api/users/')[1].split('?')[0].split('/');
+      const id = parts[0];
+      const users = await getAllUsers();
+      const idx = users.findIndex(u => u.id === id);
+      if (idx === -1) return jsonResponse({ error: 'User not found' }, 404);
+
+      const updates = body;
+      if (updates.role === 'admin' && users[idx].role !== 'admin') {
+        const adminCount = users.filter(u => u.role === 'admin').length;
+        if (adminCount >= 4) {
+          return jsonResponse({ error: 'Maximum limit of 4 administrators reached. Only 4 admin accounts are allowed on this platform.' }, 400);
+        }
+      }
+
+      if (updates.fullName) users[idx].fullName = updates.fullName;
+      if (updates.role) users[idx].role = updates.role;
+      if (updates.status) users[idx].status = updates.status;
+      if (updates.school) users[idx].school = updates.school;
+      if (updates.targetExamDate) users[idx].targetExamDate = updates.targetExamDate;
+
+      await cloudSaveDoc('users', id, users[idx]);
+      setLocal(STORAGE_KEYS.USERS, users);
+
+      return jsonResponse({ message: 'User updated successfully', user: users[idx] });
+    }
+
+    // 4c. ADMIN DELETE USER (DELETE /api/users/:id)
+    if (urlStr.match(/\/api\/users\/[^\/\?]+/) && method === 'DELETE') {
+      const parts = urlStr.split('/api/users/')[1].split('?')[0].split('/');
+      const id = parts[0];
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      if (currentUser.id === id) {
+        return jsonResponse({ error: 'You cannot delete your own active administrator account.' }, 400);
+      }
+      const users = await getAllUsers();
+      const targetUser = users.find(u => u.id === id);
+      if (targetUser && targetUser.role === 'admin') {
+        return jsonResponse({ error: 'System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.' }, 400);
+      }
+
+      await cloudDeleteDoc('users', id);
+
+      const filteredUsers = users.filter(u => u.id !== id);
+      setLocal(STORAGE_KEYS.USERS, filteredUsers);
+
+      return jsonResponse({ message: 'User account permanently deleted successfully' });
     }
 
     // 5. ATTEMPTS LIST (GET /api/attempts)
@@ -655,9 +769,9 @@
       return jsonResponse({ questions, total: questions.length, page: 1, limit: questions.length });
     }
 
-    // 16. QUIZZES
+    // 16. QUIZZES (GET)
     if (urlStr.includes('/api/quizzes') && method === 'GET') {
-      const quizzes = window.INITIAL_QUIZZES || [];
+      const quizzes = await getAllQuizzes();
       const attempts = await getAllAttempts();
       const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
       const myAttempts = attempts.filter(a => a.studentId === currentUser.id || (currentUser.email && a.studentEmail === currentUser.email));
@@ -668,6 +782,76 @@
         return { ...q, totalAttempts: total, avgScorePct: avg };
       });
       return jsonResponse({ quizzes: enriched, myAttempts });
+    }
+
+    // 16a. CREATE & POST QUIZ (POST /api/quizzes)
+    if (urlStr.endsWith('/api/quizzes') && method === 'POST') {
+      const { title, description, module: modVal, questionCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = body;
+      if (!title) {
+        return jsonResponse({ error: 'Quiz title is required.' }, 400);
+      }
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const newQuiz = {
+        id: `qz_${Date.now()}`,
+        title,
+        description: description || '',
+        module: modVal || '',
+        questionCount: (specificQuestionIds && specificQuestionIds.length > 0) ? specificQuestionIds.length : (parseInt(questionCount) || 50),
+        durationMins: parseInt(durationMins) || 50,
+        passingScorePct: parseInt(passingScorePct) || 70,
+        status: status || 'published',
+        selectionMode: selectionMode || 'random',
+        specificQuestionIds: Array.isArray(specificQuestionIds) ? specificQuestionIds : [],
+        createdBy: currentUser.fullName || 'Administrator',
+        createdDate: new Date().toISOString().split('T')[0]
+      };
+
+      await cloudSaveDoc('quizzes', newQuiz.id, newQuiz);
+
+      let quizzes = await getAllQuizzes();
+      quizzes = quizzes.filter(q => q.id !== newQuiz.id);
+      quizzes.unshift(newQuiz);
+      setLocal(STORAGE_KEYS.QUIZZES, quizzes);
+
+      return jsonResponse({ message: 'Quiz created and posted successfully', quiz: newQuiz });
+    }
+
+    // 16b. UPDATE QUIZ (PUT /api/quizzes/:id)
+    if (urlStr.match(/\/api\/quizzes\/[^\/\?]+/) && method === 'PUT') {
+      const parts = urlStr.split('/api/quizzes/')[1].split('?')[0].split('/');
+      const id = parts[0];
+      const quizzes = await getAllQuizzes();
+      const idx = quizzes.findIndex(q => q.id === id);
+      if (idx === -1) return jsonResponse({ error: 'Quiz not found' }, 404);
+
+      const updates = body;
+      if (updates.title) quizzes[idx].title = updates.title;
+      if (updates.description !== undefined) quizzes[idx].description = updates.description;
+      if (updates.module !== undefined) quizzes[idx].module = updates.module;
+      if (updates.questionCount) quizzes[idx].questionCount = parseInt(updates.questionCount);
+      if (updates.durationMins) quizzes[idx].durationMins = parseInt(updates.durationMins);
+      if (updates.passingScorePct) quizzes[idx].passingScorePct = parseInt(updates.passingScorePct);
+      if (updates.status) quizzes[idx].status = updates.status;
+      if (updates.selectionMode) quizzes[idx].selectionMode = updates.selectionMode;
+      if (updates.specificQuestionIds !== undefined) quizzes[idx].specificQuestionIds = updates.specificQuestionIds;
+
+      await cloudSaveDoc('quizzes', id, quizzes[idx]);
+      setLocal(STORAGE_KEYS.QUIZZES, quizzes);
+
+      return jsonResponse({ message: 'Quiz updated successfully', quiz: quizzes[idx] });
+    }
+
+    // 16c. DELETE QUIZ (DELETE /api/quizzes/:id)
+    if (urlStr.match(/\/api\/quizzes\/[^\/\?]+/) && method === 'DELETE') {
+      const parts = urlStr.split('/api/quizzes/')[1].split('?')[0].split('/');
+      const id = parts[0];
+      await cloudDeleteDoc('quizzes', id);
+
+      let quizzes = await getAllQuizzes();
+      quizzes = quizzes.filter(q => q.id !== id);
+      setLocal(STORAGE_KEYS.QUIZZES, quizzes);
+
+      return jsonResponse({ message: 'Quiz deleted successfully' });
     }
 
     return jsonResponse({ message: 'OK' });

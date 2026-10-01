@@ -2428,7 +2428,6 @@ function AuthModal({
   setAuthModal,
   handleAuthSubmit
 }) {
-  const [role, setRole] = useState('student');
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",
     onClick: () => setAuthModal(null)
@@ -2440,7 +2439,7 @@ function AuthModal({
       marginBottom: '0.5rem',
       textAlign: 'center'
     }
-  }, authModal === 'login' ? 'Welcome Back' : 'Create Student / Admin Account'), /*#__PURE__*/React.createElement("p", {
+  }, authModal === 'login' ? 'Welcome Back' : 'Create Student Account'), /*#__PURE__*/React.createElement("p", {
     style: {
       textAlign: 'center',
       color: 'var(--text-muted)',
@@ -2466,7 +2465,7 @@ function AuthModal({
     },
     onClick: () => setAuthModal('signup')
   }, "Sign Up")), /*#__PURE__*/React.createElement("form", {
-    onSubmit: e => handleAuthSubmit(e, authModal, role)
+    onSubmit: e => handleAuthSubmit(e, authModal, 'student')
   }, authModal === 'signup' && /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Full Name"), /*#__PURE__*/React.createElement("input", {
@@ -2491,37 +2490,14 @@ function AuthModal({
     className: "form-control",
     placeholder: "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022",
     required: true
-  })), authModal === 'signup' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Account Role"), /*#__PURE__*/React.createElement("select", {
-    name: "roleSelect",
-    className: "form-control",
-    value: role,
-    onChange: e => setRole(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "student"
-  }, "Student (Board Exam Reviewee)"), /*#__PURE__*/React.createElement("option", {
-    value: "admin"
-  }, "Administrator (Faculty / Content Editor)"))), role === 'admin' && /*#__PURE__*/React.createElement("div", {
-    className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      color: 'var(--accent-light)'
-    }
-  }, "Admin Security Key (Enter: ME_BOARD_ADMIN_2026)"), /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    name: "adminCode",
-    className: "form-control",
-    placeholder: "ME_BOARD_ADMIN_2026",
-    required: true
-  })), /*#__PURE__*/React.createElement("div", {
+  })), authModal === 'signup' && /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "University / School"), /*#__PURE__*/React.createElement("input", {
     type: "text",
     name: "school",
     className: "form-control",
     placeholder: "Map\xFAa / UP / UST / NEUST / TUP"
-  }))), /*#__PURE__*/React.createElement("button", {
+  })), /*#__PURE__*/React.createElement("button", {
     type: "submit",
     className: "btn-primary",
     style: {
@@ -2529,7 +2505,7 @@ function AuthModal({
       marginTop: '1rem',
       justifyContent: 'center'
     }
-  }, authModal === 'login' ? 'Sign In to Account' : 'Register Account'))));
+  }, authModal === 'login' ? 'Sign In to Account' : 'Register Student Account'))));
 }
 
 // EXAM & PRACTICE SIMULATOR VIEW

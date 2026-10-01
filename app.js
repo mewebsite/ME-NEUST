@@ -1773,13 +1773,11 @@ function UserDetailModal({ user, onClose }) {
 
 // AUTH MODAL COMPONENT
 function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
-  const [role, setRole] = useState('student');
-
   return (
     <div className="modal-overlay" onClick={() => setAuthModal(null)}>
       <div className="modal-content glass-card" onClick={e => e.stopPropagation()}>
         <h2 style={{ marginBottom: '0.5rem', textAlign: 'center' }}>
-          {authModal === 'login' ? 'Welcome Back' : 'Create Student / Admin Account'}
+          {authModal === 'login' ? 'Welcome Back' : 'Create Student Account'}
         </h2>
         <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
           Access 3,105 Solved Mechanical Engineering Licensure Questions
@@ -1790,7 +1788,7 @@ function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
           <button className={`btn-secondary ${authModal === 'signup' ? 'btn-primary' : ''}`} style={{ flex: 1 }} onClick={() => setAuthModal('signup')}>Sign Up</button>
         </div>
 
-        <form onSubmit={(e) => handleAuthSubmit(e, authModal, role)}>
+        <form onSubmit={(e) => handleAuthSubmit(e, authModal, 'student')}>
           {authModal === 'signup' && (
             <div className="form-group">
               <label>Full Name</label>
@@ -1809,34 +1807,16 @@ function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
           </div>
 
           {authModal === 'signup' && (
-            <div>
-              <div className="form-group">
-                <label>Account Role</label>
-                <select name="roleSelect" className="form-control" value={role} onChange={(e) => setRole(e.target.value)}>
-                  <option value="student">Student (Board Exam Reviewee)</option>
-                  <option value="admin">Administrator (Faculty / Content Editor)</option>
-                </select>
-              </div>
-
-              {role === 'admin' && (
-                <div className="form-group">
-                  <label style={{ color: 'var(--accent-light)' }}>Admin Security Key (Enter: ME_BOARD_ADMIN_2026)</label>
-                  <input type="text" name="adminCode" className="form-control" placeholder="ME_BOARD_ADMIN_2026" required />
-                </div>
-              )}
-
-              <div className="form-group">
-                <label>University / School</label>
-                <input type="text" name="school" className="form-control" placeholder="Mapúa / UP / UST / NEUST / TUP" />
-              </div>
+            <div className="form-group">
+              <label>University / School</label>
+              <input type="text" name="school" className="form-control" placeholder="Mapúa / UP / UST / NEUST / TUP" />
             </div>
           )}
 
           <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '1rem', justifyContent: 'center' }}>
-            {authModal === 'login' ? 'Sign In to Account' : 'Register Account'}
+            {authModal === 'login' ? 'Sign In to Account' : 'Register Student Account'}
           </button>
         </form>
-
 
       </div>
     </div>

@@ -131,13 +131,7 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'An account with this email already exists.' });
   }
 
-  let userRole = 'student';
-  if (role === 'admin') {
-    if (adminCode !== 'ME_BOARD_ADMIN_2026') {
-      return res.status(400).json({ error: 'Invalid Admin Security Code.' });
-    }
-    userRole = 'admin';
-  }
+  const userRole = 'student';
 
   const passwordHash = bcrypt.hashSync(password, 10);
   const newUser = {

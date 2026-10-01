@@ -154,6 +154,20 @@ function App() {
     const onLiveUpdate = e => {
       const detail = e.detail || {};
       console.log('[Live Engine] Real-time activity received:', detail.type);
+      if (detail.type === 'QUIZ_DELETE' && detail.quizId) {
+        setQuizzesList(prev => prev.filter(q => q && q.id !== detail.quizId));
+      }
+      if (detail.type === 'QUIZ_UPDATE' && detail.quiz) {
+        setQuizzesList(prev => {
+          const idx = prev.findIndex(q => q && q.id === detail.quiz.id);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx] = detail.quiz;
+            return copy;
+          }
+          return [detail.quiz, ...prev];
+        });
+      }
       loadStats(token);
       loadQuizzes();
       if (user && user.role === 'admin') {
@@ -483,6 +497,10 @@ function App() {
   };
   const toggleQuizStatus = qz => {
     const newStatus = qz.status === 'published' ? 'draft' : 'published';
+    setQuizzesList(prev => prev.map(q => q && q.id === qz.id ? {
+      ...q,
+      status: newStatus
+    } : q));
     fetch(`${API_BASE}/api/quizzes/${qz.id}`, {
       method: 'PUT',
       headers: {
@@ -754,7 +772,9 @@ function App() {
       setSelectedUserDetail(uDetail);
       setUserDetailModalOpen(true);
     },
-    downloadReviewedCSV: downloadReviewedCSV
+    downloadReviewedCSV: downloadReviewedCSV,
+    deleteQuiz: deleteQuiz,
+    toggleQuizStatus: toggleQuizStatus
   }))), authModal && /*#__PURE__*/React.createElement(AuthModal, {
     authModal: authModal,
     setAuthModal: setAuthModal,
@@ -818,7 +838,20 @@ function App() {
       setQuizEditorModalOpen(false);
       setEditingQuiz(null);
     },
-    onSaved: () => loadQuizzes()
+    onSaved: savedQuiz => {
+      if (savedQuiz && savedQuiz.id) {
+        setQuizzesList(prev => {
+          const idx = prev.findIndex(q => q && q.id === savedQuiz.id);
+          if (idx !== -1) {
+            const copy = [...prev];
+            copy[idx] = savedQuiz;
+            return copy;
+          }
+          return [savedQuiz, ...prev];
+        });
+      }
+      loadQuizzes();
+    }
   }), /*#__PURE__*/React.createElement(Footer, null));
 }
 
@@ -3136,7 +3169,9 @@ function AdminView({
   openQuizEditorModal,
   openQuizResultsModal,
   openUserDetailModal,
-  downloadReviewedCSV
+  downloadReviewedCSV,
+  deleteQuiz,
+  toggleQuizStatus
 }) {
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'quizzes', 'results', 'questions'
   const [currentPage, setCurrentPage] = useState(1);
@@ -3192,35 +3227,6 @@ function AdminView({
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       }).then(() => fetchAdminQuestions(currentPage));
-    }
-  };
-  const toggleQuizStatus = qz => {
-    const newStatus = qz.status === 'published' ? 'draft' : 'published';
-    fetch(`${API_BASE}/api/quizzes/${qz.id}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        status: newStatus
-      })
-    }).then(() => loadQuizzes());
-  };
-  const deleteQuiz = id => {
-    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
-      fetch(`${API_BASE}/api/quizzes/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      }).then(res => res.json()).then(data => {
-        if (data.error) alert('Error: ' + data.error);
-        loadQuizzes();
-      }).catch(err => {
-        console.error('Delete quiz error:', err);
-        loadQuizzes();
-      });
     }
   };
 
@@ -3856,7 +3862,7 @@ function QuizEditorModal({
       if (data.error) {
         setError(data.error);
       } else {
-        onSaved();
+        onSaved(data.quiz);
         onClose();
       }
     }).catch(err => setError(err.message));

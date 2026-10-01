@@ -5,6 +5,7 @@
  */
 
 (function() {
+  const originalFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
   const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/mechanical-neust/databases/(default)/documents';
 
   const STORAGE_KEYS = {
@@ -89,7 +90,7 @@
       return (data.documents || []).map(fromFirestoreDoc).filter(Boolean);
     } catch (e) {
       console.warn(`[Firestore Cloud] Fallback to cache for ${collectionName}:`, e.message);
-      return [];
+      return null;
     }
   }
 
@@ -409,6 +410,9 @@
     if (type === 'NEW_QUIZ' || type === 'UPDATE_QUIZ') {
       const incomingQuiz = data;
       if (incomingQuiz && incomingQuiz.id) {
+        let deletedIds = getLocal('me_deleted_quiz_ids', []);
+        if (deletedIds.includes(incomingQuiz.id)) return; // Do not revive if locally or globally deleted!
+
         let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
         const idx = currentQuizzes.findIndex(q => q.id === incomingQuiz.id);
         if (idx !== -1) {
@@ -425,7 +429,7 @@
       const { quizId } = data || {};
       if (quizId) {
         let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-        currentQuizzes = currentQuizzes.filter(q => q.id !== quizId);
+        currentQuizzes = currentQuizzes.filter(q => q && q.id !== quizId);
         setLocal(STORAGE_KEYS.QUIZZES, currentQuizzes);
 
         let deletedIds = getLocal('me_deleted_quiz_ids', []);
@@ -441,11 +445,17 @@
       const localUsers = getLocal(STORAGE_KEYS.USERS, []);
       const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-      if (localUsers.length > 0 || localAttempts.length > 0) {
+      const localDeleted = getLocal('me_deleted_quiz_ids', []);
+      if (localUsers.length > 0 || localAttempts.length > 0 || localQuizzes.length > 0) {
         try {
           const payload = JSON.stringify({
             type: 'STATE_RESPONSE',
-            data: { users: localUsers, attempts: localAttempts.slice(0, 50), quizzes: localQuizzes },
+            data: { 
+              users: localUsers, 
+              attempts: localAttempts.slice(0, 50), 
+              quizzes: localQuizzes,
+              deletedQuizIds: localDeleted
+            },
             sender: LIVE_CLIENT_ID,
             timestamp: Date.now()
           });
@@ -458,8 +468,16 @@
     }
 
     if (type === 'STATE_RESPONSE') {
-      const { users, attempts, quizzes } = data || {};
+      const { users, attempts, quizzes, deletedQuizIds } = data || {};
       let changed = false;
+
+      if (Array.isArray(deletedQuizIds) && deletedQuizIds.length > 0) {
+        let currentDeleted = getLocal('me_deleted_quiz_ids', []);
+        const mergedDeleted = Array.from(new Set([...currentDeleted, ...deletedQuizIds]));
+        setLocal('me_deleted_quiz_ids', mergedDeleted);
+      }
+      const allDeleted = getLocal('me_deleted_quiz_ids', []);
+
       if (Array.isArray(users) && users.length > 0) {
         let currentUsers = getLocal(STORAGE_KEYS.USERS, []);
         const merged = mergeUsers(currentUsers, users);
@@ -482,8 +500,8 @@
       if (Array.isArray(quizzes) && quizzes.length > 0) {
         let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
         const map = new Map();
-        currentQuizzes.forEach(q => map.set(q.id, q));
-        quizzes.forEach(q => map.set(q.id, q));
+        currentQuizzes.forEach(q => { if (q && q.id && !allDeleted.includes(q.id)) map.set(q.id, q); });
+        quizzes.forEach(q => { if (q && q.id && !allDeleted.includes(q.id)) map.set(q.id, q); });
         setLocal(STORAGE_KEYS.QUIZZES, Array.from(map.values()));
         changed = true;
       }
@@ -524,7 +542,7 @@
   async function getAllAttempts() {
     let attempts = [];
     const cloudAttempts = await cloudFetchCollection('attempts');
-    if (cloudAttempts.length > 0) {
+    if (cloudAttempts !== null && Array.isArray(cloudAttempts) && cloudAttempts.length > 0) {
       attempts = cloudAttempts;
     } else {
       attempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
@@ -546,50 +564,53 @@
   }
 
   async function getAllQuizzes() {
-    // 1. Fetch all globally deleted quizzes from Cloud Firestore
-    let cloudDeletedDocs = [];
+    // 1. Retrieve all known locally deleted quiz IDs
+    const localDeletedIds = getLocal('me_deleted_quiz_ids', []);
+
+    // 2. Fetch deleted quizzes from Cloud Firestore (if available)
+    let cloudDeletedDocs = null;
     try {
       cloudDeletedDocs = await cloudFetchCollection('deleted_quizzes');
     } catch (e) {
       console.warn('[Firestore Cloud] Error fetching deleted_quizzes:', e);
     }
-    const cloudDeletedIds = cloudDeletedDocs.map(d => d.id || d._id).filter(Boolean);
-
-    // 2. Cross-sync any local deletion flags to Cloud Firestore
-    const localDeletedIds = getLocal('me_deleted_quiz_ids', []);
+    const cloudDeletedIds = (cloudDeletedDocs || []).map(d => d.id || d._id).filter(Boolean);
     const allDeletedIds = Array.from(new Set([...cloudDeletedIds, ...localDeletedIds]));
     setLocal('me_deleted_quiz_ids', allDeletedIds);
 
-    // Auto-sync any local deletions that haven't reached Firestore yet
-    for (const delId of localDeletedIds) {
-      if (!cloudDeletedIds.includes(delId)) {
-        cloudSaveDoc('deleted_quizzes', delId, {
-          id: delId,
-          deletedAt: new Date().toISOString(),
-          syncedFrom: 'admin_device_cache'
-        }).catch(console.error);
-        cloudDeleteDoc('quizzes', delId).catch(console.error);
-      }
+    // 3. Retrieve local quizzes from local storage
+    let localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+    if (localQuizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
+      localQuizzes = [...window.INITIAL_QUIZZES];
     }
 
-    // 3. Fetch active quizzes from Cloud Firestore (Direct Authoritative Database)
-    let quizzes = [];
+    // 4. Fetch active quizzes from Cloud Firestore (if available)
+    let cloudQuizzes = null;
     try {
-      const cloudQuizzes = await cloudFetchCollection('quizzes');
-      if (Array.isArray(cloudQuizzes)) {
-        quizzes = cloudQuizzes;
-      }
+      cloudQuizzes = await cloudFetchCollection('quizzes');
     } catch (e) {
-      console.warn('[Firestore Cloud] Error fetching quizzes, using offline cache:', e);
-      quizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      console.warn('[Firestore Cloud] Error fetching quizzes:', e);
     }
 
-    // 4. Absolute Guarantee: Exclude any quiz in allDeletedIds
-    quizzes = quizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+    // 5. Merge Cloud and Local Quizzes safely:
+    // If cloudQuizzes is an array: merge cloud and local by ID so neither is lost
+    // If cloudQuizzes is null (e.g. 429 quota or offline): retain localQuizzes safely intact!
+    let mergedQuizzes = [];
+    if (cloudQuizzes !== null && Array.isArray(cloudQuizzes)) {
+      const map = new Map();
+      localQuizzes.forEach(q => { if (q && q.id) map.set(q.id, q); });
+      cloudQuizzes.forEach(q => { if (q && q.id) map.set(q.id, q); });
+      mergedQuizzes = Array.from(map.values());
+    } else {
+      mergedQuizzes = localQuizzes;
+    }
 
-    // 5. Update local cache with sanitized, live active quizzes
-    setLocal(STORAGE_KEYS.QUIZZES, quizzes);
-    return quizzes;
+    // 6. Absolute Guarantee: Exclude any quiz in allDeletedIds
+    const sanitized = mergedQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+
+    // 7. Update local cache with sanitized, live active quizzes
+    setLocal(STORAGE_KEYS.QUIZZES, sanitized);
+    return sanitized;
   }
 
   function calculateAdaptiveAnalyticsSync(studentId, users, attempts) {
@@ -687,7 +708,6 @@
   }
 
   // Intercept window.fetch to direct all requests to Cloud Firestore
-  const originalFetch = window.fetch;
   window.fetch = async function(url, options = {}) {
     const urlStr = typeof url === 'string' ? url : (url.url || '');
     
@@ -1350,7 +1370,13 @@
         const attempts = await getAllAttempts();
         const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
         const myAttempts = attempts.filter(a => a.studentId === currentUser.id || (currentUser.email && a.studentEmail === currentUser.email));
-        const enriched = quizzes.map(q => {
+        
+        let filteredQuizzes = quizzes;
+        if (currentUser.role !== 'admin') {
+          filteredQuizzes = quizzes.filter(q => q.status === 'published');
+        }
+
+        const enriched = filteredQuizzes.map(q => {
           const quizAtts = attempts.filter(a => a.quizId === q.id);
           const total = quizAtts.length;
           const avg = total > 0 ? Math.round(quizAtts.reduce((acc, a) => acc + (a.scorePct || a.percentage || 0), 0) / total) : 0;
@@ -1381,24 +1407,25 @@
           createdDate: new Date().toISOString().split('T')[0]
         };
 
-        // Remove from deleted list if present locally & in Cloud
+        // Remove from deleted list if present locally
         let deletedIds = getLocal('me_deleted_quiz_ids', []);
         deletedIds = deletedIds.filter(id => id !== newQuiz.id);
         setLocal('me_deleted_quiz_ids', deletedIds);
-        await cloudDeleteDoc('deleted_quizzes', newQuiz.id);
-
-        // Save to Cloud Firestore
-        await cloudSaveDoc('quizzes', newQuiz.id, newQuiz);
 
         // Immediately update local storage so UI renders new quiz without waiting
         let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-        if (currentQuizzes.length === 0 && window.INITIAL_QUIZZES) {
+        if (currentQuizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
           currentQuizzes = [...window.INITIAL_QUIZZES];
         }
-        currentQuizzes = currentQuizzes.filter(q => q.id !== newQuiz.id);
+        currentQuizzes = currentQuizzes.filter(q => q && q.id !== newQuiz.id);
         currentQuizzes.unshift(newQuiz);
         setLocal(STORAGE_KEYS.QUIZZES, currentQuizzes);
+
+        // Broadcast to all connected devices in real time via WebSockets
         broadcastLiveEvent('NEW_QUIZ', newQuiz);
+
+        // Save to Cloud Firestore in background (non-blocking)
+        cloudSaveDoc('quizzes', newQuiz.id, newQuiz).catch(console.error);
 
         return jsonResponse({ message: 'Quiz created and published live across all devices.', quiz: newQuiz });
       }
@@ -1424,8 +1451,8 @@
         if (updates.specificQuestionIds !== undefined) quizzes[idx].specificQuestionIds = updates.specificQuestionIds;
 
         setLocal(STORAGE_KEYS.QUIZZES, quizzes);
-        await cloudSaveDoc('quizzes', id, quizzes[idx]);
         broadcastLiveEvent('UPDATE_QUIZ', quizzes[idx]);
+        cloudSaveDoc('quizzes', id, quizzes[idx]).catch(console.error);
 
         return jsonResponse({ message: 'Quiz updated live across all devices.', quiz: quizzes[idx] });
       }
@@ -1444,25 +1471,25 @@
 
         // 2. Immediately remove from local cache
         let quizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-        if (quizzes.length === 0 && window.INITIAL_QUIZZES) {
+        if (quizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
           quizzes = [...window.INITIAL_QUIZZES];
         }
-        quizzes = quizzes.filter(q => q.id !== id);
+        quizzes = quizzes.filter(q => q && q.id !== id);
         setLocal(STORAGE_KEYS.QUIZZES, quizzes);
 
-        // 3. PERSIST DELETION TO CLOUD FIRESTORE IMMEDIATELY (AWAITED)
+        // 3. Broadcast deletion event to all connected devices in real time!
+        broadcastLiveEvent('DELETE_QUIZ', { quizId: id });
+
+        // 4. Persist deletion to Cloud Firestore in background (non-blocking)
         const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
-        await cloudSaveDoc('deleted_quizzes', id, {
+        cloudSaveDoc('deleted_quizzes', id, {
           id,
           deletedAt: new Date().toISOString(),
           deletedBy: currentUser.email || currentUser.fullName || 'admin'
-        });
+        }).catch(console.error);
+        cloudDeleteDoc('quizzes', id).catch(console.error);
 
-        // 4. Delete document from Firestore quizzes collection (AWAITED)
-        await cloudDeleteDoc('quizzes', id);
-        broadcastLiveEvent('DELETE_QUIZ', { quizId: id });
-
-        return jsonResponse({ message: 'Quiz permanently deleted across all devices and accounts.' });
+        return jsonResponse({ message: 'Quiz permanently deleted across all devices and accounts.', quizId: id });
       }
     }
 

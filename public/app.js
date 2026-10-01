@@ -3130,7 +3130,7 @@ function UserModal({ editingUser, onClose, onSaved }) {
     const url = isEdit ? `${API_BASE}/api/users/${editingUser.id}` : `${API_BASE}/api/users`;
     const method = isEdit ? 'PUT' : 'POST';
 
-    const body = { fullName, role, status, school, targetExamDate };
+    const body = { fullName, role: 'student', status, school, targetExamDate };
     if (!isEdit) {
       body.email = email;
       body.password = password;
@@ -3181,11 +3181,8 @@ function UserModal({ editingUser, onClose, onSaved }) {
           )}
           <div className="grid-2col">
             <div className="form-group">
-              <label>Role <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Max 4 Admins Allowed)</span></label>
-              <select className="form-control" value={role} onChange={e => setRole(e.target.value)}>
-                <option value="student">Student</option>
-                <option value="admin">Administrator (Max 4 Limit)</option>
-              </select>
+              <label>Role</label>
+              <input type="text" className="form-control" value="Student (Reviewee)" disabled style={{ opacity: 0.85, cursor: 'not-allowed' }} />
             </div>
             <div className="form-group">
               <label>Status</label>

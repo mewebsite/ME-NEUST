@@ -448,13 +448,7 @@
           return jsonResponse({ error: 'Email is already registered.' }, 400);
         }
 
-        const assignedRole = role === 'admin' ? 'admin' : 'student';
-        if (assignedRole === 'admin') {
-          const adminCount = users.filter(u => u.role === 'admin').length;
-          if (adminCount >= 4) {
-            return jsonResponse({ error: 'Maximum limit of 4 administrators reached. Only 4 admin accounts are allowed on this platform.' }, 400);
-          }
-        }
+        const assignedRole = 'student';
 
         const newUser = {
           id: `usr_${Date.now()}`,

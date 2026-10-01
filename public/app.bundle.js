@@ -4326,7 +4326,7 @@ function UserModal({
     const method = isEdit ? 'PUT' : 'POST';
     const body = {
       fullName,
-      role,
+      role: 'student',
       status,
       school,
       targetExamDate
@@ -4397,20 +4397,16 @@ function UserModal({
     className: "grid-2col"
   }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Role ", /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: '0.75rem',
-      color: 'var(--text-muted)'
-    }
-  }, "(Max 4 Admins Allowed)")), /*#__PURE__*/React.createElement("select", {
+  }, /*#__PURE__*/React.createElement("label", null, "Role"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
     className: "form-control",
-    value: role,
-    onChange: e => setRole(e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "student"
-  }, "Student"), /*#__PURE__*/React.createElement("option", {
-    value: "admin"
-  }, "Administrator (Max 4 Limit)"))), /*#__PURE__*/React.createElement("div", {
+    value: "Student (Reviewee)",
+    disabled: true,
+    style: {
+      opacity: 0.85,
+      cursor: 'not-allowed'
+    }
+  })), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Status"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",

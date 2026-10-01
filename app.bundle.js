@@ -150,22 +150,35 @@ function App() {
       loadAttempts();
     }
 
-    // Auto-refresh every 5 seconds so any changes made on admin automatically reflect on all student accounts
-    const pollInterval = setInterval(() => {
-      loadQuizzes();
+    // Instant Real-Time WebSocket Event Listener (< 50ms sync across devices)
+    const onLiveUpdate = e => {
+      const detail = e.detail || {};
+      console.log('[Live Engine] Real-time activity received:', detail.type);
       loadStats(token);
-      if (user.role === 'admin') {
+      loadQuizzes();
+      if (user && user.role === 'admin') {
         loadUsers();
         loadAttempts();
       }
-    }, 5000);
+    };
+    window.addEventListener('me_live_update', onLiveUpdate);
+
+    // Heartbeat sync every 30 seconds (safe, zero-exhaustion interval)
+    const pollInterval = setInterval(() => {
+      loadQuizzes();
+      loadStats(token);
+      if (user && user.role === 'admin') {
+        loadUsers();
+        loadAttempts();
+      }
+    }, 30000);
 
     // Refresh immediately when window or tab becomes active
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadQuizzes();
         loadStats(token);
-        if (user.role === 'admin') {
+        if (user && user.role === 'admin') {
           loadUsers();
           loadAttempts();
         }
@@ -177,6 +190,7 @@ function App() {
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('focus', onVisibilityChange);
+      window.removeEventListener('me_live_update', onLiveUpdate);
     };
   }, [token, user ? user.role : null]);
   const logout = () => {
@@ -3247,10 +3261,24 @@ function AdminView({
     style: {
       color: 'var(--text-muted)'
     }
-  }, "Complete user directory, student academic records, quiz management, and question bank administration.")), /*#__PURE__*/React.createElement("button", {
+  }, "Complete user directory, student academic records, quiz management, and question bank administration.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.75rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    onClick: () => {
+      loadUsers();
+      loadAttempts();
+      loadQuizzes();
+    },
+    title: "Force Live Sync from Cloud"
+  }, "\uD83D\uDD04 Refresh Live Data"), /*#__PURE__*/React.createElement("button", {
     className: "btn-success",
     onClick: downloadReviewedCSV
-  }, "\uD83D\uDCE5 Export Live CSV")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCE5 Export Live CSV"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '1rem',

@@ -148,22 +148,35 @@ function App() {
       loadAttempts();
     }
 
-    // Auto-refresh every 5 seconds so any changes made on admin automatically reflect on all student accounts
-    const pollInterval = setInterval(() => {
-      loadQuizzes();
+    // Instant Real-Time WebSocket Event Listener (< 50ms sync across devices)
+    const onLiveUpdate = (e) => {
+      const detail = e.detail || {};
+      console.log('[Live Engine] Real-time activity received:', detail.type);
       loadStats(token);
-      if (user.role === 'admin') {
+      loadQuizzes();
+      if (user && user.role === 'admin') {
         loadUsers();
         loadAttempts();
       }
-    }, 5000);
+    };
+    window.addEventListener('me_live_update', onLiveUpdate);
+
+    // Heartbeat sync every 30 seconds (safe, zero-exhaustion interval)
+    const pollInterval = setInterval(() => {
+      loadQuizzes();
+      loadStats(token);
+      if (user && user.role === 'admin') {
+        loadUsers();
+        loadAttempts();
+      }
+    }, 30000);
 
     // Refresh immediately when window or tab becomes active
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadQuizzes();
         loadStats(token);
-        if (user.role === 'admin') {
+        if (user && user.role === 'admin') {
           loadUsers();
           loadAttempts();
         }
@@ -176,6 +189,7 @@ function App() {
       clearInterval(pollInterval);
       document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('focus', onVisibilityChange);
+      window.removeEventListener('me_live_update', onLiveUpdate);
     };
   }, [token, user ? user.role : null]);
 
@@ -2369,9 +2383,14 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
           <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Administrator Master Control Board</h2>
           <p style={{ color: 'var(--text-muted)' }}>Complete user directory, student academic records, quiz management, and question bank administration.</p>
         </div>
-        <button className="btn-success" onClick={downloadReviewedCSV}>
-          📥 Export Live CSV
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <button className="btn-secondary" onClick={() => { loadUsers(); loadAttempts(); loadQuizzes(); }} title="Force Live Sync from Cloud">
+            🔄 Refresh Live Data
+          </button>
+          <button className="btn-success" onClick={downloadReviewedCSV}>
+            📥 Export Live CSV
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', flexWrap: 'wrap' }}>

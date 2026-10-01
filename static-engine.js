@@ -147,19 +147,377 @@
     return CORE_MODULES[0];
   }
 
+  // --- SEED USERS (Always available baseline including all administrators) ---
+  const SEED_USERS = [
+    {
+      id: "usr_admin_1",
+      fullName: "Lead Faculty Administrator",
+      email: "admin1@boardprep.edu.ph",
+      password: "admin123",
+      role: "admin",
+      status: "active",
+      createdDate: "2026-07-27",
+      school: "NEUST"
+    },
+    {
+      id: "usr_1785127116553",
+      fullName: "John Lorenz Castro",
+      email: "castrojohnlorenz015@gmail.com",
+      password: "admin123",
+      role: "admin",
+      status: "active",
+      createdDate: "2026-07-27",
+      school: "NEUST",
+      diagnosticCompleted: true,
+      diagnosticScore: 14,
+      diagnosticDate: "2026-08-11"
+    },
+    {
+      id: "usr_admin_3",
+      fullName: "Academic Admin 3",
+      email: "admin3@boardprep.edu.ph",
+      password: "admin123",
+      role: "admin",
+      status: "active",
+      createdDate: "2026-07-27",
+      school: "NEUST"
+    },
+    {
+      id: "usr_admin_4",
+      fullName: "Academic Admin 4",
+      email: "admin4@boardprep.edu.ph",
+      password: "admin123",
+      role: "admin",
+      status: "active",
+      createdDate: "2026-07-27",
+      school: "NEUST"
+    },
+    {
+      id: "usr_1785723259255",
+      fullName: "Maria Santos",
+      email: "teststudent_1785723259138@me-boardprep.edu",
+      password: "student123",
+      role: "student",
+      status: "active",
+      createdDate: "2026-08-03",
+      school: "UP Diliman",
+      targetExamDate: "2026-10-15"
+    },
+    {
+      id: "usr_1786429568399",
+      fullName: "renz",
+      email: "dsds@gmail.com",
+      password: "student123",
+      role: "student",
+      status: "active",
+      createdDate: "2026-08-11",
+      school: "NEUST",
+      targetExamDate: "2026-10-15",
+      diagnosticCompleted: true,
+      diagnosticScore: 16,
+      diagnosticDate: "2026-08-11",
+      simulationScore: 4,
+      simulationAttemptsCount: 5
+    },
+    {
+      id: "usr_1786434961655",
+      fullName: "Frans",
+      email: "frans@gmail.com",
+      password: "student123",
+      role: "student",
+      status: "active",
+      createdDate: "2026-08-11",
+      school: "NEUST",
+      targetExamDate: "2026-10-15",
+      diagnosticCompleted: true,
+      diagnosticScore: 13,
+      diagnosticDate: "2026-08-11"
+    },
+    {
+      id: "usr_1786435508595",
+      fullName: "lorenz",
+      email: "lorenz@gmail.com",
+      password: "student123",
+      role: "student",
+      status: "active",
+      createdDate: "2026-08-11",
+      school: "NEUST",
+      targetExamDate: "2026-10-15",
+      diagnosticCompleted: true,
+      diagnosticScore: 1,
+      diagnosticDate: "2026-08-11"
+    },
+    {
+      id: "usr_1787791492377",
+      fullName: "Test Student",
+      email: "test_1787791492223@test.com",
+      password: "student123",
+      role: "student",
+      status: "active",
+      createdDate: "2026-08-27",
+      school: "Test",
+      targetExamDate: "2026-10-15",
+      diagnosticCompleted: true,
+      diagnosticScore: 0,
+      diagnosticDate: "2026-08-27",
+      simulationPassed: false,
+      simulationScore: 0,
+      simulationAttemptsCount: 1
+    }
+  ];
+
+  function mergeUsers(existing, incoming) {
+    const map = new Map();
+    (existing || []).forEach(u => {
+      if (u) {
+        const k = (u.id || u.email || '').toLowerCase();
+        if (k) map.set(k, u);
+      }
+    });
+    (incoming || []).forEach(u => {
+      if (u) {
+        const k = (u.id || u.email || '').toLowerCase();
+        if (k) {
+          if (map.has(k)) {
+            map.set(k, { ...map.get(k), ...u });
+          } else {
+            map.set(k, u);
+          }
+        }
+      }
+    });
+    return Array.from(map.values());
+  }
+
+  // --- REAL-TIME WEBSOCKET SYNCHRONIZATION ENGINE ---
+  const SYNC_TOPIC_EVENTS = 'neust/me-boardprep/v2/events';
+  const SYNC_TOPIC_STATE = 'neust/me-boardprep/v2/state';
+  const LIVE_CLIENT_ID = 'me_client_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+  let pahoClient = null;
+  let isMqttConnected = false;
+
+  function initLiveSyncEngine() {
+    if (typeof Paho === 'undefined' || !Paho.MQTT || !Paho.MQTT.Client) {
+      setTimeout(initLiveSyncEngine, 500);
+      return;
+    }
+    if (pahoClient && isMqttConnected) return;
+
+    try {
+      pahoClient = new Paho.MQTT.Client('broker.emqx.io', 8084, '/mqtt', LIVE_CLIENT_ID);
+
+      pahoClient.onConnectionLost = function(resp) {
+        isMqttConnected = false;
+        console.warn('[Live Sync] Disconnected:', resp.errorMessage, 'Reconnecting in 4s...');
+        setTimeout(initLiveSyncEngine, 4000);
+      };
+
+      pahoClient.onMessageArrived = function(message) {
+        try {
+          const payload = JSON.parse(message.payloadString);
+          if (payload.sender === LIVE_CLIENT_ID) return; // Ignore own echo
+          handleIncomingLiveEvent(payload);
+        } catch (e) {
+          console.error('[Live Sync] Failed to parse message:', e);
+        }
+      };
+
+      pahoClient.connect({
+        useSSL: true,
+        timeout: 10,
+        keepAliveInterval: 30,
+        cleanSession: true,
+        onSuccess: function() {
+          isMqttConnected = true;
+          console.log('[Live Sync] Connected to global real-time synchronization broker!');
+          pahoClient.subscribe(SYNC_TOPIC_EVENTS, { qos: 1 });
+          pahoClient.subscribe(SYNC_TOPIC_STATE, { qos: 1 });
+
+          // Request state from active peers so newly opened browsers get all users and activities immediately
+          broadcastLiveEvent('REQUEST_STATE', { requester: LIVE_CLIENT_ID });
+        },
+        onFailure: function(err) {
+          isMqttConnected = false;
+          console.warn('[Live Sync] Connect failure:', err.errorMessage, 'Retrying in 5s...');
+          setTimeout(initLiveSyncEngine, 5000);
+        }
+      });
+    } catch (e) {
+      console.error('[Live Sync] Init error:', e);
+    }
+  }
+
+  function broadcastLiveEvent(type, data) {
+    if (!pahoClient || !isMqttConnected) {
+      setTimeout(() => broadcastLiveEvent(type, data), 1500);
+      return;
+    }
+    try {
+      const payload = JSON.stringify({
+        type,
+        data,
+        sender: LIVE_CLIENT_ID,
+        timestamp: Date.now()
+      });
+      const message = new Paho.MQTT.Message(payload);
+      message.destinationName = SYNC_TOPIC_EVENTS;
+      message.qos = 1;
+      pahoClient.send(message);
+      console.log(`[Live Sync] Broadcasted event: ${type}`);
+    } catch (e) {
+      console.error(`[Live Sync] Error broadcasting ${type}:`, e);
+    }
+  }
+
+  function handleIncomingLiveEvent(event) {
+    const { type, data } = event;
+    console.log(`[Live Sync] Incoming event: ${type}`, data);
+
+    if (type === 'USER_REGISTERED' || type === 'NEW_USER' || type === 'UPDATE_USER') {
+      const incomingUser = data;
+      if (incomingUser && (incomingUser.id || incomingUser.email)) {
+        let currentUsers = getLocal(STORAGE_KEYS.USERS, []);
+        currentUsers = mergeUsers(currentUsers, [incomingUser]);
+        setLocal(STORAGE_KEYS.USERS, currentUsers);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'USER_UPDATE', user: incomingUser } }));
+      }
+    }
+
+    if (type === 'DELETE_USER') {
+      const { id } = data || {};
+      if (id) {
+        let currentUsers = getLocal(STORAGE_KEYS.USERS, []);
+        currentUsers = currentUsers.filter(u => u.id !== id);
+        setLocal(STORAGE_KEYS.USERS, currentUsers);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'USER_DELETE', id } }));
+      }
+    }
+
+    if (type === 'NEW_ATTEMPT') {
+      const incomingAttempt = data;
+      if (incomingAttempt && incomingAttempt.id) {
+        let currentAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+        if (!currentAttempts.find(a => a.id === incomingAttempt.id)) {
+          currentAttempts.unshift(incomingAttempt);
+          setLocal(STORAGE_KEYS.ATTEMPTS, currentAttempts);
+          window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'ATTEMPT_UPDATE', attempt: incomingAttempt } }));
+        }
+      }
+    }
+
+    if (type === 'NEW_QUIZ' || type === 'UPDATE_QUIZ') {
+      const incomingQuiz = data;
+      if (incomingQuiz && incomingQuiz.id) {
+        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+        const idx = currentQuizzes.findIndex(q => q.id === incomingQuiz.id);
+        if (idx !== -1) {
+          currentQuizzes[idx] = incomingQuiz;
+        } else {
+          currentQuizzes.unshift(incomingQuiz);
+        }
+        setLocal(STORAGE_KEYS.QUIZZES, currentQuizzes);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_UPDATE', quiz: incomingQuiz } }));
+      }
+    }
+
+    if (type === 'DELETE_QUIZ') {
+      const { quizId } = data || {};
+      if (quizId) {
+        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+        currentQuizzes = currentQuizzes.filter(q => q.id !== quizId);
+        setLocal(STORAGE_KEYS.QUIZZES, currentQuizzes);
+
+        let deletedIds = getLocal('me_deleted_quiz_ids', []);
+        if (!deletedIds.includes(quizId)) {
+          deletedIds.push(quizId);
+          setLocal('me_deleted_quiz_ids', deletedIds);
+        }
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_DELETE', quizId } }));
+      }
+    }
+
+    if (type === 'REQUEST_STATE') {
+      const localUsers = getLocal(STORAGE_KEYS.USERS, []);
+      const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      if (localUsers.length > 0 || localAttempts.length > 0) {
+        try {
+          const payload = JSON.stringify({
+            type: 'STATE_RESPONSE',
+            data: { users: localUsers, attempts: localAttempts.slice(0, 50), quizzes: localQuizzes },
+            sender: LIVE_CLIENT_ID,
+            timestamp: Date.now()
+          });
+          const message = new Paho.MQTT.Message(payload);
+          message.destinationName = SYNC_TOPIC_STATE;
+          message.qos = 0;
+          pahoClient.send(message);
+        } catch (e) {}
+      }
+    }
+
+    if (type === 'STATE_RESPONSE') {
+      const { users, attempts, quizzes } = data || {};
+      let changed = false;
+      if (Array.isArray(users) && users.length > 0) {
+        let currentUsers = getLocal(STORAGE_KEYS.USERS, []);
+        const merged = mergeUsers(currentUsers, users);
+        if (merged.length !== currentUsers.length) {
+          setLocal(STORAGE_KEYS.USERS, merged);
+          changed = true;
+        }
+      }
+      if (Array.isArray(attempts) && attempts.length > 0) {
+        let currentAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+        const map = new Map();
+        currentAttempts.forEach(a => map.set(a.id, a));
+        attempts.forEach(a => map.set(a.id, a));
+        const mergedAtt = Array.from(map.values()).sort((a,b) => (new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0)));
+        if (mergedAtt.length !== currentAttempts.length) {
+          setLocal(STORAGE_KEYS.ATTEMPTS, mergedAtt);
+          changed = true;
+        }
+      }
+      if (Array.isArray(quizzes) && quizzes.length > 0) {
+        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+        const map = new Map();
+        currentQuizzes.forEach(q => map.set(q.id, q));
+        quizzes.forEach(q => map.set(q.id, q));
+        setLocal(STORAGE_KEYS.QUIZZES, Array.from(map.values()));
+        changed = true;
+      }
+      if (changed) {
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'STATE_MERGED' } }));
+      }
+    }
+  }
+
+  // Start Real-Time WebSocket Synchronization immediately
+  if (typeof window !== 'undefined') {
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', initLiveSyncEngine);
+    } else {
+      setTimeout(initLiveSyncEngine, 100);
+    }
+  }
+
   async function getAllUsers() {
     let users = [];
     try {
       const cloudUsers = await cloudFetchCollection('users');
       if (cloudUsers && cloudUsers.length > 0) {
         users = cloudUsers;
-        setLocal(STORAGE_KEYS.USERS, users);
-        return users;
+        const merged = mergeUsers(SEED_USERS, users);
+        setLocal(STORAGE_KEYS.USERS, merged);
+        return merged;
       }
     } catch (e) {
       console.warn('[Firestore Cloud] Error fetching users:', e);
     }
-    users = getLocal(STORAGE_KEYS.USERS, []);
+    const local = getLocal(STORAGE_KEYS.USERS, []);
+    users = mergeUsers(SEED_USERS, local);
+    setLocal(STORAGE_KEYS.USERS, users);
     return users;
   }
 
@@ -386,6 +744,9 @@
       setLocal(STORAGE_KEYS.USERS, users);
       setLocal(STORAGE_KEYS.CURRENT_USER, newUser);
 
+      // Broadcast live to all connected devices in real time!
+      broadcastLiveEvent('USER_REGISTERED', newUser);
+
       return jsonResponse({ message: 'Account created successfully', token: newUser.id, user: newUser });
     }
 
@@ -467,6 +828,7 @@
         users.push(newUser);
         setLocal(STORAGE_KEYS.USERS, users);
         cloudSaveDoc('users', newUser.id, newUser).catch(console.error);
+        broadcastLiveEvent('NEW_USER', newUser);
 
         return jsonResponse({ message: 'User account created successfully', user: newUser });
       }
@@ -494,6 +856,7 @@
 
         setLocal(STORAGE_KEYS.USERS, users);
         cloudSaveDoc('users', id, users[idx]).catch(console.error);
+        broadcastLiveEvent('UPDATE_USER', users[idx]);
 
         return jsonResponse({ message: 'User updated successfully', user: users[idx] });
       }
@@ -514,6 +877,7 @@
         const filteredUsers = users.filter(u => u.id !== id);
         setLocal(STORAGE_KEYS.USERS, filteredUsers);
         await cloudDeleteDoc('users', id);
+        broadcastLiveEvent('DELETE_USER', { id });
 
         return jsonResponse({ message: 'User account permanently deleted successfully' });
       }
@@ -551,6 +915,9 @@
       const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       localAttempts.unshift(newAttempt);
       setLocal(STORAGE_KEYS.ATTEMPTS, localAttempts);
+
+      // Broadcast live to all connected devices in real time!
+      broadcastLiveEvent('NEW_ATTEMPT', newAttempt);
 
       return jsonResponse({ message: 'Quiz attempt recorded in Cloud Database', attempt: newAttempt });
     }
@@ -623,6 +990,10 @@
       const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       localAtts.unshift(attempt);
       setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
+      broadcastLiveEvent('NEW_ATTEMPT', attempt);
+      if (currentUser && currentUser.id) {
+        broadcastLiveEvent('UPDATE_USER', currentUser);
+      }
 
       return jsonResponse({ message: 'Diagnostic Exam recorded in Cloud Database', attempt });
     }
@@ -702,6 +1073,7 @@
       const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       localAtts.unshift(attempt);
       setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
+      broadcastLiveEvent('NEW_ATTEMPT', attempt);
 
       const users = await getAllUsers();
       const attempts = await getAllAttempts();
@@ -780,6 +1152,10 @@
       const localAtts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       localAtts.unshift(attempt);
       setLocal(STORAGE_KEYS.ATTEMPTS, localAtts);
+      broadcastLiveEvent('NEW_ATTEMPT', attempt);
+      if (currentUser && currentUser.id) {
+        broadcastLiveEvent('UPDATE_USER', currentUser);
+      }
 
       const msg = passed
         ? 'Congratulations! You have passed the Licensure Exam Simulation!'
@@ -1022,6 +1398,7 @@
         currentQuizzes = currentQuizzes.filter(q => q.id !== newQuiz.id);
         currentQuizzes.unshift(newQuiz);
         setLocal(STORAGE_KEYS.QUIZZES, currentQuizzes);
+        broadcastLiveEvent('NEW_QUIZ', newQuiz);
 
         return jsonResponse({ message: 'Quiz created and published live across all devices.', quiz: newQuiz });
       }
@@ -1048,6 +1425,7 @@
 
         setLocal(STORAGE_KEYS.QUIZZES, quizzes);
         await cloudSaveDoc('quizzes', id, quizzes[idx]);
+        broadcastLiveEvent('UPDATE_QUIZ', quizzes[idx]);
 
         return jsonResponse({ message: 'Quiz updated live across all devices.', quiz: quizzes[idx] });
       }
@@ -1082,6 +1460,7 @@
 
         // 4. Delete document from Firestore quizzes collection (AWAITED)
         await cloudDeleteDoc('quizzes', id);
+        broadcastLiveEvent('DELETE_QUIZ', { quizId: id });
 
         return jsonResponse({ message: 'Quiz permanently deleted across all devices and accounts.' });
       }

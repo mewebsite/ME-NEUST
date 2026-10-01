@@ -805,6 +805,43 @@
       });
     }
 
+    // 14b. DYNAMIC CSV EXPORT (GET /api/download/csv)
+    if (urlStr.includes('/api/download/csv')) {
+      const CSV_HEADERS = [
+        'ID','Type','Module','Topic','Difficulty','DifficultyValue','QuestionText',
+        'OptionA','OptionB','OptionC','OptionD','CorrectAnswer','CurriculumMapID',
+        'CourseCode','Subtopic','Discrimination','Guessing','Active','ExposureCount',
+        'AttemptCount','CorrectCount','AverageTimeSeconds','Explanation','LearningOutcome',
+        'AIReviewStatus','FieldsChanged','CorrectionSummary','References','ConfidenceLevel',
+        'HumanReviewRequired','HumanReviewReason','AIReviewedDate','BatchNumber'
+      ];
+
+      function escapeCSV(val) {
+        if (val === undefined || val === null) return '';
+        const str = String(val);
+        if (/[",\r\n]/.test(str)) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }
+
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      const rows = [CSV_HEADERS.join(',')];
+      for (const q of questions) {
+        const row = CSV_HEADERS.map(h => escapeCSV(q[h]));
+        rows.push(row.join(','));
+      }
+      const csvContent = '\uFEFF' + rows.join('\r\n');
+
+      return new Response(csvContent, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="QuestionBank_Reviewed.csv"'
+        }
+      });
+    }
+
     // 15. QUESTIONS (GET /api/questions with module, search, status, batch, random, ids, limit, page)
     if (urlStr.includes('/api/questions') && method === 'GET') {
       const allQuestions = (window.INITIAL_QUESTIONS || []).filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');

@@ -355,7 +355,7 @@ app.get('/api/questions/stats', authenticateToken, async (req, res) => {
 app.get('/api/download/csv', authenticateToken, async (req, res) => {
   const questions = (await fetchCollection('questions')).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
   if (questions && questions.length > 0) {
-    const csvContent = jsonToCSV(questions);
+    const csvContent = '\uFEFF' + jsonToCSV(questions);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="QuestionBank_Reviewed.csv"');
     return res.send(csvContent);

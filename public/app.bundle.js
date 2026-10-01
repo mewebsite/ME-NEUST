@@ -186,14 +186,20 @@ function App() {
     setView('dashboard');
   };
   const downloadReviewedCSV = () => {
-    fetch(`${API_BASE}/api/download/csv`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    }).then(res => {
-      if (!res.ok) throw new Error('CSV file unavailable on server');
-      return res.blob();
-    }).then(blob => {
+    const generateClientCSV = () => {
+      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q && q.ID !== 'Total' && q.QuestionText);
+      const headers = ['ID', 'Type', 'Module', 'Topic', 'Difficulty', 'DifficultyValue', 'QuestionText', 'OptionA', 'OptionB', 'OptionC', 'OptionD', 'CorrectAnswer', 'CurriculumMapID', 'CourseCode', 'Subtopic', 'Discrimination', 'Guessing', 'Active', 'ExposureCount', 'AttemptCount', 'CorrectCount', 'AverageTimeSeconds', 'Explanation', 'LearningOutcome', 'AIReviewStatus', 'FieldsChanged', 'CorrectionSummary', 'References', 'ConfidenceLevel', 'HumanReviewRequired', 'HumanReviewReason', 'AIReviewedDate', 'BatchNumber'];
+      const rows = [headers.join(',')];
+      questions.forEach(q => {
+        const row = headers.map(h => {
+          const val = q[h] !== undefined && q[h] !== null ? String(q[h]) : '';
+          return /[",\r\n]/.test(val) ? `"${val.replace(/"/g, '""')}"` : val;
+        });
+        rows.push(row.join(','));
+      });
+      const blob = new Blob(['\uFEFF' + rows.join('\r\n')], {
+        type: 'text/csv;charset=utf-8;'
+      });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -202,7 +208,30 @@ function App() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
-    }).catch(err => alert('Error downloading CSV: ' + err.message));
+    };
+    fetch(`${API_BASE}/api/download/csv`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    }).then(res => {
+      if (!res.ok) throw new Error('Download failed');
+      return res.blob();
+    }).then(blob => {
+      if (!blob || blob.size < 100) {
+        generateClientCSV();
+        return;
+      }
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'QuestionBank_Reviewed.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    }).catch(() => {
+      generateClientCSV();
+    });
   };
   const startPracticeMode = ({
     moduleVal,

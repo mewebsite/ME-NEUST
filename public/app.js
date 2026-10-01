@@ -218,7 +218,8 @@ function App() {
     setTimerActive(false);
     setActiveQuiz(null);
 
-    const queryObj = { limit: limitVal };
+    const targetLimit = parseInt(limitVal) || 50;
+    const queryObj = { limit: targetLimit, random: 'true' };
     if (moduleVal) queryObj.module = moduleVal;
     if (batchVal) queryObj.batch = batchVal;
 
@@ -229,7 +230,11 @@ function App() {
     })
     .then(res => res.json())
     .then(data => {
-      setQuestions(data.questions || []);
+      let qList = data.questions || [];
+      if (qList.length > targetLimit) {
+        qList = qList.slice(0, targetLimit);
+      }
+      setQuestions(qList);
       setView('exam');
     })
     .catch(console.error);
@@ -245,10 +250,12 @@ function App() {
     setQuizListModalOpen(false);
 
     let queryUrl = '';
+    const targetCount = parseInt(quiz.questionCount) || 50;
+
     if (quiz.specificQuestionIds && quiz.specificQuestionIds.length > 0) {
       queryUrl = `${API_BASE}/api/questions?ids=${encodeURIComponent(quiz.specificQuestionIds.join(','))}`;
     } else {
-      const queryObj = { limit: quiz.questionCount || 50, random: 'true' };
+      const queryObj = { limit: targetCount, random: 'true' };
       if (quiz.module) queryObj.module = quiz.module;
       queryUrl = `${API_BASE}/api/questions?${new URLSearchParams(queryObj).toString()}`;
     }
@@ -258,7 +265,11 @@ function App() {
     })
     .then(res => res.json())
     .then(data => {
-      setQuestions(data.questions || []);
+      let qList = data.questions || [];
+      if (qList.length > targetCount) {
+        qList = qList.slice(0, targetCount);
+      }
+      setQuestions(qList);
       setView('exam');
       setExamTimer((quiz.durationMins || 50) * 60);
       setTimerActive(true);

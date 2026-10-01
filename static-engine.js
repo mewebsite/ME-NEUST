@@ -811,10 +811,123 @@
       });
     }
 
-    // 15. QUESTIONS
+    // 15. QUESTIONS (GET /api/questions with module, search, status, batch, random, ids, limit, page)
     if (urlStr.includes('/api/questions') && method === 'GET') {
-      const questions = (window.INITIAL_QUESTIONS || []).filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
-      return jsonResponse({ questions, total: questions.length, page: 1, limit: questions.length });
+      const allQuestions = (window.INITIAL_QUESTIONS || []).filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
+      
+      // Parse query parameters
+      const params = {};
+      const qIndex = urlStr.indexOf('?');
+      if (qIndex !== -1) {
+        const queryStr = urlStr.slice(qIndex + 1);
+        const pairs = queryStr.split('&');
+        for (const p of pairs) {
+          if (!p) continue;
+          const eqIdx = p.indexOf('=');
+          const k = eqIdx !== -1 ? p.slice(0, eqIdx) : p;
+          const v = eqIdx !== -1 ? p.slice(eqIdx + 1) : '';
+          try {
+            params[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, ' '));
+          } catch (e) {
+            params[k] = v;
+          }
+        }
+      }
+
+      const ids = params.ids;
+      const modFilter = params.module;
+      const statusFilter = params.status;
+      const batch = params.batch;
+      const search = params.search;
+      const random = params.random;
+      const limit = params.limit;
+      const page = params.page;
+
+      let filtered = [...allQuestions];
+
+      // 1. If specific IDs requested:
+      if (ids) {
+        const idList = ids.split(',').map(i => String(i).trim());
+        const matched = filtered.filter(q => idList.includes(String(q.ID)));
+        return jsonResponse({
+          total: matched.length,
+          page: 1,
+          pageSize: matched.length,
+          totalPages: 1,
+          questions: matched
+        });
+      }
+
+      // 2. Filter by Module (supports comma-separated multiple modules)
+      if (modFilter) {
+        const targetModules = modFilter.split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
+        if (targetModules.length > 0) {
+          filtered = filtered.filter(q => {
+            if (!q.Module) return false;
+            const qMod = q.Module.toLowerCase();
+            return targetModules.some(tm => qMod.includes(tm) || tm.includes(qMod));
+          });
+        }
+      }
+
+      // 3. Filter by Status
+      if (statusFilter) {
+        if (statusFilter === 'reviewed') {
+          filtered = filtered.filter(q => q.AIReviewStatus && q.AIReviewStatus !== '');
+        } else if (statusFilter === 'pending') {
+          filtered = filtered.filter(q => !q.AIReviewStatus || q.AIReviewStatus === '');
+        } else {
+          filtered = filtered.filter(q => q.AIReviewStatus === statusFilter);
+        }
+      }
+
+      // 4. Filter by Batch
+      if (batch) {
+        filtered = filtered.filter(q => String(q.BatchNumber) === String(batch));
+      }
+
+      // 5. Search query
+      if (search) {
+        const s = search.toLowerCase().trim();
+        filtered = filtered.filter(q =>
+          (q.QuestionText && q.QuestionText.toLowerCase().includes(s)) ||
+          (q.ID && String(q.ID).includes(s)) ||
+          (q.Topic && q.Topic.toLowerCase().includes(s)) ||
+          (q.Subtopic && q.Subtopic.toLowerCase().includes(s)) ||
+          (q.Module && q.Module.toLowerCase().includes(s)) ||
+          (q.Explanation && q.Explanation.toLowerCase().includes(s)) ||
+          (q.References && q.References.toLowerCase().includes(s))
+        );
+      }
+
+      // 6. Randomize / Shuffle
+      if (random === 'true') {
+        filtered = [...filtered].sort(() => 0.5 - Math.random());
+      }
+
+      // 7. Paginate / Slice by limit and page
+      const total = filtered.length;
+      if (limit) {
+        const pageSize = Math.max(1, parseInt(limit) || 50);
+        const pageNum = Math.max(1, parseInt(page) || 1);
+        const startIdx = (pageNum - 1) * pageSize;
+        const paginated = filtered.slice(startIdx, startIdx + pageSize);
+        return jsonResponse({
+          total,
+          page: pageNum,
+          pageSize,
+          totalPages: Math.ceil(total / pageSize) || 1,
+          questions: paginated
+        });
+      }
+
+      return jsonResponse({
+        total,
+        page: 1,
+        pageSize: total,
+        totalPages: 1,
+        questions: filtered
+      });
     }
 
     // 16. QUIZZES SECTION (GET, POST, PUT, DELETE)

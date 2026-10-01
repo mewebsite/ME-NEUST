@@ -136,6 +136,49 @@ function App() {
     .catch(console.error);
   };
 
+  // Real-Time Live Sync: Automatically keep quizzes, attempts, users, and stats synchronized across all accounts & devices
+  useEffect(() => {
+    if (!token || !user) return;
+
+    // Immediately load quizzes and stats
+    loadQuizzes();
+    loadStats(token);
+    if (user.role === 'admin') {
+      loadUsers();
+      loadAttempts();
+    }
+
+    // Auto-refresh every 5 seconds so any changes made on admin automatically reflect on all student accounts
+    const pollInterval = setInterval(() => {
+      loadQuizzes();
+      loadStats(token);
+      if (user.role === 'admin') {
+        loadUsers();
+        loadAttempts();
+      }
+    }, 5000);
+
+    // Refresh immediately when window or tab becomes active
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadQuizzes();
+        loadStats(token);
+        if (user.role === 'admin') {
+          loadUsers();
+          loadAttempts();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
+    };
+  }, [token, user ? user.role : null]);
+
   const logout = () => {
     setUser(null);
     setToken('');
@@ -421,6 +464,7 @@ function App() {
 
   const deleteQuiz = (id) => {
     if (confirm('Are you sure you want to permanently delete this board quiz?')) {
+      setQuizzesList(prev => prev.filter(q => q.id !== id));
       fetch(`${API_BASE}/api/quizzes/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }

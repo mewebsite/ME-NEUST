@@ -136,6 +136,49 @@ function App() {
     .catch(console.error);
   };
 
+  // Real-Time Live Sync: Automatically keep quizzes, attempts, users, and stats synchronized across all accounts & devices
+  useEffect(() => {
+    if (!token || !user) return;
+
+    // Immediately load quizzes and stats
+    loadQuizzes();
+    loadStats(token);
+    if (user.role === 'admin') {
+      loadUsers();
+      loadAttempts();
+    }
+
+    // Auto-refresh every 5 seconds so any changes made on admin automatically reflect on all student accounts
+    const pollInterval = setInterval(() => {
+      loadQuizzes();
+      loadStats(token);
+      if (user.role === 'admin') {
+        loadUsers();
+        loadAttempts();
+      }
+    }, 5000);
+
+    // Refresh immediately when window or tab becomes active
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadQuizzes();
+        loadStats(token);
+        if (user.role === 'admin') {
+          loadUsers();
+          loadAttempts();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
+
+    return () => {
+      clearInterval(pollInterval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
+    };
+  }, [token, user ? user.role : null]);
+
   const logout = () => {
     setUser(null);
     setToken('');
@@ -420,11 +463,21 @@ function App() {
   };
 
   const deleteQuiz = (id) => {
-    if (confirm('Are you sure you want to delete this quiz?')) {
+    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
+      setQuizzesList(prev => prev.filter(q => q.id !== id));
       fetch(`${API_BASE}/api/quizzes/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      }).then(() => loadQuizzes());
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) alert('Error: ' + data.error);
+        loadQuizzes();
+      })
+      .catch(err => {
+        console.error('Delete quiz error:', err);
+        loadQuizzes();
+      });
     }
   };
 
@@ -2204,6 +2257,25 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
     }).then(() => loadUsers());
   };
 
+  const deleteUser = (u) => {
+    if (u.role === 'admin') {
+      alert('System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.');
+      return;
+    }
+    if (confirm(`Are you sure you want to permanently delete user account: ${u.fullName || u.email}? This will erase their user record and quiz history.`)) {
+      fetch(`${API_BASE}/api/users/${u.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) alert(data.error);
+        loadUsers();
+      })
+      .catch(err => alert(err.message));
+    }
+  };
+
   const deleteQuestion = (id) => {
     if (confirm('Are you sure you want to delete question #' + id + '?')) {
       fetch(`${API_BASE}/api/questions/${id}`, {
@@ -2226,11 +2298,20 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
   };
 
   const deleteQuiz = (id) => {
-    if (confirm('Are you sure you want to delete this quiz?')) {
+    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
       fetch(`${API_BASE}/api/quizzes/${id}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      }).then(() => loadQuizzes());
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) alert('Error: ' + data.error);
+        loadQuizzes();
+      })
+      .catch(err => {
+        console.error('Delete quiz error:', err);
+        loadQuizzes();
+      });
     }
   };
 
@@ -2406,6 +2487,11 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                           <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => toggleUserStatus(u)}>
                             {u.status === 'active' ? 'Deactivate' : 'Activate'}
                           </button>
+                          {u.role !== 'admin' && (
+                            <button className="btn-danger" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => deleteUser(u)}>
+                              🗑️ Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -3104,10 +3190,10 @@ function UserModal({ editingUser, onClose, onSaved }) {
           )}
           <div className="grid-2col">
             <div className="form-group">
-              <label>Role</label>
+              <label>Role <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Max 4 Admins Allowed)</span></label>
               <select className="form-control" value={role} onChange={e => setRole(e.target.value)}>
                 <option value="student">Student</option>
-                <option value="admin">Administrator</option>
+                <option value="admin">Administrator (Max 4 Limit)</option>
               </select>
             </div>
             <div className="form-group">

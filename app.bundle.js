@@ -399,13 +399,19 @@ function App() {
     }).then(() => loadQuizzes());
   };
   const deleteQuiz = id => {
-    if (confirm('Are you sure you want to delete this quiz?')) {
+    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
       fetch(`${API_BASE}/api/quizzes/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
-      }).then(() => loadQuizzes());
+      }).then(res => res.json()).then(data => {
+        if (data.error) alert('Error: ' + data.error);
+        loadQuizzes();
+      }).catch(err => {
+        console.error('Delete quiz error:', err);
+        loadQuizzes();
+      });
     }
   };
 
@@ -3129,13 +3135,19 @@ function AdminView({
     }).then(() => loadQuizzes());
   };
   const deleteQuiz = id => {
-    if (confirm('Are you sure you want to delete this quiz?')) {
+    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
       fetch(`${API_BASE}/api/quizzes/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
-      }).then(() => loadQuizzes());
+      }).then(res => res.json()).then(data => {
+        if (data.error) alert('Error: ' + data.error);
+        loadQuizzes();
+      }).catch(err => {
+        console.error('Delete quiz error:', err);
+        loadQuizzes();
+      });
     }
   };
 

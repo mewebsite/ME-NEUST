@@ -445,12 +445,33 @@
     if (type === 'NEW_ATTEMPT') {
       const incomingAttempt = data;
       if (incomingAttempt && incomingAttempt.id) {
+        const users = getLocal(STORAGE_KEYS.USERS, []);
+        const matchingUser = users.find(u => u.id === incomingAttempt.studentId || (u.email && incomingAttempt.studentEmail && u.email.toLowerCase() === incomingAttempt.studentEmail.toLowerCase()));
+        const scoreVal = incomingAttempt.score !== undefined ? incomingAttempt.score : (incomingAttempt.correctAnswers || 0);
+        const totalVal = incomingAttempt.totalQuestions || 0;
+        const pctVal = incomingAttempt.percentage !== undefined ? incomingAttempt.percentage : (incomingAttempt.scorePct || (totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0));
+        const normalized = {
+          ...incomingAttempt,
+          score: scoreVal,
+          correctAnswers: scoreVal,
+          totalQuestions: totalVal,
+          percentage: pctVal,
+          scorePct: pctVal,
+          passed: incomingAttempt.passed !== undefined ? incomingAttempt.passed : (pctVal >= 70),
+          studentName: (incomingAttempt.studentName && incomingAttempt.studentName !== 'Student') ? incomingAttempt.studentName : (matchingUser ? matchingUser.fullName : (incomingAttempt.studentName || 'Student Reviewee')),
+          studentEmail: incomingAttempt.studentEmail || (matchingUser ? matchingUser.email : ''),
+          school: incomingAttempt.school || (matchingUser ? matchingUser.school : 'NEUST')
+        };
+
         let currentAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
-        if (!currentAttempts.find(a => a.id === incomingAttempt.id)) {
-          currentAttempts.unshift(incomingAttempt);
-          setLocal(STORAGE_KEYS.ATTEMPTS, currentAttempts);
-          window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'ATTEMPT_UPDATE', attempt: incomingAttempt } }));
+        const existingIdx = currentAttempts.findIndex(a => a.id === normalized.id);
+        if (existingIdx !== -1) {
+          currentAttempts[existingIdx] = normalized;
+        } else {
+          currentAttempts.unshift(normalized);
         }
+        setLocal(STORAGE_KEYS.ATTEMPTS, currentAttempts);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'ATTEMPT_UPDATE', attempt: normalized } }));
       }
     }
 
@@ -587,24 +608,66 @@
   }
 
   async function getAllAttempts() {
-    let attempts = [];
-    const cloudAttempts = await cloudFetchCollection('attempts');
-    if (cloudAttempts !== null && Array.isArray(cloudAttempts) && cloudAttempts.length > 0) {
-      attempts = cloudAttempts;
-    } else {
-      attempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+    let cloudAttempts = null;
+    try {
+      cloudAttempts = await cloudFetchCollection('attempts');
+    } catch (e) {
+      console.warn('[Firestore Cloud] Error fetching attempts:', e);
     }
-    const normalized = attempts.map(a => {
+
+    const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+    const map = new Map();
+
+    // 1. Add all local attempts (including ones received via MQTT Live Sync or Retained Snapshots)
+    localAttempts.forEach(a => {
+      if (a && a.id) map.set(a.id, a);
+    });
+
+    // 2. Merge cloud attempts safely by ID so local attempts are NEVER lost
+    if (cloudAttempts !== null && Array.isArray(cloudAttempts)) {
+      cloudAttempts.forEach(a => {
+        if (a && a.id) {
+          const existing = map.get(a.id) || {};
+          map.set(a.id, { ...existing, ...a });
+        }
+      });
+    }
+
+    const allRawAttempts = Array.from(map.values());
+    const users = getLocal(STORAGE_KEYS.USERS, []);
+
+    const normalized = allRawAttempts.map(a => {
+      const scoreVal = a.score !== undefined ? parseInt(a.score, 10) : (a.correctAnswers !== undefined ? parseInt(a.correctAnswers, 10) : 0);
+      const totalVal = a.totalQuestions !== undefined ? parseInt(a.totalQuestions, 10) : 0;
       let pct = a.percentage !== undefined ? parseFloat(a.percentage) : (a.scorePct !== undefined ? parseFloat(a.scorePct) : null);
       if (pct === null || isNaN(pct)) {
-        pct = (a.totalQuestions && a.totalQuestions > 0) ? Math.round(((a.score || 0) / a.totalQuestions) * 100) : 0;
+        pct = totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0;
       }
+
+      // Resolve student name/email/school if missing
+      const matchingUser = users.find(u => u.id === a.studentId || (u.email && a.studentEmail && u.email.toLowerCase() === a.studentEmail.toLowerCase()));
+      const studentName = (a.studentName && a.studentName !== 'Student') 
+        ? a.studentName 
+        : (matchingUser ? matchingUser.fullName : (a.studentName || 'Student Reviewee'));
+      const studentEmail = a.studentEmail || (matchingUser ? matchingUser.email : '');
+      const school = a.school || (matchingUser ? matchingUser.school : 'NEUST');
+
       return {
         ...a,
+        score: scoreVal,
+        correctAnswers: scoreVal,
+        totalQuestions: totalVal,
         percentage: pct,
-        scorePct: pct
+        scorePct: pct,
+        passed: a.passed !== undefined ? a.passed : (pct >= 70),
+        studentName,
+        studentEmail,
+        school,
+        timeSpentSeconds: a.timeSpentSeconds || 60,
+        submittedAt: a.submittedAt || new Date().toISOString()
       };
     });
+
     normalized.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
     setLocal(STORAGE_KEYS.ATTEMPTS, normalized);
     return normalized;
@@ -782,6 +845,16 @@
       });
     }
 
+    function resolveCurrentUser(tok) {
+      let u = getLocal(STORAGE_KEYS.CURRENT_USER, null);
+      if (tok) {
+        const users = getLocal(STORAGE_KEYS.USERS, []);
+        const tokenUser = users.find(x => x.id === tok);
+        if (tokenUser) u = tokenUser;
+      }
+      return u || {};
+    }
+
     // 1. REGISTER
     if (urlStr.includes('/api/auth/register') && method === 'POST') {
       const { fullName, email, password, school } = body;
@@ -852,11 +925,24 @@
         const users = await getAllUsers();
         const attempts = await getAllAttempts();
         const enrichedUsers = users.map(u => {
-          const uAttempts = attempts.filter(a => a.studentId === u.id);
+          const uAttempts = attempts.filter(a => a && (a.studentId === u.id || (u.email && a.studentEmail && u.email.toLowerCase() === a.studentEmail.toLowerCase())));
           const lastAtt = uAttempts[0];
           const analytics = calculateAdaptiveAnalyticsSync(u.id, users, attempts);
+          const passedCount = uAttempts.filter(a => a.passed).length;
+          const failedCount = uAttempts.length - passedCount;
+          const avgScore = uAttempts.length > 0 
+            ? Math.round(uAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? a.percentage : (a.scorePct || a.score || 0)), 0) / uAttempts.length) 
+            : 0;
+
           return {
             ...u,
+            attempts: uAttempts,
+            stats: {
+              totalAttempts: uAttempts.length,
+              passedCount,
+              failedCount,
+              avgScore
+            },
             readinessIndex: analytics.readinessIndex,
             totalQuizzesTaken: uAttempts.length,
             lastActive: lastAtt ? lastAtt.submittedAt : u.createdDate || 'Never'
@@ -958,18 +1044,28 @@
 
     // 6. RECORD ATTEMPT (POST /api/attempts)
     if (urlStr.includes('/api/attempts') && method === 'POST') {
-      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const currentUser = resolveCurrentUser(token);
+      const scoreVal = body.score !== undefined ? parseInt(body.score, 10) : (body.correctAnswers !== undefined ? parseInt(body.correctAnswers, 10) : 0);
+      const totalVal = body.totalQuestions !== undefined ? parseInt(body.totalQuestions, 10) : 0;
+      let pct = body.percentage !== undefined ? parseFloat(body.percentage) : (body.scorePct !== undefined ? parseFloat(body.scorePct) : null);
+      if (pct === null || isNaN(pct)) {
+        pct = totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0;
+      }
+
       const newAttempt = {
         id: `att_${Date.now()}`,
-        studentId: currentUser.id || 'usr_anon',
-        studentName: currentUser.fullName || 'Student',
-        studentEmail: currentUser.email || '',
-        quizId: body.quizId,
-        quizTitle: body.quizTitle,
-        totalQuestions: body.totalQuestions,
-        correctAnswers: body.correctAnswers,
-        scorePct: body.scorePct,
-        passed: body.passed,
+        studentId: currentUser.id || token || 'usr_anon',
+        studentName: (currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee'),
+        studentEmail: currentUser.email || body.studentEmail || '',
+        school: currentUser.school || body.school || 'NEUST',
+        quizId: body.quizId || 'custom_quiz',
+        quizTitle: body.quizTitle || 'Board Prep Quiz',
+        totalQuestions: totalVal,
+        score: scoreVal,
+        correctAnswers: scoreVal,
+        percentage: pct,
+        scorePct: pct,
+        passed: body.passed !== undefined ? body.passed : (pct >= 70),
         timeSpentSeconds: body.timeSpentSeconds || 60,
         submittedAt: new Date().toISOString(),
         moduleBreakdown: body.moduleBreakdown || {}
@@ -1029,16 +1125,19 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 75;
 
-      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const currentUser = resolveCurrentUser(token);
       const attempt = {
         id: `att_diag_${Date.now()}`,
-        studentId: currentUser.id || 'usr_anon',
-        studentName: currentUser.fullName || 'Student',
-        studentEmail: currentUser.email || '',
+        studentId: currentUser.id || token || 'usr_anon',
+        studentName: (currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee'),
+        studentEmail: currentUser.email || body.studentEmail || '',
+        school: currentUser.school || body.school || 'NEUST',
         quizId: 'diagnostic_assessment',
         quizTitle: 'Comprehensive Licensure Diagnostic Exam',
         totalQuestions: total,
+        score: correct,
         correctAnswers: correct,
+        percentage: scorePct,
         scorePct,
         passed,
         timeSpentSeconds: timeSpentSeconds || 60,
@@ -1118,16 +1217,19 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 75;
 
-      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const currentUser = resolveCurrentUser(token);
       const attempt = {
         id: `att_smart_${Date.now()}`,
-        studentId: currentUser.id || 'usr_anon',
-        studentName: currentUser.fullName || 'Student',
-        studentEmail: currentUser.email || '',
+        studentId: currentUser.id || token || 'usr_anon',
+        studentName: (currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee'),
+        studentEmail: currentUser.email || body.studentEmail || '',
+        school: currentUser.school || body.school || 'NEUST',
         quizId: `smart_quiz_${Date.now()}`,
         quizTitle: `Targeted Smart Quiz - ${targetModule || 'Remediation'}`,
         totalQuestions: total,
+        score: correct,
         correctAnswers: correct,
+        percentage: scorePct,
         scorePct,
         passed,
         timeSpentSeconds: timeSpentSeconds || 60,
@@ -1191,16 +1293,19 @@
       const scorePct = Math.round((correct / total) * 100);
       const passed = scorePct >= 70;
 
-      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+      const currentUser = resolveCurrentUser(token);
       const attempt = {
         id: `att_sim_${Date.now()}`,
-        studentId: currentUser.id || 'usr_anon',
-        studentName: currentUser.fullName || 'Student',
-        studentEmail: currentUser.email || '',
+        studentId: currentUser.id || token || 'usr_anon',
+        studentName: (currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee'),
+        studentEmail: currentUser.email || body.studentEmail || '',
+        school: currentUser.school || body.school || 'NEUST',
         quizId: 'board_exam_simulation',
         quizTitle: 'Full Licensure Exam Simulation',
         totalQuestions: total,
+        score: correct,
         correctAnswers: correct,
+        percentage: scorePct,
         scorePct,
         passed,
         timeSpentSeconds: timeSpentSeconds || 60,

@@ -807,6 +807,7 @@ function App() {
     onClose: () => setQuizResultsModalOpen(false)
   }), userDetailModalOpen && selectedUserDetail && /*#__PURE__*/React.createElement(UserDetailModal, {
     user: selectedUserDetail,
+    attemptsList: attemptsList,
     onClose: () => {
       setUserDetailModalOpen(false);
       setSelectedUserDetail(null);
@@ -2245,7 +2246,7 @@ function QuizResultsModal({
       fontSize: '0.75rem',
       color: 'var(--text-dim)'
     }
-  }, att.studentEmail)), /*#__PURE__*/React.createElement("td", null, att.school || 'Mapúa University'), /*#__PURE__*/React.createElement("td", {
+  }, att.studentEmail)), /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
     style: {
       maxWidth: '240px',
       fontSize: '0.85rem'
@@ -2254,12 +2255,12 @@ function QuizResultsModal({
     style: {
       fontWeight: '700'
     }
-  }, att.score, " / ", att.totalQuestions), /*#__PURE__*/React.createElement("td", {
+  }, att.score !== undefined ? att.score : att.correctAnswers || 0, " / ", att.totalQuestions || 0), /*#__PURE__*/React.createElement("td", {
     style: {
       fontWeight: '700',
       color: att.passed ? 'var(--success)' : 'var(--danger)'
     }
-  }, att.percentage, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+  }, att.percentage !== undefined ? att.percentage : att.scorePct !== undefined ? att.scorePct : 0, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
     className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
   }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -2272,15 +2273,20 @@ function QuizResultsModal({
 // ADMIN COMPLETE USER MASTER DATA & ACADEMIC RECORD MODAL
 function UserDetailModal({
   user,
+  attemptsList = [],
   onClose
 }) {
-  const stats = user.stats || {
-    totalAttempts: 0,
-    passedCount: 0,
-    failedCount: 0,
-    avgScore: 0
+  const userAttempts = user.attempts && user.attempts.length > 0 ? user.attempts : (attemptsList || []).filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase()));
+  const passedCount = userAttempts.filter(a => a.passed).length;
+  const failedCount = userAttempts.length - passedCount;
+  const avgScore = userAttempts.length > 0 ? Math.round(userAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? a.percentage : a.scorePct || a.score || 0), 0) / userAttempts.length) : 0;
+  const stats = user.stats && user.stats.totalAttempts > 0 ? user.stats : {
+    totalAttempts: userAttempts.length,
+    passedCount,
+    failedCount,
+    avgScore
   };
-  const attempts = user.attempts || [];
+  const attempts = userAttempts;
   const passRate = stats.totalAttempts > 0 ? (stats.passedCount / stats.totalAttempts * 100).toFixed(1) : '0.0';
   const formatTime = secs => {
     if (!secs) return 'N/A';
@@ -2483,12 +2489,12 @@ function UserDetailModal({
     style: {
       fontWeight: '700'
     }
-  }, att.score, " / ", att.totalQuestions), /*#__PURE__*/React.createElement("td", {
+  }, att.score !== undefined ? att.score : att.correctAnswers || 0, " / ", att.totalQuestions || 0), /*#__PURE__*/React.createElement("td", {
     style: {
       fontWeight: '700',
       color: att.passed ? 'var(--success)' : 'var(--danger)'
     }
-  }, att.percentage, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+  }, att.percentage !== undefined ? att.percentage : att.scorePct !== undefined ? att.scorePct : 0, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
     className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
   }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
     style: {
@@ -3638,7 +3644,7 @@ function AdminView({
       fontSize: '0.75rem',
       color: 'var(--text-dim)'
     }
-  }, att.studentEmail)), /*#__PURE__*/React.createElement("td", null, att.school || 'Mapúa University'), /*#__PURE__*/React.createElement("td", {
+  }, att.studentEmail)), /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
     style: {
       maxWidth: '240px',
       fontSize: '0.85rem'
@@ -3647,12 +3653,12 @@ function AdminView({
     style: {
       fontWeight: '700'
     }
-  }, att.score, " / ", att.totalQuestions), /*#__PURE__*/React.createElement("td", {
+  }, att.score !== undefined ? att.score : att.correctAnswers || 0, " / ", att.totalQuestions || 0), /*#__PURE__*/React.createElement("td", {
     style: {
       fontWeight: '700',
       color: att.passed ? 'var(--success)' : 'var(--danger)'
     }
-  }, att.percentage, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+  }, att.percentage !== undefined ? att.percentage : att.scorePct !== undefined ? att.scorePct : 0, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
     className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
   }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", {
     style: {

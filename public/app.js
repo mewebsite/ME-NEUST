@@ -836,6 +836,7 @@ function App() {
       {userDetailModalOpen && selectedUserDetail && (
         <UserDetailModal 
           user={selectedUserDetail} 
+          attemptsList={attemptsList}
           onClose={() => {
             setUserDetailModalOpen(false);
             setSelectedUserDetail(null);
@@ -1698,11 +1699,11 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
                       {att.studentName}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
                     </td>
-                    <td>{att.school || 'Mapúa University'}</td>
+                    <td>{att.school || 'NEUST'}</td>
                     <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{att.score} / {att.totalQuestions}</td>
+                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage}%
+                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
@@ -1723,9 +1724,22 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
 }
 
 // ADMIN COMPLETE USER MASTER DATA & ACADEMIC RECORD MODAL
-function UserDetailModal({ user, onClose }) {
-  const stats = user.stats || { totalAttempts: 0, passedCount: 0, failedCount: 0, avgScore: 0 };
-  const attempts = user.attempts || [];
+function UserDetailModal({ user, attemptsList = [], onClose }) {
+  const userAttempts = (user.attempts && user.attempts.length > 0)
+    ? user.attempts
+    : (attemptsList || []).filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())));
+
+  const passedCount = userAttempts.filter(a => a.passed).length;
+  const failedCount = userAttempts.length - passedCount;
+  const avgScore = userAttempts.length > 0
+    ? Math.round(userAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? a.percentage : (a.scorePct || a.score || 0)), 0) / userAttempts.length)
+    : 0;
+
+  const stats = (user.stats && user.stats.totalAttempts > 0)
+    ? user.stats
+    : { totalAttempts: userAttempts.length, passedCount, failedCount, avgScore };
+
+  const attempts = userAttempts;
   const passRate = stats.totalAttempts > 0 ? ((stats.passedCount / stats.totalAttempts) * 100).toFixed(1) : '0.0';
 
   const formatTime = (secs) => {
@@ -1828,9 +1842,9 @@ function UserDetailModal({ user, onClose }) {
                 {attempts.map(att => (
                   <tr key={att.id}>
                     <td style={{ fontWeight: '600' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{att.score} / {att.totalQuestions}</td>
+                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage}%
+                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
@@ -2644,11 +2658,11 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                       {att.studentName}
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
                     </td>
-                    <td>{att.school || 'Mapúa University'}</td>
+                    <td>{att.school || 'NEUST'}</td>
                     <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{att.score} / {att.totalQuestions}</td>
+                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage}%
+                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>

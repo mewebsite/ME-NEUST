@@ -293,10 +293,12 @@
   // --- REAL-TIME WEBSOCKET SYNCHRONIZATION ENGINE ---
   const SYNC_TOPIC_EVENTS = 'neust/me-boardprep/v2/events';
   const SYNC_TOPIC_STATE = 'neust/me-boardprep/v2/state';
+  const SYNC_TOPIC_SNAPSHOT = 'neust/me-boardprep/v2/snapshot';
   const LIVE_CLIENT_ID = 'me_client_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
   let pahoClient = null;
   let isMqttConnected = false;
+  let snapshotDebounceTimer = null;
 
   function initLiveSyncEngine() {
     if (typeof Paho === 'undefined' || !Paho.MQTT || !Paho.MQTT.Client) {
@@ -334,6 +336,8 @@
           console.log('[Live Sync] Connected to global real-time synchronization broker!');
           pahoClient.subscribe(SYNC_TOPIC_EVENTS, { qos: 1 });
           pahoClient.subscribe(SYNC_TOPIC_STATE, { qos: 1 });
+          // Subscribe to 24/7 Cloud Retained Snapshot (Broker immediately delivers latest data even if host computer was offline)
+          pahoClient.subscribe(SYNC_TOPIC_SNAPSHOT, { qos: 1 });
 
           // Request state from active peers so newly opened browsers get all users and activities immediately
           broadcastLiveEvent('REQUEST_STATE', { requester: LIVE_CLIENT_ID });
@@ -347,6 +351,44 @@
     } catch (e) {
       console.error('[Live Sync] Init error:', e);
     }
+  }
+
+  function publishRetainedSnapshot() {
+    if (!pahoClient || !isMqttConnected) return;
+    try {
+      const localUsers = getLocal(STORAGE_KEYS.USERS, []);
+      const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+      const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      const localDeleted = getLocal('me_deleted_quiz_ids', []);
+
+      const payload = JSON.stringify({
+        type: 'SNAPSHOT',
+        data: {
+          users: localUsers,
+          attempts: localAttempts.slice(0, 100),
+          quizzes: localQuizzes,
+          deletedQuizIds: localDeleted
+        },
+        sender: LIVE_CLIENT_ID,
+        timestamp: Date.now()
+      });
+
+      const message = new Paho.MQTT.Message(payload);
+      message.destinationName = SYNC_TOPIC_SNAPSHOT;
+      message.qos = 1;
+      message.retained = true; // Retain on broker 24/7 so offline admin/host computer catches up automatically
+      pahoClient.send(message);
+      console.log('[Live Sync] Published 24/7 Cloud Retained Snapshot to broker!');
+    } catch (e) {
+      console.error('[Live Sync] Error publishing retained snapshot:', e);
+    }
+  }
+
+  function triggerSnapshotPublish() {
+    clearTimeout(snapshotDebounceTimer);
+    snapshotDebounceTimer = setTimeout(() => {
+      publishRetainedSnapshot();
+    }, 1200);
   }
 
   function broadcastLiveEvent(type, data) {
@@ -366,6 +408,11 @@
       message.qos = 1;
       pahoClient.send(message);
       console.log(`[Live Sync] Broadcasted event: ${type}`);
+
+      // Schedule updated 24/7 cloud retained snapshot
+      if (type !== 'REQUEST_STATE' && type !== 'STATE_RESPONSE' && type !== 'SNAPSHOT') {
+        triggerSnapshotPublish();
+      }
     } catch (e) {
       console.error(`[Live Sync] Error broadcasting ${type}:`, e);
     }
@@ -467,7 +514,7 @@
       }
     }
 
-    if (type === 'STATE_RESPONSE') {
+    if (type === 'STATE_RESPONSE' || type === 'SNAPSHOT') {
       const { users, attempts, quizzes, deletedQuizIds } = data || {};
       let changed = false;
 
@@ -506,7 +553,7 @@
         changed = true;
       }
       if (changed) {
-        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'STATE_MERGED' } }));
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: type === 'SNAPSHOT' ? 'SNAPSHOT_APPLIED' : 'STATE_MERGED' } }));
       }
     }
   }

@@ -177,7 +177,7 @@ function App() {
     };
     window.addEventListener('me_live_update', onLiveUpdate);
 
-    // Heartbeat sync every 30 seconds (safe, zero-exhaustion interval)
+    // Heartbeat background sync every 5 minutes (relies on real-time MQTT push + focus sync, preventing quota exhaustion)
     const pollInterval = setInterval(() => {
       loadQuizzes();
       loadStats(token);
@@ -185,7 +185,7 @@ function App() {
         loadUsers();
         loadAttempts();
       }
-    }, 30000);
+    }, 300000);
 
     // Refresh immediately when window or tab becomes active
     const onVisibilityChange = () => {

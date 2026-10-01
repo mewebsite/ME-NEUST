@@ -211,6 +211,16 @@ function App() {
     setUser(null);
     setToken('');
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('me_current_user');
+
+    // Completely clear exam session history and in-progress answers
+    setUserAnswers({});
+    setActiveQuestionIndex(0);
+    setShowExplanation(false);
+    setActiveQuiz(null);
+    setExamSubmitted(false);
+    setTimerActive(false);
     setView('dashboard');
   };
   const downloadReviewedCSV = () => {
@@ -567,11 +577,20 @@ function App() {
       if (status >= 400) {
         alert(data.error || 'Authentication failed');
       } else {
+        // Reset previous session history so each login starts fresh with clean tests
+        setUserAnswers({});
+        setActiveQuestionIndex(0);
+        setShowExplanation(false);
+        setActiveQuiz(null);
+        setExamSubmitted(false);
+        setTimerActive(false);
+        setView('dashboard');
         setToken(data.token);
         localStorage.setItem('token', data.token);
         setUser(data.user);
         setAuthModal(null);
         loadStats(data.token);
+        loadQuizzes();
       }
     }).catch(err => alert('Network error: ' + err.message));
   };
@@ -581,11 +600,20 @@ function App() {
     className: "navbar"
   }, /*#__PURE__*/React.createElement("div", {
     className: "nav-brand",
-    onClick: () => setView('dashboard'),
+    onClick: () => {
+      setUserAnswers({});
+      setActiveQuestionIndex(0);
+      setShowExplanation(false);
+      setActiveQuiz(null);
+      setExamSubmitted(false);
+      setTimerActive(false);
+      setView('dashboard');
+    },
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: '0.75rem'
+      gap: '0.75rem',
+      cursor: 'pointer'
     }
   }, /*#__PURE__*/React.createElement("img", {
     src: "images/neust_coe_seal.png",
@@ -619,7 +647,15 @@ function App() {
     className: "nav-items"
   }, /*#__PURE__*/React.createElement("button", {
     className: `nav-btn ${view === 'dashboard' ? 'active' : ''}`,
-    onClick: () => setView('dashboard')
+    onClick: () => {
+      setUserAnswers({});
+      setActiveQuestionIndex(0);
+      setShowExplanation(false);
+      setActiveQuiz(null);
+      setExamSubmitted(false);
+      setTimerActive(false);
+      setView('dashboard');
+    }
   }, "Dashboard"), user && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     className: `nav-btn ${view === 'audit' ? 'active' : ''}`,
     onClick: () => {
@@ -638,7 +674,14 @@ function App() {
       loadQuizzes();
       setQuizListModalOpen(true);
     }
-  }, "\u23F1\uFE0F Board Quizzes")), user && user.role === 'admin' && /*#__PURE__*/React.createElement("button", {
+  }, "\u23F1\uFE0F Board Quizzes"), /*#__PURE__*/React.createElement("button", {
+    className: "nav-btn",
+    onClick: () => {
+      loadAttempts();
+      setSelectedQuizFilterForResults(null);
+      setQuizResultsModalOpen(true);
+    }
+  }, "\uD83D\uDCCA My Results")), user && user.role === 'admin' && /*#__PURE__*/React.createElement("button", {
     className: `nav-btn ${view === 'admin' ? 'active' : ''}`,
     onClick: () => {
       loadUsers();
@@ -702,6 +745,11 @@ function App() {
       loadQuizzes();
       setQuizListModalOpen(true);
     },
+    openQuizResultsModal: () => {
+      loadAttempts();
+      setSelectedQuizFilterForResults(null);
+      setQuizResultsModalOpen(true);
+    },
     startDiagnosticBenchmark: startDiagnosticBenchmark,
     startAdaptiveSmartQuiz: startAdaptiveSmartQuiz,
     startBoardSimulation: startBoardSimulation,
@@ -724,7 +772,15 @@ function App() {
     recordQuizAttempt: recordQuizAttempt,
     startBoardSimulation: startBoardSimulation,
     startAdaptiveSmartQuiz: startAdaptiveSmartQuiz,
-    onFinish: () => setView('dashboard')
+    onFinish: () => {
+      setUserAnswers({});
+      setActiveQuestionIndex(0);
+      setShowExplanation(false);
+      setActiveQuiz(null);
+      setExamSubmitted(false);
+      setTimerActive(false);
+      setView('dashboard');
+    }
   }), view === 'audit' && /*#__PURE__*/React.createElement(BatchAuditView, {
     questions: questions,
     loadQuestions: loadQuestions,
@@ -804,6 +860,7 @@ function App() {
     quizzes: quizzesList,
     selectedQuizFilter: selectedQuizFilterForResults,
     setSelectedQuizFilter: setSelectedQuizFilterForResults,
+    user: user,
     onClose: () => setQuizResultsModalOpen(false)
   }), userDetailModalOpen && selectedUserDetail && /*#__PURE__*/React.createElement(UserDetailModal, {
     user: selectedUserDetail,
@@ -1150,7 +1207,22 @@ function AdaptiveAnalyticsWidget({
       fontSize: '0.9rem',
       padding: '0.5rem 1rem'
     }
-  }, "\u2713 All 6 Curriculum Modules Mastered"))) : /*#__PURE__*/React.createElement("div", {
+  }, "\u2713 All 6 Curriculum Modules Mastered"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-primary",
+    style: {
+      fontSize: '0.85rem',
+      padding: '0.45rem 1rem',
+      background: 'linear-gradient(135deg, #10b981, #059669)'
+    },
+    onClick: startBoardSimulation
+  }, "\uD83D\uDD04 Retake Simulation"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      fontSize: '0.85rem',
+      padding: '0.45rem 1rem'
+    },
+    onClick: startDiagnosticBenchmark
+  }, "\uD83D\uDD04 Retake Diagnostic"))) : /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.75rem',
@@ -1190,20 +1262,41 @@ function AdaptiveAnalyticsWidget({
   }, !diagnosticCompleted ? /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     onClick: startDiagnosticBenchmark
-  }, "\uD83D\uDE80 Step 1: Start Diagnostic Benchmark (100 Items)") : simulationUnlocked ? /*#__PURE__*/React.createElement("button", {
-    className: "btn-primary",
-    style: {
-      background: 'linear-gradient(135deg, #10b981, #059669)'
-    },
-    onClick: startBoardSimulation
-  }, "\uD83C\uDFDB\uFE0F Step 4: Launch Simulated Board Exam (100 Items)") : /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDE80 Step 1: Start Diagnostic Benchmark (100 Items)") : simulationUnlocked ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.5rem',
       alignItems: 'center',
       flexWrap: 'wrap'
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      fontSize: '0.85rem',
+      padding: '0.45rem 0.9rem'
+    },
+    onClick: startDiagnosticBenchmark
+  }, "\uD83D\uDD04 Retake Diagnostic"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-primary",
+    style: {
+      background: 'linear-gradient(135deg, #10b981, #059669)'
+    },
+    onClick: startBoardSimulation
+  }, "\uD83C\uDFDB\uFE0F Step 4: Launch Simulated Board Exam (100 Items)")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.5rem',
+      alignItems: 'center',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      fontSize: '0.85rem',
+      padding: '0.45rem 0.9rem'
+    },
+    onClick: startDiagnosticBenchmark
+  }, "\uD83D\uDD04 Retake Diagnostic"), /*#__PURE__*/React.createElement("span", {
     className: "badge badge-admin",
     style: {
       background: 'rgba(245, 158, 11, 0.15)',
@@ -1563,6 +1656,7 @@ function DashboardView({
   stats,
   openPracticeModal,
   openQuizListModal,
+  openQuizResultsModal,
   startDiagnosticBenchmark,
   startAdaptiveSmartQuiz,
   startBoardSimulation,
@@ -1611,7 +1705,14 @@ function DashboardView({
       color: 'var(--accent-light)'
     },
     onClick: openQuizListModal
-  }, "\u23F1\uFE0F Posted Quizzes (", postedQuizzes, ")"))), /*#__PURE__*/React.createElement(AdaptiveAnalyticsWidget, {
+  }, "\u23F1\uFE0F Posted Quizzes (", postedQuizzes, ")"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      borderColor: 'var(--primary-light)',
+      color: 'var(--primary-light)'
+    },
+    onClick: openQuizResultsModal
+  }, "\uD83D\uDCCA My Quiz Results"))), /*#__PURE__*/React.createElement(AdaptiveAnalyticsWidget, {
     token: token,
     user: user,
     stats: stats,
@@ -1966,7 +2067,7 @@ function QuizListModal({
       color: 'var(--text-muted)',
       fontSize: '0.85rem'
     }
-  }, isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt official quizzes posted by administrators under timed exam conditions. (1 Attempt Limit per Quiz)')), /*#__PURE__*/React.createElement("div", {
+  }, isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt and retake official licensure board exam quizzes posted by administrators. All attempts are saved in your academic record.')), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.5rem'
@@ -2044,7 +2145,7 @@ function QuizListModal({
       className: "badge badge-status"
     }, qz.questionCount, " Questions | \u23F0 ", qz.durationMins, " Mins"), hasAttempted && /*#__PURE__*/React.createElement("span", {
       className: `badge ${userAttempt.passed ? 'badge-status' : 'badge-admin'}`
-    }, "Completed (", userAttempt.percentage, "%)"), isAdmin && /*#__PURE__*/React.createElement("span", {
+    }, "Latest Score: ", userAttempt.percentage, "% (", userAttempt.passed ? 'Passed' : 'Needs Review', ")"), isAdmin && /*#__PURE__*/React.createElement("span", {
       className: `badge ${qz.status === 'published' ? 'badge-status' : 'badge-student'}`
     }, qz.status))), /*#__PURE__*/React.createElement("p", {
       style: {
@@ -2100,15 +2201,14 @@ function QuizListModal({
       },
       onClick: () => deleteQuiz(qz.id)
     }, "Delete")), hasAttempted ? /*#__PURE__*/React.createElement("button", {
-      className: "btn-secondary",
-      disabled: true,
+      className: "btn-primary",
       style: {
         padding: '0.45rem 1.1rem',
         fontSize: '0.85rem',
-        opacity: 0.75,
-        cursor: 'not-allowed'
-      }
-    }, "Completed (1 Attempt Max)") : /*#__PURE__*/React.createElement("button", {
+        background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)'
+      },
+      onClick: () => onLaunch(qz)
+    }, "\uD83D\uDD04 Retake Quiz") : /*#__PURE__*/React.createElement("button", {
       className: "btn-primary",
       style: {
         padding: '0.45rem 1.1rem',
@@ -2119,19 +2219,22 @@ function QuizListModal({
   }))));
 }
 
-// ADMIN QUIZ RESULTS & STUDENT SCORE LOGS MODAL
+// QUIZ RESULTS & STUDENT SCORE LOGS MODAL (SUPPORTS BOTH ADMIN AUDIT & STUDENT SCORE HISTORY)
 function QuizResultsModal({
   attempts,
   quizzes,
   selectedQuizFilter,
   setSelectedQuizFilter,
-  onClose
+  onClose,
+  user
 }) {
-  const filteredAttempts = selectedQuizFilter ? attempts.filter(a => a.quizId === selectedQuizFilter) : attempts;
+  const isStudent = user && user.role !== 'admin';
+  const relevantAttempts = isStudent ? attempts.filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())) : attempts;
+  const filteredAttempts = selectedQuizFilter ? relevantAttempts.filter(a => a.quizId === selectedQuizFilter) : relevantAttempts;
   const totalAttempts = filteredAttempts.length;
   const passedAttempts = filteredAttempts.filter(a => a.passed).length;
   const passRate = totalAttempts > 0 ? (passedAttempts / totalAttempts * 100).toFixed(1) : '0.0';
-  const avgScore = totalAttempts > 0 ? (filteredAttempts.reduce((acc, a) => acc + parseFloat(a.percentage || 0), 0) / totalAttempts).toFixed(1) : '0.0';
+  const avgScore = totalAttempts > 0 ? (filteredAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? parseFloat(a.percentage) : parseFloat(a.scorePct) || 0), 0) / totalAttempts).toFixed(1) : '0.0';
   const formatTime = secs => {
     if (!secs) return 'N/A';
     const m = Math.floor(secs / 60);
@@ -2157,12 +2260,12 @@ function QuizResultsModal({
     style: {
       fontSize: '1.6rem'
     }
-  }, "\uD83D\uDCCA Student Quiz Performance & Score Logs"), /*#__PURE__*/React.createElement("p", {
+  }, isStudent ? '📊 My Quiz & Activity Results' : '📊 Student Quiz Performance & Score Logs'), /*#__PURE__*/React.createElement("p", {
     style: {
       color: 'var(--text-muted)',
       fontSize: '0.85rem'
     }
-  }, "Real-time audit log of all student quiz submissions, test scores, passing rates, and completion times.")), /*#__PURE__*/React.createElement("button", {
+  }, isStudent ? 'Permanent record of all your submitted board exam quizzes, diagnostic benchmarks, simulations, and practice activities.' : 'Real-time audit log of all student quiz submissions, test scores, passing rates, and completion times.')), /*#__PURE__*/React.createElement("button", {
     className: "btn-secondary",
     onClick: onClose
   }, "\u2715 Close")), /*#__PURE__*/React.createElement("div", {
@@ -2182,7 +2285,7 @@ function QuizResultsModal({
     }
   }, totalAttempts), /*#__PURE__*/React.createElement("div", {
     className: "stat-label"
-  }, "Total Student Attempts"))), /*#__PURE__*/React.createElement("div", {
+  }, isStudent ? 'Completed Assessments' : 'Total Student Attempts'))), /*#__PURE__*/React.createElement("div", {
     className: "glass-card stat-card",
     style: {
       padding: '1rem 1.25rem'
@@ -2213,31 +2316,35 @@ function QuizResultsModal({
     style: {
       marginBottom: '1.5rem'
     }
-  }, /*#__PURE__*/React.createElement("label", null, "Filter Log by Quiz"), /*#__PURE__*/React.createElement("select", {
+  }, /*#__PURE__*/React.createElement("label", null, isStudent ? 'Filter My Results by Assessment' : 'Filter Log by Quiz'), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
     value: selectedQuizFilter || '',
     onChange: e => setSelectedQuizFilter(e.target.value || null)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All Faculty Quizzes (", attempts.length, " attempts recorded)"), quizzes.map(qz => /*#__PURE__*/React.createElement("option", {
+  }, isStudent ? `All My Quizzes & Activities (${relevantAttempts.length} records saved)` : `All Faculty Quizzes (${attempts.length} attempts recorded)`), quizzes.map(qz => /*#__PURE__*/React.createElement("option", {
     key: qz.id,
     value: qz.id
-  }, qz.title)))), filteredAttempts.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, qz.title)), isStudent && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("option", {
+    value: "diagnostic_assessment"
+  }, "Diagnostic Benchmark Assessment"), /*#__PURE__*/React.createElement("option", {
+    value: "board_exam_simulation"
+  }, "Licensure Exam Simulation")))), filteredAttempts.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: 'center',
       padding: '2rem',
       color: 'var(--text-muted)'
     }
-  }, "No student attempt records recorded for this quiz yet.") : /*#__PURE__*/React.createElement("div", {
+  }, isStudent ? 'No quiz or activity records saved yet. Complete a quiz or diagnostic exam to record your first score!' : 'No student attempt records recorded for this quiz yet.') : /*#__PURE__*/React.createElement("div", {
     style: {
       maxHeight: '45vh',
       overflowY: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Student Name"), /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("th", null, "Student Name"), !isStudent && /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Assessment / Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => /*#__PURE__*/React.createElement("tr", {
     key: att.id
-  }, /*#__PURE__*/React.createElement("td", {
+  }, !isStudent && /*#__PURE__*/React.createElement("td", {
     style: {
       fontWeight: '600'
     }
@@ -2246,10 +2353,11 @@ function QuizResultsModal({
       fontSize: '0.75rem',
       color: 'var(--text-dim)'
     }
-  }, att.studentEmail)), /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
+  }, att.studentEmail)), !isStudent && /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
     style: {
-      maxWidth: '240px',
-      fontSize: '0.85rem'
+      maxWidth: isStudent ? '320px' : '240px',
+      fontSize: '0.85rem',
+      fontWeight: isStudent ? '600' : 'normal'
     }
   }, att.quizTitle), /*#__PURE__*/React.createElement("td", {
     style: {

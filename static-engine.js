@@ -1521,7 +1521,7 @@
         const quizzes = await getAllQuizzes();
         const attempts = await getAllAttempts();
         const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
-        const myAttempts = attempts.filter(a => a.studentId === currentUser.id || (currentUser.email && a.studentEmail === currentUser.email));
+        const myAttempts = attempts.filter(a => a && (a.studentId === currentUser.id || (currentUser.email && a.studentEmail && currentUser.email.toLowerCase() === a.studentEmail.toLowerCase())));
         
         let filteredQuizzes = quizzes;
         if (currentUser.role !== 'admin') {

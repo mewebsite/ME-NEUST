@@ -211,6 +211,16 @@ function App() {
     setUser(null);
     setToken('');
     localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    localStorage.removeItem('me_current_user');
+
+    // Completely clear exam session history and in-progress answers
+    setUserAnswers({});
+    setActiveQuestionIndex(0);
+    setShowExplanation(false);
+    setActiveQuiz(null);
+    setExamSubmitted(false);
+    setTimerActive(false);
     setView('dashboard');
   };
 
@@ -589,11 +599,21 @@ function App() {
       if (status >= 400) {
         alert(data.error || 'Authentication failed');
       } else {
+        // Reset previous session history so each login starts fresh with clean tests
+        setUserAnswers({});
+        setActiveQuestionIndex(0);
+        setShowExplanation(false);
+        setActiveQuiz(null);
+        setExamSubmitted(false);
+        setTimerActive(false);
+        setView('dashboard');
+
         setToken(data.token);
         localStorage.setItem('token', data.token);
         setUser(data.user);
         setAuthModal(null);
         loadStats(data.token);
+        loadQuizzes();
       }
     })
     .catch(err => alert('Network error: ' + err.message));
@@ -605,7 +625,15 @@ function App() {
     <div className="app-container">
       {/* NAVBAR */}
       <header className="navbar">
-        <div className="nav-brand" onClick={() => setView('dashboard')} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="nav-brand" onClick={() => {
+          setUserAnswers({});
+          setActiveQuestionIndex(0);
+          setShowExplanation(false);
+          setActiveQuiz(null);
+          setExamSubmitted(false);
+          setTimerActive(false);
+          setView('dashboard');
+        }} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}>
           <img src="images/neust_coe_seal.png" alt="NEUST COE Seal" style={{ width: '38px', height: '38px', objectFit: 'contain' }} />
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <span style={{ fontSize: '1.25rem', fontWeight: '800', lineHeight: '1.1' }}>
@@ -618,7 +646,15 @@ function App() {
         </div>
 
         <nav className="nav-items">
-          <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => setView('dashboard')}>Dashboard</button>
+          <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => {
+            setUserAnswers({});
+            setActiveQuestionIndex(0);
+            setShowExplanation(false);
+            setActiveQuiz(null);
+            setExamSubmitted(false);
+            setTimerActive(false);
+            setView('dashboard');
+          }}>Dashboard</button>
           
           {user && (
             <>
@@ -636,6 +672,14 @@ function App() {
                 setQuizListModalOpen(true);
               }}>
                 ⏱️ Board Quizzes
+              </button>
+
+              <button className="nav-btn" onClick={() => {
+                loadAttempts();
+                setSelectedQuizFilterForResults(null);
+                setQuizResultsModalOpen(true);
+              }}>
+                📊 My Results
               </button>
             </>
           )}
@@ -691,6 +735,11 @@ function App() {
                   loadQuizzes();
                   setQuizListModalOpen(true);
                 }}
+                openQuizResultsModal={() => {
+                  loadAttempts();
+                  setSelectedQuizFilterForResults(null);
+                  setQuizResultsModalOpen(true);
+                }}
                 startDiagnosticBenchmark={startDiagnosticBenchmark}
                 startAdaptiveSmartQuiz={startAdaptiveSmartQuiz}
                 startBoardSimulation={startBoardSimulation}
@@ -717,7 +766,15 @@ function App() {
                 recordQuizAttempt={recordQuizAttempt}
                 startBoardSimulation={startBoardSimulation}
                 startAdaptiveSmartQuiz={startAdaptiveSmartQuiz}
-                onFinish={() => setView('dashboard')}
+                onFinish={() => {
+                  setUserAnswers({});
+                  setActiveQuestionIndex(0);
+                  setShowExplanation(false);
+                  setActiveQuiz(null);
+                  setExamSubmitted(false);
+                  setTimerActive(false);
+                  setView('dashboard');
+                }}
               />
             )}
 
@@ -821,13 +878,14 @@ function App() {
         />
       )}
 
-      {/* ADMIN QUIZ RESULTS & STUDENT SCORES LOG MODAL */}
+      {/* QUIZ RESULTS & STUDENT SCORES LOG MODAL */}
       {quizResultsModalOpen && (
         <QuizResultsModal 
           attempts={attemptsList}
           quizzes={quizzesList}
           selectedQuizFilter={selectedQuizFilterForResults}
           setSelectedQuizFilter={setSelectedQuizFilterForResults}
+          user={user}
           onClose={() => setQuizResultsModalOpen(false)}
         />
       )}
@@ -1053,6 +1111,12 @@ function AdaptiveAnalyticsWidget({ token, user, stats, startDiagnosticBenchmark,
             <span className="badge badge-admin" style={{ fontSize: '0.9rem', padding: '0.5rem 1rem' }}>
               ✓ All 6 Curriculum Modules Mastered
             </span>
+            <button className="btn-primary" style={{ fontSize: '0.85rem', padding: '0.45rem 1rem', background: 'linear-gradient(135deg, #10b981, #059669)' }} onClick={startBoardSimulation}>
+              🔄 Retake Simulation
+            </button>
+            <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.45rem 1rem' }} onClick={startDiagnosticBenchmark}>
+              🔄 Retake Diagnostic
+            </button>
           </div>
         </div>
       ) : (
@@ -1072,11 +1136,19 @@ function AdaptiveAnalyticsWidget({ token, user, stats, startDiagnosticBenchmark,
                   🚀 Step 1: Start Diagnostic Benchmark (100 Items)
                 </button>
               ) : simulationUnlocked ? (
-                <button className="btn-primary" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }} onClick={startBoardSimulation}>
-                  🏛️ Step 4: Launch Simulated Board Exam (100 Items)
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }} onClick={startDiagnosticBenchmark}>
+                    🔄 Retake Diagnostic
+                  </button>
+                  <button className="btn-primary" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }} onClick={startBoardSimulation}>
+                    🏛️ Step 4: Launch Simulated Board Exam (100 Items)
+                  </button>
+                </div>
               ) : (
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button className="btn-secondary" style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }} onClick={startDiagnosticBenchmark}>
+                    🔄 Retake Diagnostic
+                  </button>
                   <span className="badge badge-admin" style={{ background: 'rgba(245, 158, 11, 0.15)', color: 'var(--warning)', borderColor: 'var(--warning)', padding: '0.5rem 0.8rem', fontSize: '0.82rem' }}>
                     🔒 Step 4 Locked (Target: 75% Readiness)
                   </span>
@@ -1280,7 +1352,7 @@ function HeroSection({ onLoginClick, onSignupClick }) {
 }
 
 // STUDENT & MAIN DASHBOARD VIEW
-function DashboardView({ token, user, stats, openPracticeModal, openQuizListModal, startDiagnosticBenchmark, startAdaptiveSmartQuiz, startBoardSimulation, setView, loadQuestions, downloadReviewedCSV }) {
+function DashboardView({ token, user, stats, openPracticeModal, openQuizListModal, openQuizResultsModal, startDiagnosticBenchmark, startAdaptiveSmartQuiz, startBoardSimulation, setView, loadQuestions, downloadReviewedCSV }) {
   const totalCount = stats ? stats.totalQuestions : 3105;
   const reviewedCount = stats ? stats.reviewedQuestions : 3105;
   const totalBatches = stats ? stats.totalBatchesCompleted : 63;
@@ -1305,6 +1377,9 @@ function DashboardView({ token, user, stats, openPracticeModal, openQuizListModa
           </button>
           <button className="btn-secondary" style={{ borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={openQuizListModal}>
             ⏱️ Posted Quizzes ({postedQuizzes})
+          </button>
+          <button className="btn-secondary" style={{ borderColor: 'var(--primary-light)', color: 'var(--primary-light)' }} onClick={openQuizResultsModal}>
+            📊 My Quiz Results
           </button>
         </div>
       </div>
@@ -1499,7 +1574,7 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
           <div>
             <h2 style={{ fontSize: '1.6rem' }}>⏱️ Faculty-Posted Board Quizzes</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              {isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt official quizzes posted by administrators under timed exam conditions. (1 Attempt Limit per Quiz)'}
+              {isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt and retake official licensure board exam quizzes posted by administrators. All attempts are saved in your academic record.'}
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1542,7 +1617,7 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
                       <span className="badge badge-status">{qz.questionCount} Questions | ⏰ {qz.durationMins} Mins</span>
                       {hasAttempted && (
                         <span className={`badge ${userAttempt.passed ? 'badge-status' : 'badge-admin'}`}>
-                          Completed ({userAttempt.percentage}%)
+                          Latest Score: {userAttempt.percentage}% ({userAttempt.passed ? 'Passed' : 'Needs Review'})
                         </span>
                       )}
                       {isAdmin && (
@@ -1581,8 +1656,8 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
                       )}
 
                       {hasAttempted ? (
-                        <button className="btn-secondary" disabled style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem', opacity: 0.75, cursor: 'not-allowed' }}>
-                          Completed (1 Attempt Max)
+                        <button className="btn-primary" style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem', background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }} onClick={() => onLaunch(qz)}>
+                          🔄 Retake Quiz
                         </button>
                       ) : (
                         <button className="btn-primary" style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }} onClick={() => onLaunch(qz)}>
@@ -1601,18 +1676,23 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
   );
 }
 
-// ADMIN QUIZ RESULTS & STUDENT SCORE LOGS MODAL
-function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQuizFilter, onClose }) {
-  const filteredAttempts = selectedQuizFilter
-    ? attempts.filter(a => a.quizId === selectedQuizFilter)
+// QUIZ RESULTS & STUDENT SCORE LOGS MODAL (SUPPORTS BOTH ADMIN AUDIT & STUDENT SCORE HISTORY)
+function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQuizFilter, onClose, user }) {
+  const isStudent = user && user.role !== 'admin';
+  const relevantAttempts = isStudent
+    ? attempts.filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())))
     : attempts;
+
+  const filteredAttempts = selectedQuizFilter
+    ? relevantAttempts.filter(a => a.quizId === selectedQuizFilter)
+    : relevantAttempts;
 
   const totalAttempts = filteredAttempts.length;
   const passedAttempts = filteredAttempts.filter(a => a.passed).length;
   const passRate = totalAttempts > 0 ? ((passedAttempts / totalAttempts) * 100).toFixed(1) : '0.0';
 
   const avgScore = totalAttempts > 0 
-    ? (filteredAttempts.reduce((acc, a) => acc + parseFloat(a.percentage || 0), 0) / totalAttempts).toFixed(1)
+    ? (filteredAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? parseFloat(a.percentage) : (parseFloat(a.scorePct) || 0)), 0) / totalAttempts).toFixed(1)
     : '0.0';
 
   const formatTime = (secs) => {
@@ -1627,9 +1707,13 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
       <div className="modal-content modal-content-lg glass-card" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.6rem' }}>📊 Student Quiz Performance & Score Logs</h2>
+            <h2 style={{ fontSize: '1.6rem' }}>
+              {isStudent ? '📊 My Quiz & Activity Results' : '📊 Student Quiz Performance & Score Logs'}
+            </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              Real-time audit log of all student quiz submissions, test scores, passing rates, and completion times.
+              {isStudent 
+                ? 'Permanent record of all your submitted board exam quizzes, diagnostic benchmarks, simulations, and practice activities.'
+                : 'Real-time audit log of all student quiz submissions, test scores, passing rates, and completion times.'}
             </p>
           </div>
           <button className="btn-secondary" onClick={onClose}>✕ Close</button>
@@ -1640,7 +1724,7 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
           <div className="glass-card stat-card" style={{ padding: '1rem 1.25rem' }}>
             <div>
               <div className="stat-value gradient-text" style={{ fontSize: '1.8rem' }}>{totalAttempts}</div>
-              <div className="stat-label">Total Student Attempts</div>
+              <div className="stat-label">{isStudent ? 'Completed Assessments' : 'Total Student Attempts'}</div>
             </div>
           </div>
           <div className="glass-card stat-card" style={{ padding: '1rem 1.25rem' }}>
@@ -1659,32 +1743,44 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
 
         {/* QUIZ FILTER DROPDOWN */}
         <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-          <label>Filter Log by Quiz</label>
+          <label>{isStudent ? 'Filter My Results by Assessment' : 'Filter Log by Quiz'}</label>
           <select 
             className="form-control" 
             value={selectedQuizFilter || ''} 
             onChange={e => setSelectedQuizFilter(e.target.value || null)}
           >
-            <option value="">All Faculty Quizzes ({attempts.length} attempts recorded)</option>
+            <option value="">
+              {isStudent 
+                ? `All My Quizzes & Activities (${relevantAttempts.length} records saved)` 
+                : `All Faculty Quizzes (${attempts.length} attempts recorded)`}
+            </option>
             {quizzes.map(qz => (
               <option key={qz.id} value={qz.id}>{qz.title}</option>
             ))}
+            {isStudent && (
+              <>
+                <option value="diagnostic_assessment">Diagnostic Benchmark Assessment</option>
+                <option value="board_exam_simulation">Licensure Exam Simulation</option>
+              </>
+            )}
           </select>
         </div>
 
         {/* ATTEMPTS TABLE */}
         {filteredAttempts.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-            No student attempt records recorded for this quiz yet.
+            {isStudent 
+              ? 'No quiz or activity records saved yet. Complete a quiz or diagnostic exam to record your first score!' 
+              : 'No student attempt records recorded for this quiz yet.'}
           </div>
         ) : (
           <div style={{ maxHeight: '45vh', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Student Name</th>
-                  <th>School / University</th>
-                  <th>Quiz Title</th>
+                  {!isStudent && <th>Student Name</th>}
+                  {!isStudent && <th>School / University</th>}
+                  <th>Assessment / Quiz Title</th>
                   <th>Score</th>
                   <th>Percentage</th>
                   <th>Status</th>
@@ -1695,12 +1791,16 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
               <tbody>
                 {filteredAttempts.map(att => (
                   <tr key={att.id}>
-                    <td style={{ fontWeight: '600' }}>
-                      {att.studentName}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
+                    {!isStudent && (
+                      <td style={{ fontWeight: '600' }}>
+                        {att.studentName}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
+                      </td>
+                    )}
+                    {!isStudent && <td>{att.school || 'NEUST'}</td>}
+                    <td style={{ maxWidth: isStudent ? '320px' : '240px', fontSize: '0.85rem', fontWeight: isStudent ? '600' : 'normal' }}>
+                      {att.quizTitle}
                     </td>
-                    <td>{att.school || 'NEUST'}</td>
-                    <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
                     <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
                       {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%

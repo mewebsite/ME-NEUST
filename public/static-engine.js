@@ -418,6 +418,93 @@
     }
   }
 
+  function extractAttemptScore(a) {
+    if (!a) return 0;
+    if (a.score !== undefined && a.score !== null && !isNaN(parseInt(a.score, 10))) {
+      return parseInt(a.score, 10);
+    }
+    if (a.correctAnswers !== undefined && a.correctAnswers !== null && !isNaN(parseInt(a.correctAnswers, 10))) {
+      return parseInt(a.correctAnswers, 10);
+    }
+    if (a.moduleBreakdown && typeof a.moduleBreakdown === 'object') {
+      let sum = 0;
+      let found = false;
+      Object.values(a.moduleBreakdown).forEach(m => {
+        if (m && typeof m === 'object') {
+          const val = m.correct !== undefined ? m.correct : m.score;
+          if (val !== undefined && val !== null && !isNaN(parseInt(val, 10))) {
+            sum += parseInt(val, 10);
+            found = true;
+          }
+        }
+      });
+      if (found) return sum;
+    }
+    return 0;
+  }
+
+  function extractAttemptTotal(a) {
+    if (!a) return 0;
+    if (a.totalQuestions !== undefined && a.totalQuestions !== null && !isNaN(parseInt(a.totalQuestions, 10))) {
+      return parseInt(a.totalQuestions, 10);
+    }
+    if (a.total !== undefined && a.total !== null && !isNaN(parseInt(a.total, 10))) {
+      return parseInt(a.total, 10);
+    }
+    if (a.moduleBreakdown && typeof a.moduleBreakdown === 'object') {
+      let sum = 0;
+      let found = false;
+      Object.values(a.moduleBreakdown).forEach(m => {
+        if (m && typeof m === 'object' && m.total !== undefined && m.total !== null && !isNaN(parseInt(m.total, 10))) {
+          sum += parseInt(m.total, 10);
+          found = true;
+        }
+      });
+      if (found && sum > 0) return sum;
+    }
+    return 0;
+  }
+
+  function extractAttemptPercentage(a, scoreVal, totalVal) {
+    if (a && a.percentage !== undefined && a.percentage !== null && !isNaN(parseFloat(a.percentage))) {
+      return Math.round(parseFloat(a.percentage));
+    }
+    if (a && a.scorePct !== undefined && a.scorePct !== null && !isNaN(parseFloat(a.scorePct))) {
+      return Math.round(parseFloat(a.scorePct));
+    }
+    return totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0;
+  }
+
+  function normalizeAttempt(a, users = []) {
+    if (!a) return null;
+    const scoreVal = extractAttemptScore(a);
+    const totalVal = extractAttemptTotal(a);
+    const pct = extractAttemptPercentage(a, scoreVal, totalVal);
+
+    // Resolve student name/email/school if missing
+    const matchingUser = users.find(u => u.id === a.studentId || (u.email && a.studentEmail && u.email.toLowerCase() === a.studentEmail.toLowerCase()));
+    const studentName = (a.studentName && a.studentName !== 'Student') 
+      ? a.studentName 
+      : (matchingUser ? matchingUser.fullName : (a.studentName || 'Student Reviewee'));
+    const studentEmail = a.studentEmail || (matchingUser ? matchingUser.email : '');
+    const school = a.school || (matchingUser ? matchingUser.school : 'NEUST');
+
+    return {
+      ...a,
+      score: scoreVal,
+      correctAnswers: scoreVal,
+      totalQuestions: totalVal,
+      percentage: pct,
+      scorePct: pct,
+      passed: a.passed !== undefined && a.passed !== null ? !!a.passed : (pct >= 70),
+      studentName,
+      studentEmail,
+      school,
+      timeSpentSeconds: a.timeSpentSeconds || 60,
+      submittedAt: a.submittedAt || new Date().toISOString()
+    };
+  }
+
   function handleIncomingLiveEvent(event) {
     const { type, data } = event;
     console.log(`[Live Sync] Incoming event: ${type}`, data);
@@ -446,22 +533,7 @@
       const incomingAttempt = data;
       if (incomingAttempt && incomingAttempt.id) {
         const users = getLocal(STORAGE_KEYS.USERS, []);
-        const matchingUser = users.find(u => u.id === incomingAttempt.studentId || (u.email && incomingAttempt.studentEmail && u.email.toLowerCase() === incomingAttempt.studentEmail.toLowerCase()));
-        const scoreVal = incomingAttempt.score !== undefined ? incomingAttempt.score : (incomingAttempt.correctAnswers || 0);
-        const totalVal = incomingAttempt.totalQuestions || 0;
-        const pctVal = incomingAttempt.percentage !== undefined ? incomingAttempt.percentage : (incomingAttempt.scorePct || (totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0));
-        const normalized = {
-          ...incomingAttempt,
-          score: scoreVal,
-          correctAnswers: scoreVal,
-          totalQuestions: totalVal,
-          percentage: pctVal,
-          scorePct: pctVal,
-          passed: incomingAttempt.passed !== undefined ? incomingAttempt.passed : (pctVal >= 70),
-          studentName: (incomingAttempt.studentName && incomingAttempt.studentName !== 'Student') ? incomingAttempt.studentName : (matchingUser ? matchingUser.fullName : (incomingAttempt.studentName || 'Student Reviewee')),
-          studentEmail: incomingAttempt.studentEmail || (matchingUser ? matchingUser.email : ''),
-          school: incomingAttempt.school || (matchingUser ? matchingUser.school : 'NEUST')
-        };
+        const normalized = normalizeAttempt(incomingAttempt, users);
 
         let currentAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
         const existingIdx = currentAttempts.findIndex(a => a.id === normalized.id);
@@ -636,37 +708,7 @@
     const allRawAttempts = Array.from(map.values());
     const users = getLocal(STORAGE_KEYS.USERS, []);
 
-    const normalized = allRawAttempts.map(a => {
-      const scoreVal = a.score !== undefined ? parseInt(a.score, 10) : (a.correctAnswers !== undefined ? parseInt(a.correctAnswers, 10) : 0);
-      const totalVal = a.totalQuestions !== undefined ? parseInt(a.totalQuestions, 10) : 0;
-      let pct = a.percentage !== undefined ? parseFloat(a.percentage) : (a.scorePct !== undefined ? parseFloat(a.scorePct) : null);
-      if (pct === null || isNaN(pct)) {
-        pct = totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0;
-      }
-
-      // Resolve student name/email/school if missing
-      const matchingUser = users.find(u => u.id === a.studentId || (u.email && a.studentEmail && u.email.toLowerCase() === a.studentEmail.toLowerCase()));
-      const studentName = (a.studentName && a.studentName !== 'Student') 
-        ? a.studentName 
-        : (matchingUser ? matchingUser.fullName : (a.studentName || 'Student Reviewee'));
-      const studentEmail = a.studentEmail || (matchingUser ? matchingUser.email : '');
-      const school = a.school || (matchingUser ? matchingUser.school : 'NEUST');
-
-      return {
-        ...a,
-        score: scoreVal,
-        correctAnswers: scoreVal,
-        totalQuestions: totalVal,
-        percentage: pct,
-        scorePct: pct,
-        passed: a.passed !== undefined ? a.passed : (pct >= 70),
-        studentName,
-        studentEmail,
-        school,
-        timeSpentSeconds: a.timeSpentSeconds || 60,
-        submittedAt: a.submittedAt || new Date().toISOString()
-      };
-    });
+    const normalized = allRawAttempts.map(a => normalizeAttempt(a, users)).filter(Boolean);
 
     normalized.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
     setLocal(STORAGE_KEYS.ATTEMPTS, normalized);
@@ -1045,12 +1087,9 @@
     // 6. RECORD ATTEMPT (POST /api/attempts)
     if (urlStr.includes('/api/attempts') && method === 'POST') {
       const currentUser = resolveCurrentUser(token);
-      const scoreVal = body.score !== undefined ? parseInt(body.score, 10) : (body.correctAnswers !== undefined ? parseInt(body.correctAnswers, 10) : 0);
-      const totalVal = body.totalQuestions !== undefined ? parseInt(body.totalQuestions, 10) : 0;
-      let pct = body.percentage !== undefined ? parseFloat(body.percentage) : (body.scorePct !== undefined ? parseFloat(body.scorePct) : null);
-      if (pct === null || isNaN(pct)) {
-        pct = totalVal > 0 ? Math.round((scoreVal / totalVal) * 100) : 0;
-      }
+      const scoreVal = extractAttemptScore(body);
+      const totalVal = extractAttemptTotal(body);
+      const pct = extractAttemptPercentage(body, scoreVal, totalVal);
 
       const newAttempt = {
         id: `att_${Date.now()}`,
@@ -1065,7 +1104,7 @@
         correctAnswers: scoreVal,
         percentage: pct,
         scorePct: pct,
-        passed: body.passed !== undefined ? body.passed : (pct >= 70),
+        passed: body.passed !== undefined && body.passed !== null ? !!body.passed : (pct >= 70),
         timeSpentSeconds: body.timeSpentSeconds || 60,
         submittedAt: new Date().toISOString(),
         moduleBreakdown: body.moduleBreakdown || {}

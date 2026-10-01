@@ -13,6 +13,67 @@ const MODULE_OPTIONS = [
   { value: 'Unclassified', label: 'Unclassified / General (48 Qs)' }
 ];
 
+// ROBUST ATTEMPT SCORE EXTRACTION HELPERS
+function getAttemptScore(att) {
+  if (!att) return 0;
+  if (att.score !== undefined && att.score !== null && !isNaN(parseInt(att.score, 10))) {
+    return parseInt(att.score, 10);
+  }
+  if (att.correctAnswers !== undefined && att.correctAnswers !== null && !isNaN(parseInt(att.correctAnswers, 10))) {
+    return parseInt(att.correctAnswers, 10);
+  }
+  if (att.moduleBreakdown && typeof att.moduleBreakdown === 'object') {
+    let sum = 0;
+    let found = false;
+    Object.values(att.moduleBreakdown).forEach(m => {
+      if (m && typeof m === 'object') {
+        const val = m.correct !== undefined ? m.correct : m.score;
+        if (val !== undefined && val !== null && !isNaN(parseInt(val, 10))) {
+          sum += parseInt(val, 10);
+          found = true;
+        }
+      }
+    });
+    if (found) return sum;
+  }
+  return 0;
+}
+
+function getAttemptTotal(att) {
+  if (!att) return 0;
+  if (att.totalQuestions !== undefined && att.totalQuestions !== null && !isNaN(parseInt(att.totalQuestions, 10))) {
+    return parseInt(att.totalQuestions, 10);
+  }
+  if (att.total !== undefined && att.total !== null && !isNaN(parseInt(att.total, 10))) {
+    return parseInt(att.total, 10);
+  }
+  if (att.moduleBreakdown && typeof att.moduleBreakdown === 'object') {
+    let sum = 0;
+    let found = false;
+    Object.values(att.moduleBreakdown).forEach(m => {
+      if (m && typeof m === 'object' && m.total !== undefined && m.total !== null && !isNaN(parseInt(m.total, 10))) {
+        sum += parseInt(m.total, 10);
+        found = true;
+      }
+    });
+    if (found && sum > 0) return sum;
+  }
+  return 0;
+}
+
+function getAttemptPercentage(att) {
+  if (!att) return 0;
+  if (att.percentage !== undefined && att.percentage !== null && !isNaN(parseFloat(att.percentage))) {
+    return Math.round(parseFloat(att.percentage));
+  }
+  if (att.scorePct !== undefined && att.scorePct !== null && !isNaN(parseFloat(att.scorePct))) {
+    return Math.round(parseFloat(att.scorePct));
+  }
+  const score = getAttemptScore(att);
+  const total = getAttemptTotal(att);
+  return total > 0 ? Math.round((score / total) * 100) : 0;
+}
+
 function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -519,8 +580,10 @@ function App() {
         quizId: activeQuiz ? activeQuiz.id : 'custom_quiz',
         quizTitle: activeQuiz ? activeQuiz.title : 'Board Prep Quiz',
         score,
+        correctAnswers: score,
         totalQuestions: total,
         percentage: pct,
+        scorePct: pct,
         passed,
         timeSpentSeconds: timeSpentSecs,
         moduleBreakdown
@@ -1692,7 +1755,7 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
   const passRate = totalAttempts > 0 ? ((passedAttempts / totalAttempts) * 100).toFixed(1) : '0.0';
 
   const avgScore = totalAttempts > 0 
-    ? (filteredAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? parseFloat(a.percentage) : (parseFloat(a.scorePct) || 0)), 0) / totalAttempts).toFixed(1)
+    ? (filteredAttempts.reduce((acc, a) => acc + getAttemptPercentage(a), 0) / totalAttempts).toFixed(1)
     : '0.0';
 
   const formatTime = (secs) => {
@@ -1801,9 +1864,9 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
                     <td style={{ maxWidth: isStudent ? '320px' : '240px', fontSize: '0.85rem', fontWeight: isStudent ? '600' : 'normal' }}>
                       {att.quizTitle}
                     </td>
-                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
+                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
+                      {getAttemptPercentage(att)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
@@ -1832,7 +1895,7 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
   const passedCount = userAttempts.filter(a => a.passed).length;
   const failedCount = userAttempts.length - passedCount;
   const avgScore = userAttempts.length > 0
-    ? Math.round(userAttempts.reduce((acc, a) => acc + (a.percentage !== undefined ? a.percentage : (a.scorePct || a.score || 0)), 0) / userAttempts.length)
+    ? Math.round(userAttempts.reduce((acc, a) => acc + getAttemptPercentage(a), 0) / userAttempts.length)
     : 0;
 
   const stats = (user.stats && user.stats.totalAttempts > 0)
@@ -1942,9 +2005,9 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
                 {attempts.map(att => (
                   <tr key={att.id}>
                     <td style={{ fontWeight: '600' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
+                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
+                      {getAttemptPercentage(att)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
@@ -2760,9 +2823,9 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                     </td>
                     <td>{att.school || 'NEUST'}</td>
                     <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{att.score !== undefined ? att.score : (att.correctAnswers || 0)} / {att.totalQuestions || 0}</td>
+                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
                     <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {att.percentage !== undefined ? att.percentage : (att.scorePct !== undefined ? att.scorePct : 0)}%
+                      {getAttemptPercentage(att)}%
                     </td>
                     <td>
                       <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>

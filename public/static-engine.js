@@ -214,46 +214,22 @@
       }
     }
 
-    // 3. Fetch active quizzes from Cloud Firestore
+    // 3. Fetch active quizzes from Cloud Firestore (Direct Authoritative Database)
     let quizzes = [];
     try {
       const cloudQuizzes = await cloudFetchCollection('quizzes');
-      if (cloudQuizzes && cloudQuizzes.length > 0) {
+      if (Array.isArray(cloudQuizzes)) {
         quizzes = cloudQuizzes;
       }
     } catch (e) {
-      console.warn('[Firestore Cloud] Error fetching quizzes:', e);
+      console.warn('[Firestore Cloud] Error fetching quizzes, using offline cache:', e);
+      quizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
     }
 
-    // 4. If cloud quizzes collection is empty, seed from INITIAL_QUIZZES excluding any deleted ones
-    if (quizzes.length === 0) {
-      const cached = getLocal(STORAGE_KEYS.QUIZZES, []);
-      if (cached && cached.length > 0) {
-        quizzes = cached;
-      } else if (window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
-        quizzes = window.INITIAL_QUIZZES.filter(q => !allDeletedIds.includes(q.id));
-      }
-      // Populate non-deleted quizzes into Cloud Firestore so it's authoritative
-      for (const q of quizzes) {
-        if (!allDeletedIds.includes(q.id)) {
-          cloudSaveDoc('quizzes', q.id, q).catch(() => {});
-        }
-      }
-    }
-
-    // 5. Merge any custom locally created quizzes that are not deleted and not yet in the list
-    const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-    localQuizzes.forEach(lq => {
-      if (!quizzes.some(q => q.id === lq.id) && !allDeletedIds.includes(lq.id)) {
-        quizzes.unshift(lq);
-        cloudSaveDoc('quizzes', lq.id, lq).catch(() => {});
-      }
-    });
-
-    // 6. Absolute Guarantee: Filter out ANY quiz in allDeletedIds
+    // 4. Absolute Guarantee: Exclude any quiz in allDeletedIds
     quizzes = quizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
 
-    // 7. Update local cache with cleansed quizzes list
+    // 5. Update local cache with sanitized, live active quizzes
     setLocal(STORAGE_KEYS.QUIZZES, quizzes);
     return quizzes;
   }

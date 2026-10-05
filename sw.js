@@ -4,15 +4,15 @@
  * regardless of whether the user or host computer is offline or online.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.3.0';
+const CACHE_NAME = 'me-boardprep-cache-v2.3.1';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=2.3.0',
-  './questions-data.js?v=2.3.0',
-  './paho-mqtt.min.js?v=2.3.0',
-  './static-engine.js?v=2.3.0',
-  './app.bundle.js?v=2.3.0',
+  './styles.css?v=2.3.1',
+  './questions-data.js?v=2.3.1',
+  './paho-mqtt.min.js?v=2.3.1',
+  './static-engine.js?v=2.3.1',
+  './app.bundle.js?v=2.3.1',
   './images/neust_seal.png',
   './images/neust_coe_seal.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',

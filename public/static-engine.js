@@ -151,14 +151,14 @@
   // --- SEED USERS (Always available baseline including all administrators) ---
   const SEED_USERS = [
     {
-      id: "usr_admin_1",
-      fullName: "Lead Faculty Administrator",
-      email: "admin1@boardprep.edu.ph",
+      id: "usr_admin_01",
+      fullName: "Dean / Lead Admin",
+      email: "admin@me-prep.edu.ph",
       password: "admin123",
       role: "admin",
       status: "active",
-      createdDate: "2026-07-27",
-      school: "NEUST"
+      createdDate: "2026-08-01",
+      school: "NEUST College of Engineering"
     },
     {
       id: "usr_1785127116553",
@@ -167,31 +167,31 @@
       password: "admin123",
       role: "admin",
       status: "active",
-      createdDate: "2026-07-27",
-      school: "NEUST",
+      createdDate: "2026-08-01",
+      school: "NEUST College of Engineering",
       diagnosticCompleted: true,
       diagnosticScore: 14,
       diagnosticDate: "2026-08-11"
     },
     {
-      id: "usr_admin_3",
-      fullName: "Academic Admin 3",
-      email: "admin3@boardprep.edu.ph",
+      id: "usr_admin_03",
+      fullName: "Faculty Admin 2",
+      email: "admin2@me-prep.edu.ph",
       password: "admin123",
       role: "admin",
       status: "active",
-      createdDate: "2026-07-27",
-      school: "NEUST"
+      createdDate: "2026-08-01",
+      school: "NEUST College of Engineering"
     },
     {
-      id: "usr_admin_4",
-      fullName: "Academic Admin 4",
-      email: "admin4@boardprep.edu.ph",
+      id: "usr_admin_04",
+      fullName: "Review Coordinator Admin 3",
+      email: "admin3@me-prep.edu.ph",
       password: "admin123",
       role: "admin",
       status: "active",
-      createdDate: "2026-07-27",
-      school: "NEUST"
+      createdDate: "2026-08-01",
+      school: "NEUST College of Engineering"
     }
   ];
 
@@ -200,6 +200,11 @@
     const email = (u.email || '').toLowerCase();
     const name = (u.fullName || '').toLowerCase();
     const id = u.id || '';
+
+    // Filter old duplicate admin seed IDs from previous versions
+    if (id === 'usr_admin_1' || id === 'usr_admin_3' || id === 'usr_admin_4') return true;
+    if (email === 'admin1@boardprep.edu.ph' || email === 'admin3@boardprep.edu.ph' || email === 'admin4@boardprep.edu.ph') return true;
+
     return (
       email.includes('teststudent') ||
       email.includes('test_') ||
@@ -933,11 +938,16 @@
     // 2. LOGIN
     if (urlStr.includes('/api/auth/login') && method === 'POST') {
       const { email, password } = body;
+      const inputEmail = (email || '').toLowerCase().trim();
       const users = await getAllUsers();
-      const user = users.find(u => 
-        (u.email || '').toLowerCase() === (email || '').toLowerCase() && 
-        (u.password === password || u.passwordHash)
-      );
+      const user = users.find(u => {
+        const uEmail = (u.email || '').toLowerCase().trim();
+        const matchesEmail = uEmail === inputEmail ||
+          (inputEmail === 'admin1@boardprep.edu.ph' && uEmail === 'admin@me-prep.edu.ph') ||
+          (inputEmail === 'admin3@boardprep.edu.ph' && uEmail === 'admin2@me-prep.edu.ph') ||
+          (inputEmail === 'admin4@boardprep.edu.ph' && uEmail === 'admin3@me-prep.edu.ph');
+        return matchesEmail && (u.password === password || u.passwordHash);
+      });
 
       if (!user) {
         return jsonResponse({ error: 'Invalid email or password.' }, 401);

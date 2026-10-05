@@ -1,16 +1,45 @@
 [
   {
+    "id": "usr_admin_01",
+    "fullName": "Dean / Lead Admin",
+    "email": "admin@me-prep.edu.ph",
+    "password": "admin123",
+    "role": "admin",
+    "status": "active",
+    "createdDate": "2026-08-01",
+    "school": "NEUST College of Engineering"
+  },
+  {
     "id": "usr_1785127116553",
     "fullName": "John Lorenz Castro",
     "email": "castrojohnlorenz015@gmail.com",
-    "passwordHash": "$2a$10$qlrh4r0TjRf3X49yRhLLTOHZ5vm2MHQkGdLlUy8oQFjBsSfqu3Q9u",
+    "password": "admin123",
     "role": "admin",
     "status": "active",
-    "createdDate": "2026-07-27",
-    "school": "NEUST",
-    "targetExamDate": "2026-10-15",
+    "createdDate": "2026-08-01",
+    "school": "NEUST College of Engineering",
     "diagnosticCompleted": true,
     "diagnosticScore": 14,
     "diagnosticDate": "2026-08-11"
+  },
+  {
+    "id": "usr_admin_03",
+    "fullName": "Faculty Admin 2",
+    "email": "admin2@me-prep.edu.ph",
+    "password": "admin123",
+    "role": "admin",
+    "status": "active",
+    "createdDate": "2026-08-01",
+    "school": "NEUST College of Engineering"
+  },
+  {
+    "id": "usr_admin_04",
+    "fullName": "Review Coordinator Admin 3",
+    "email": "admin3@me-prep.edu.ph",
+    "password": "admin123",
+    "role": "admin",
+    "status": "active",
+    "createdDate": "2026-08-01",
+    "school": "NEUST College of Engineering"
   }
 ]

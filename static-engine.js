@@ -1,12 +1,12 @@
 /**
  * ME BoardPrep - Real-Time Cloud Firestore Engine
  * Synchronizes User Logins, Profiles, Quiz Attempts & Scores directly with Google Cloud Firestore
- * Project ID: mechanical-neust
+ * Project ID: me-neust-website-v2
  */
 
 (function() {
   const originalFetch = (typeof window !== 'undefined' && window.fetch) ? window.fetch.bind(window) : fetch;
-  const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/mechanical-neust/databases/(default)/documents';
+  const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/me-neust-website-v2/databases/(default)/documents';
 
   const STORAGE_KEYS = {
     USERS: 'me_users_data',

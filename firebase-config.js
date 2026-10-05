@@ -13,23 +13,23 @@ if (getApps().length === 0) {
       const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
       app = initializeApp({
         credential: cert(serviceAccount),
-        projectId: serviceAccount.project_id || 'mechanical-neust'
+        projectId: serviceAccount.project_id || 'me-neust-website-v2'
       });
     } catch (e) {
       console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT env var:', e);
-      app = initializeApp({ projectId: 'mechanical-neust' });
+      app = initializeApp({ projectId: 'me-neust-website-v2' });
     }
   } else if (fs.existsSync(serviceAccountPath)) {
     // Use service account for local development
     const serviceAccount = require(serviceAccountPath);
     app = initializeApp({
       credential: cert(serviceAccount),
-      projectId: serviceAccount.project_id || 'mechanical-neust'
+      projectId: serviceAccount.project_id || 'me-neust-website-v2'
     });
   } else {
     // Use Application Default Credentials for Cloud Run deployment
     app = initializeApp({
-      projectId: 'mechanical-neust'
+      projectId: 'me-neust-website-v2'
     });
   }
 } else {

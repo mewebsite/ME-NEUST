@@ -194,33 +194,6 @@
       school: "NEUST"
     },
     {
-      id: "usr_1785723259255",
-      fullName: "Maria Santos",
-      email: "teststudent_1785723259138@me-boardprep.edu",
-      password: "student123",
-      role: "student",
-      status: "active",
-      createdDate: "2026-08-03",
-      school: "UP Diliman",
-      targetExamDate: "2026-10-15"
-    },
-    {
-      id: "usr_1786429568399",
-      fullName: "renz",
-      email: "dsds@gmail.com",
-      password: "student123",
-      role: "student",
-      status: "active",
-      createdDate: "2026-08-11",
-      school: "NEUST",
-      targetExamDate: "2026-10-15",
-      diagnosticCompleted: true,
-      diagnosticScore: 16,
-      diagnosticDate: "2026-08-11",
-      simulationScore: 4,
-      simulationAttemptsCount: 5
-    },
-    {
       id: "usr_1786434961655",
       fullName: "Frans",
       email: "frans@gmail.com",
@@ -235,48 +208,87 @@
       diagnosticDate: "2026-08-11"
     },
     {
-      id: "usr_1786435508595",
-      fullName: "lorenz",
-      email: "lorenz@gmail.com",
+      id: "usr_1790821984469",
+      fullName: "Jerico A. Portelo",
+      email: "jericoaquino133@gmail.com",
       password: "student123",
       role: "student",
       status: "active",
-      createdDate: "2026-08-11",
-      school: "NEUST",
-      targetExamDate: "2026-10-15",
-      diagnosticCompleted: true,
-      diagnosticScore: 1,
-      diagnosticDate: "2026-08-11"
+      createdDate: "2026-10-01",
+      school: "NEUST"
     },
     {
-      id: "usr_1787791492377",
-      fullName: "Test Student",
-      email: "test_1787791492223@test.com",
+      id: "usr_1790854935333",
+      fullName: "kenneth matutino",
+      email: "kcmatutino24@gmail.com",
       password: "student123",
       role: "student",
       status: "active",
-      createdDate: "2026-08-27",
-      school: "Test",
-      targetExamDate: "2026-10-15",
-      diagnosticCompleted: true,
-      diagnosticScore: 0,
-      diagnosticDate: "2026-08-27",
-      simulationPassed: false,
-      simulationScore: 0,
-      simulationAttemptsCount: 1
+      createdDate: "2026-10-01",
+      school: "NEUST"
     }
   ];
+
+  function isTestUser(u) {
+    if (!u) return true;
+    const email = (u.email || '').toLowerCase();
+    const name = (u.fullName || '').toLowerCase();
+    const id = u.id || '';
+    return (
+      email.includes('teststudent') ||
+      email.includes('test_') ||
+      email === 'dsds@gmail.com' ||
+      email === 'lorenz@gmail.com' ||
+      name.includes('test student') ||
+      name === 'maria santos' ||
+      name === 'renz' ||
+      (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
+      id === 'usr_1787791492377' ||
+      id === 'usr_1785723259255' ||
+      id === 'usr_1786429568399' ||
+      id === 'usr_1786435508595' ||
+      id === 'usr_1791158752028' ||
+      id === 'usr_1791158752041' ||
+      id === 'usr_1791158752460' ||
+      id === 'usr_1791158752849'
+    );
+  }
+
+  function isTestAttempt(a) {
+    if (!a) return true;
+    const email = (a.studentEmail || '').toLowerCase();
+    const name = (a.studentName || '').toLowerCase();
+    const sid = a.studentId || '';
+    return (
+      email.includes('teststudent') ||
+      email.includes('test_') ||
+      email === 'dsds@gmail.com' ||
+      email === 'lorenz@gmail.com' ||
+      name.includes('test student') ||
+      name === 'maria santos' ||
+      name === 'renz' ||
+      (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
+      sid === 'usr_1787791492377' ||
+      sid === 'usr_1785723259255' ||
+      sid === 'usr_1786429568399' ||
+      sid === 'usr_1786435508595' ||
+      sid === 'usr_1791158752028' ||
+      sid === 'usr_1791158752041' ||
+      sid === 'usr_1791158752460' ||
+      sid === 'usr_1791158752849'
+    );
+  }
 
   function mergeUsers(existing, incoming) {
     const map = new Map();
     (existing || []).forEach(u => {
-      if (u) {
+      if (u && !isTestUser(u)) {
         const k = (u.id || u.email || '').toLowerCase();
         if (k) map.set(k, u);
       }
     });
     (incoming || []).forEach(u => {
-      if (u) {
+      if (u && !isTestUser(u)) {
         const k = (u.id || u.email || '').toLowerCase();
         if (k) {
           if (map.has(k)) {
@@ -665,7 +677,7 @@
     try {
       const cloudUsers = await cloudFetchCollection('users');
       if (cloudUsers && cloudUsers.length > 0) {
-        users = cloudUsers;
+        users = cloudUsers.filter(u => !isTestUser(u));
         const merged = mergeUsers(SEED_USERS, users);
         setLocal(STORAGE_KEYS.USERS, merged);
         return merged;
@@ -673,7 +685,7 @@
     } catch (e) {
       console.warn('[Firestore Cloud] Error fetching users:', e);
     }
-    const local = getLocal(STORAGE_KEYS.USERS, []);
+    const local = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u));
     users = mergeUsers(SEED_USERS, local);
     setLocal(STORAGE_KEYS.USERS, users);
     return users;
@@ -687,26 +699,26 @@
       console.warn('[Firestore Cloud] Error fetching attempts:', e);
     }
 
-    const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
+    const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []).filter(a => !isTestAttempt(a));
     const map = new Map();
 
     // 1. Add all local attempts (including ones received via MQTT Live Sync or Retained Snapshots)
     localAttempts.forEach(a => {
-      if (a && a.id) map.set(a.id, a);
+      if (a && a.id && !isTestAttempt(a)) map.set(a.id, a);
     });
 
     // 2. Merge cloud attempts safely by ID so local attempts are NEVER lost
     if (cloudAttempts !== null && Array.isArray(cloudAttempts)) {
       cloudAttempts.forEach(a => {
-        if (a && a.id) {
+        if (a && a.id && !isTestAttempt(a)) {
           const existing = map.get(a.id) || {};
           map.set(a.id, { ...existing, ...a });
         }
       });
     }
 
-    const allRawAttempts = Array.from(map.values());
-    const users = getLocal(STORAGE_KEYS.USERS, []);
+    const allRawAttempts = Array.from(map.values()).filter(a => !isTestAttempt(a));
+    const users = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u));
 
     const normalized = allRawAttempts.map(a => normalizeAttempt(a, users)).filter(Boolean);
 

@@ -14,33 +14,6 @@
     "diagnosticDate": "2026-08-11"
   },
   {
-    "id": "usr_1785723259255",
-    "fullName": "Maria Santos",
-    "email": "teststudent_1785723259138@me-boardprep.edu",
-    "passwordHash": "$2a$10$8pTETdSgo5WOdfbMMtheIuk9RAQYdYwID1hvBIL4kqu0nfQ40.Fwa",
-    "role": "student",
-    "status": "active",
-    "createdDate": "2026-08-03",
-    "school": "UP Diliman",
-    "targetExamDate": "2026-10-15"
-  },
-  {
-    "id": "usr_1786429568399",
-    "fullName": "renz",
-    "email": "dsds@gmail.com",
-    "passwordHash": "$2a$10$RjShNn.cP.QOcDztCA8Bf./3WpMUhqBz28XxRKmFTleWllJ20j.py",
-    "role": "student",
-    "status": "active",
-    "createdDate": "2026-08-11",
-    "school": "NEUST",
-    "targetExamDate": "2026-10-15",
-    "diagnosticCompleted": true,
-    "diagnosticScore": 16,
-    "diagnosticDate": "2026-08-11",
-    "simulationScore": 4,
-    "simulationAttemptsCount": 5
-  },
-  {
     "id": "usr_1786434961655",
     "fullName": "Frans",
     "email": "frans@gmail.com",
@@ -53,36 +26,5 @@
     "diagnosticCompleted": true,
     "diagnosticScore": 13,
     "diagnosticDate": "2026-08-11"
-  },
-  {
-    "id": "usr_1786435508595",
-    "fullName": "lorenz",
-    "email": "lorenz@gmail.com",
-    "passwordHash": "$2a$10$u6U5Rc/a.02U27im15qENemFnvsciF3lDknLK8dOkG86I6VQvGg0W",
-    "role": "student",
-    "status": "active",
-    "createdDate": "2026-08-11",
-    "school": "NEUST",
-    "targetExamDate": "2026-10-15",
-    "diagnosticCompleted": true,
-    "diagnosticScore": 1,
-    "diagnosticDate": "2026-08-11"
-  },
-  {
-    "id": "usr_1787791492377",
-    "fullName": "Test Student",
-    "email": "test_1787791492223@test.com",
-    "passwordHash": "$2a$10$XAPuLP1q9f9CdgTJCvZyjuWpefELZlR3kay4RaQLV1NWM.qsSaIli",
-    "role": "student",
-    "status": "active",
-    "createdDate": "2026-08-27",
-    "school": "Test",
-    "targetExamDate": "2026-10-15",
-    "diagnosticCompleted": true,
-    "diagnosticScore": 0,
-    "diagnosticDate": "2026-08-27",
-    "simulationPassed": false,
-    "simulationScore": 0,
-    "simulationAttemptsCount": 1
   }
 ]

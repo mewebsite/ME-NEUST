@@ -87,6 +87,8 @@ function App() {
   const [selectedUserDetail, setSelectedUserDetail] = useState(null);
   const [selectedQuizFilterForResults, setSelectedQuizFilterForResults] = useState(null);
   const [theme, setTheme] = useState('dark');
+  const [deviceMode, setDeviceMode] = useState(() => localStorage.getItem('me_device_mode') || 'auto');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
   // App state
   const [stats, setStats] = useState(null);
@@ -124,6 +126,13 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Synchronize and persist device mode (auto, mobile, laptop)
+  useEffect(() => {
+    document.documentElement.setAttribute('data-device-mode', deviceMode);
+    document.body.setAttribute('data-device-mode', deviceMode);
+    localStorage.setItem('me_device_mode', deviceMode);
+  }, [deviceMode]);
 
   // Check current session
   useEffect(() => {
@@ -708,79 +717,282 @@ function App() {
           </div>
         </div>
 
-        <nav className="nav-items">
-          <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => {
-            setUserAnswers({});
-            setActiveQuestionIndex(0);
-            setShowExplanation(false);
-            setActiveQuiz(null);
-            setExamSubmitted(false);
-            setTimerActive(false);
-            setView('dashboard');
-          }}>Dashboard</button>
-          
-          {user && (
-            <>
-              <button className={`nav-btn ${view === 'audit' ? 'active' : ''}`} onClick={() => {
-                loadQuestions({ page: 1, limit: 20 });
-                setView('audit');
-              }}>Question Explorer</button>
-
-              <button className="nav-btn" onClick={() => setPracticeModalOpen(true)}>
-                📖 Practice Mode
-              </button>
-
-              <button className="nav-btn" onClick={() => {
-                loadQuizzes();
-                setQuizListModalOpen(true);
-              }}>
-                ⏱️ Board Quizzes
-              </button>
-
-              <button className="nav-btn" onClick={() => {
-                loadAttempts();
-                setSelectedQuizFilterForResults(null);
-                setQuizResultsModalOpen(true);
-              }}>
-                📊 My Results
-              </button>
-            </>
-          )}
-
-          {user && user.role === 'admin' && (
-            <button className={`nav-btn ${view === 'admin' ? 'active' : ''}`} onClick={() => {
-              loadUsers();
-              loadQuestions({ page: 1, limit: 20 });
-              loadQuizzes();
-              loadAttempts();
-              setView('admin');
-            }}>
-              <span className="badge badge-admin">Admin Portal</span>
+        {/* NAVBAR CONTROLS: DEVICE MODE SWITCHER + DESKTOP MENU + HAMBURGER */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+          {/* DEVICE MODE SWITCHER PILL (MOBILE PHONE / LAPTOP / AUTO) */}
+          <div className="device-mode-switcher" title="Switch Layout Fit: Mobile Phone or Laptop">
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('auto')}
+              title="Auto-Fit: Responsively adapts to current screen size"
+            >
+              <span>🔄</span> <span className="device-btn-label">Auto</span>
             </button>
-          )}
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('mobile')}
+              title="Mobile Phone Mode: Fits layout into touch-friendly smartphone view"
+            >
+              <span>📱</span> <span className="device-btn-label">Phone</span>
+            </button>
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('laptop')}
+              title="Laptop Mode: Full widescreen desktop layout"
+            >
+              <span>💻</span> <span className="device-btn-label">Laptop</span>
+            </button>
+          </div>
 
-          <button className="nav-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
-            {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-          </button>
+          {/* DESKTOP NAVIGATION MENU */}
+          <nav className="nav-items">
+            <button className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} onClick={() => {
+              setUserAnswers({});
+              setActiveQuestionIndex(0);
+              setShowExplanation(false);
+              setActiveQuiz(null);
+              setExamSubmitted(false);
+              setTimerActive(false);
+              setView('dashboard');
+            }}>Dashboard</button>
+            
+            {user && (
+              <>
+                <button className={`nav-btn ${view === 'audit' ? 'active' : ''}`} onClick={() => {
+                  loadQuestions({ page: 1, limit: 20 });
+                  setView('audit');
+                }}>Question Explorer</button>
 
-          {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <span className={`badge ${user.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>
-                {user.fullName} ({user.role})
-              </span>
-              <button className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={() => setProfileModalOpen(true)}>
-                ⚙️ Profile
+                <button className="nav-btn" onClick={() => setPracticeModalOpen(true)}>
+                  📖 Practice Mode
+                </button>
+
+                <button className="nav-btn" onClick={() => {
+                  loadQuizzes();
+                  setQuizListModalOpen(true);
+                }}>
+                  ⏱️ Board Quizzes
+                </button>
+
+                <button className="nav-btn" onClick={() => {
+                  loadAttempts();
+                  setSelectedQuizFilterForResults(null);
+                  setQuizResultsModalOpen(true);
+                }}>
+                  📊 My Results
+                </button>
+              </>
+            )}
+
+            {user && user.role === 'admin' && (
+              <button className={`nav-btn ${view === 'admin' ? 'active' : ''}`} onClick={() => {
+                loadUsers();
+                loadQuestions({ page: 1, limit: 20 });
+                loadQuizzes();
+                loadAttempts();
+                setView('admin');
+              }}>
+                <span className="badge badge-admin">Admin Portal</span>
               </button>
-              <button className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <button className="btn-secondary" onClick={() => setAuthModal('login')}>Login</button>
-              <button className="btn-primary" onClick={() => setAuthModal('signup')}>Sign Up</button>
-            </div>
-          )}
-        </nav>
+            )}
+
+            <button className="nav-btn" onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}>
+              {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+            </button>
+
+            {user ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span className={`badge ${user.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>
+                  {user.fullName} ({user.role})
+                </span>
+                <button className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={() => setProfileModalOpen(true)}>
+                  ⚙️ Profile
+                </button>
+                <button className="btn-secondary" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }} onClick={logout}>Logout</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn-secondary" onClick={() => setAuthModal('login')}>Login</button>
+                <button className="btn-primary" onClick={() => setAuthModal('signup')}>Sign Up</button>
+              </div>
+            )}
+          </nav>
+
+          {/* MOBILE HAMBURGER MENU TOGGLE BUTTON */}
+          <button 
+            type="button" 
+            className="mobile-menu-toggle" 
+            onClick={() => setMobileMenuOpen(prev => !prev)}
+            aria-label="Toggle navigation menu"
+            title="Open Menu"
+          >
+            {mobileMenuOpen ? '✕' : '☰'}
+          </button>
+        </div>
       </header>
+
+      {/* MOBILE NAVIGATION SLIDE-DOWN DRAWER */}
+      {mobileMenuOpen && (
+        <div className="mobile-nav-drawer">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.85rem' }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '700', letterSpacing: '0.05em' }}>
+              LAYOUT DISPLAY MODE
+            </span>
+            <div className="device-mode-switcher" style={{ width: '100%', justifyContent: 'space-between' }}>
+              <button 
+                type="button"
+                className={`device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setDeviceMode('auto')}
+              >
+                🔄 Auto-Fit
+              </button>
+              <button 
+                type="button"
+                className={`device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setDeviceMode('mobile')}
+              >
+                📱 Mobile Phone
+              </button>
+              <button 
+                type="button"
+                className={`device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`}
+                style={{ flex: 1, justifyContent: 'center' }}
+                onClick={() => setDeviceMode('laptop')}
+              >
+                💻 Laptop
+              </button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            <button className={`drawer-nav-item ${view === 'dashboard' ? 'active' : ''}`} onClick={() => {
+              setUserAnswers({});
+              setActiveQuestionIndex(0);
+              setShowExplanation(false);
+              setActiveQuiz(null);
+              setExamSubmitted(false);
+              setTimerActive(false);
+              setView('dashboard');
+              setMobileMenuOpen(false);
+            }}>
+              🏠 Dashboard
+            </button>
+
+            {user && (
+              <>
+                <button className="drawer-nav-item" onClick={() => {
+                  setPracticeModalOpen(true);
+                  setMobileMenuOpen(false);
+                }}>
+                  📖 Practice Mode
+                </button>
+
+                <button className="drawer-nav-item" onClick={() => {
+                  loadQuizzes();
+                  setQuizListModalOpen(true);
+                  setMobileMenuOpen(false);
+                }}>
+                  ⏱️ Board Quizzes
+                </button>
+
+                <button className="drawer-nav-item" onClick={() => {
+                  loadAttempts();
+                  setSelectedQuizFilterForResults(null);
+                  setQuizResultsModalOpen(true);
+                  setMobileMenuOpen(false);
+                }}>
+                  📊 My Quiz Results
+                </button>
+
+                <button className={`drawer-nav-item ${view === 'audit' ? 'active' : ''}`} onClick={() => {
+                  loadQuestions({ page: 1, limit: 20 });
+                  setView('audit');
+                  setMobileMenuOpen(false);
+                }}>
+                  🔍 Question Explorer
+                </button>
+              </>
+            )}
+
+            {user && user.role === 'admin' && (
+              <button className={`drawer-nav-item ${view === 'admin' ? 'active' : ''}`} onClick={() => {
+                loadUsers();
+                loadQuestions({ page: 1, limit: 20 });
+                loadQuizzes();
+                loadAttempts();
+                setView('admin');
+                setMobileMenuOpen(false);
+              }}>
+                🛡️ Admin Portal
+              </button>
+            )}
+
+            <button className="drawer-nav-item" onClick={() => {
+              setTheme(t => t === 'dark' ? 'light' : 'dark');
+            }}>
+              {theme === 'dark' ? '☀️ Switch to Light Theme' : '🌙 Switch to Dark Theme'}
+            </button>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '0.85rem' }}>
+            {user ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span className={`badge ${user.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>
+                    {user.fullName} ({user.role})
+                  </span>
+                  <button className="btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={() => {
+                    setProfileModalOpen(true);
+                    setMobileMenuOpen(false);
+                  }}>
+                    ⚙️ Profile
+                  </button>
+                </div>
+                <button className="btn-danger" style={{ width: '100%', padding: '0.6rem' }} onClick={() => {
+                  logout();
+                  setMobileMenuOpen(false);
+                }}>
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <button className="btn-secondary" onClick={() => {
+                  setAuthModal('login');
+                  setMobileMenuOpen(false);
+                }}>Login</button>
+                <button className="btn-primary" onClick={() => {
+                  setAuthModal('signup');
+                  setMobileMenuOpen(false);
+                }}>Sign Up</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ACTIVE MODE STATUS BANNER */}
+      {deviceMode !== 'auto' && (
+        <div className="device-mode-status-banner">
+          <span>
+            {deviceMode === 'mobile' 
+              ? '📱 Mobile Phone Mode Active — Layout fitted for smartphone screens' 
+              : '💻 Laptop / Desktop Mode Active — Full widescreen layout'}
+          </span>
+          <button 
+            type="button" 
+            className="device-mode-status-reset"
+            onClick={() => setDeviceMode('auto')}
+          >
+            Reset to Auto 🔄
+          </button>
+        </div>
+      )}
 
       {/* MAIN CONTENT AREA */}
       <main className="main-content">
@@ -1024,7 +1236,7 @@ function App() {
       )}
 
       {/* FOOTER */}
-      <Footer />
+      <Footer deviceMode={deviceMode} setDeviceMode={setDeviceMode} />
     </div>
   );
 }
@@ -1053,7 +1265,7 @@ function CreatorAttributionBanner() {
 }
 
 // SHARED INSTITUTIONAL FOOTER
-function Footer() {
+function Footer({ deviceMode, setDeviceMode }) {
   return (
     <footer style={{ marginTop: '4rem', padding: '2.5rem 1rem', borderTop: '1px solid var(--border-color)', textAlign: 'center', background: 'rgba(15, 23, 42, 0.75)', position: 'relative', zIndex: 2 }}>
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.25rem', marginBottom: '1rem' }}>
@@ -1069,6 +1281,36 @@ function Footer() {
       <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', maxWidth: '650px', margin: '0.5rem auto 0' }}>
         Official Licensure Board Examination Preparation Platform & Solved 3,105 Item Question Bank Repository.
       </p>
+      
+      {setDeviceMode && (
+        <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: '600' }}>DISPLAY MODE:</span>
+          <div className="device-mode-switcher">
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('auto')}
+            >
+              🔄 Auto-Fit
+            </button>
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('mobile')}
+            >
+              📱 Mobile Phone
+            </button>
+            <button 
+              type="button"
+              className={`device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`}
+              onClick={() => setDeviceMode('laptop')}
+            >
+              💻 Laptop
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '1.25rem' }}>
         © 2026 NEUST BS Mechanical Engineering. All Rights Reserved. Powered by First-Principles Solutions.
       </div>
@@ -1318,18 +1560,18 @@ function HeroSection({ onLoginClick, onSignupClick }) {
       <div className="badge badge-admin" style={{ display: 'inline-block', marginBottom: '1.5rem' }}>
         Verified Mechanical Engineering Question Bank & AI Review System
       </div>
-      <h1 style={{ fontSize: '3.2rem', marginBottom: '1.5rem', maxWidth: '900px', margin: '0 auto 1.5rem' }}>
+      <h1 className="hero-title" style={{ fontSize: 'clamp(1.75rem, 5.5vw, 3.2rem)', marginBottom: '1.5rem', maxWidth: '900px', margin: '0 auto 1.5rem', lineHeight: '1.2' }}>
         Master the Mechanical Engineer Board Exam with <span className="gradient-text">First-Principles Solutions</span>
       </h1>
-      <p style={{ fontSize: '1.2rem', color: 'var(--text-muted)', maxWidth: '750px', margin: '0 auto 2.5rem' }}>
+      <p style={{ fontSize: 'clamp(0.95rem, 2.5vw, 1.2rem)', color: 'var(--text-muted)', maxWidth: '750px', margin: '0 auto 2.5rem' }}>
         Comprehensive question bank of 3,105 solved items covering Power Plant Engineering, Industrial Plant Design, Heat Transfer, Refrigeration & Air Conditioning, and ME Design.
       </p>
 
-      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '3.5rem' }}>
-        <button className="btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1.1rem' }} onClick={onSignupClick}>
+      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '3.5rem', flexWrap: 'wrap' }}>
+        <button className="btn-primary" style={{ padding: '0.85rem 2rem', fontSize: '1.05rem' }} onClick={onSignupClick}>
           Create Free Student Account
         </button>
-        <button className="btn-secondary" style={{ padding: '0.85rem 2rem', fontSize: '1.1rem' }} onClick={onLoginClick}>
+        <button className="btn-secondary" style={{ padding: '0.85rem 2rem', fontSize: '1.05rem' }} onClick={onLoginClick}>
           Log In
         </button>
       </div>
@@ -1837,7 +2079,7 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
               : 'No student attempt records recorded for this quiz yet.'}
           </div>
         ) : (
-          <div style={{ maxHeight: '45vh', overflowY: 'auto' }}>
+          <div className="table-responsive" style={{ maxHeight: '45vh', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -1989,7 +2231,7 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
             This student has not attempted any faculty board quizzes yet.
           </div>
         ) : (
-          <div style={{ maxHeight: '35vh', overflowY: 'auto' }}>
+          <div className="table-responsive" style={{ maxHeight: '35vh', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -2138,7 +2380,7 @@ function ExamView({ questions, activeQuiz, activeIdx, setActiveIdx, userAnswers,
   return (
     <div>
       {/* EXAM BAR */}
-      <div className="glass-card" style={{ padding: '1rem 1.5rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="glass-card exam-top-bar" style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
         <div>
           <span className={`badge ${examMode === 'mock' ? 'badge-admin' : 'badge-student'}`} style={{ marginRight: '0.75rem' }}>
             {examMode === 'mock' ? (activeQuiz ? `⏱️ Quiz: ${activeQuiz.title.substring(0, 30)}...` : '⏱️ Timed Quiz') : '📖 Practice Mode'}
@@ -2290,7 +2532,7 @@ function ExamView({ questions, activeQuiz, activeIdx, setActiveIdx, userAnswers,
           )}
 
           {/* NAVIGATION BUTTONS */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2rem' }}>
+          <div className="exam-nav-actions" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2rem', gap: '0.75rem', flexWrap: 'wrap' }}>
             <button className="btn-secondary" disabled={activeIdx === 0} onClick={() => setActiveIdx(i => i - 1)}>
               ← Previous Question
             </button>
@@ -2308,9 +2550,9 @@ function ExamView({ questions, activeQuiz, activeIdx, setActiveIdx, userAnswers,
         </div>
 
         {/* QUESTION PALETTE GRID SIDEBAR */}
-        <div className="glass-card" style={{ padding: '1.5rem' }}>
+        <div className="glass-card question-palette-card" style={{ padding: '1.5rem' }}>
           <h4 style={{ marginBottom: '1rem' }}>Question Navigator</h4>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto' }}>
+          <div className="question-nav-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))', gap: '0.5rem', maxHeight: '420px', overflowY: 'auto' }}>
             {questions.map((item, idx) => {
               const isAns = !!userAnswers[item.ID];
               const isCorrect = userAnswers[item.ID] === item.CorrectAnswer;
@@ -2430,7 +2672,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
 
             <h3 style={{ fontSize: '1.15rem', marginBottom: '1rem', fontWeight: '600' }}>{q.QuestionText}</h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <div className="grid-2col" style={{ gap: '0.75rem', marginBottom: '1.25rem' }}>
               <div style={{ padding: '0.65rem', background: q.CorrectAnswer === 'A' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-sm)', border: q.CorrectAnswer === 'A' ? '1px solid var(--success)' : '1px solid var(--border-color)' }}>
                 <strong>A:</strong> {q.OptionA}
               </div>
@@ -2657,70 +2899,72 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               </select>
             </div>
 
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>User Profile Info</th>
-                  <th>Role & Status</th>
-                  <th>University / School</th>
-                  <th>Target Exam Date</th>
-                  <th>Exam History Stats</th>
-                  <th>Actions & Details</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map(u => {
-                  const uStats = u.stats || { totalAttempts: 0, passedCount: 0, failedCount: 0, avgScore: 0 };
-                  return (
-                    <tr key={u.id}>
-                      <td>
-                        <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{u.fullName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</div>
-                        <span className="badge badge-student" style={{ fontSize: '0.7rem', marginTop: '0.2rem' }}>{u.id}</span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
-                          <span className={`badge ${u.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>{u.role}</span>
-                          <span className={`badge ${u.status === 'active' ? 'badge-status' : 'badge-admin'}`}>{u.status}</span>
-                        </div>
-                      </td>
-                      <td style={{ fontWeight: '500', color: 'var(--primary-light)' }}>{u.school || 'Mapúa University'}</td>
-                      <td style={{ fontSize: '0.85rem' }}>{u.targetExamDate || '2026-10-15'}</td>
-                      <td>
-                        <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>
-                          Attempts: {uStats.totalAttempts} | Avg: {uStats.avgScore}%
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                          Passed: <strong style={{ color: 'var(--success)' }}>{uStats.passedCount}</strong> | Failed: <strong style={{ color: 'var(--danger)' }}>{uStats.failedCount}</strong>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                          <button 
-                            className="btn-primary" 
-                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} 
-                            onClick={() => openUserDetailModal(u)}
-                          >
-                            👁️ View All Data
-                          </button>
-                          <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => openUserModal(u)}>
-                            Edit
-                          </button>
-                          <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => toggleUserStatus(u)}>
-                            {u.status === 'active' ? 'Deactivate' : 'Activate'}
-                          </button>
-                          {u.role !== 'admin' && (
-                            <button className="btn-danger" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => deleteUser(u)}>
-                              🗑️ Delete
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>User Profile Info</th>
+                    <th>Role & Status</th>
+                    <th>University / School</th>
+                    <th>Target Exam Date</th>
+                    <th>Exam History Stats</th>
+                    <th>Actions & Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map(u => {
+                    const uStats = u.stats || { totalAttempts: 0, passedCount: 0, failedCount: 0, avgScore: 0 };
+                    return (
+                      <tr key={u.id}>
+                        <td>
+                          <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{u.fullName}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                          <span className="badge badge-student" style={{ fontSize: '0.7rem', marginTop: '0.2rem' }}>{u.id}</span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                            <span className={`badge ${u.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>{u.role}</span>
+                            <span className={`badge ${u.status === 'active' ? 'badge-status' : 'badge-admin'}`}>{u.status}</span>
+                          </div>
+                        </td>
+                        <td style={{ fontWeight: '500', color: 'var(--primary-light)' }}>{u.school || 'Mapúa University'}</td>
+                        <td style={{ fontSize: '0.85rem' }}>{u.targetExamDate || '2026-10-15'}</td>
+                        <td>
+                          <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>
+                            Attempts: {uStats.totalAttempts} | Avg: {uStats.avgScore}%
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                            Passed: <strong style={{ color: 'var(--success)' }}>{uStats.passedCount}</strong> | Failed: <strong style={{ color: 'var(--danger)' }}>{uStats.failedCount}</strong>
+                          </div>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <button 
+                              className="btn-primary" 
+                              style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} 
+                              onClick={() => openUserDetailModal(u)}
+                            >
+                              👁️ View All Data
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => openUserModal(u)}>
+                              Edit
+                            </button>
+                            <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => toggleUserStatus(u)}>
+                              {u.status === 'active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                            {u.role !== 'admin' && (
+                              <button className="btn-danger" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => deleteUser(u)}>
+                                🗑️ Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -2737,51 +2981,53 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
             <button className="btn-primary" onClick={() => openQuizEditorModal(null)}>+ Create & Post New Quiz</button>
           </div>
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Quiz Title</th>
-                <th>Module</th>
-                <th>Questions</th>
-                <th>Time Limit</th>
-                <th>Passing Score</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quizzesList.map(qz => (
-                <tr key={qz.id}>
-                  <td style={{ fontWeight: '600', maxWidth: '280px' }}>{qz.title}</td>
-                  <td>
-                    <span className="badge badge-admin">{qz.module ? qz.module.substring(0, 12) + '...' : 'Mixed'}</span>
-                  </td>
-                  <td>{qz.questionCount} Qs</td>
-                  <td>{qz.durationMins} Mins</td>
-                  <td>{qz.passingScorePct || 70}%</td>
-                  <td>
-                    <span className={`badge ${qz.status === 'published' ? 'badge-status' : 'badge-student'}`}>{qz.status}</span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-                      <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={() => openQuizResultsModal(qz.id)}>
-                        📊 Results
-                      </button>
-                      <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => openQuizEditorModal(qz)}>
-                        Edit
-                      </button>
-                      <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => toggleQuizStatus(qz)}>
-                        {qz.status === 'published' ? 'Unpublish' : 'Publish'}
-                      </button>
-                      <button className="btn-danger" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => deleteQuiz(qz.id)}>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Quiz Title</th>
+                  <th>Module</th>
+                  <th>Questions</th>
+                  <th>Time Limit</th>
+                  <th>Passing Score</th>
+                  <th>Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {quizzesList.map(qz => (
+                  <tr key={qz.id}>
+                    <td style={{ fontWeight: '600', maxWidth: '280px' }}>{qz.title}</td>
+                    <td>
+                      <span className="badge badge-admin">{qz.module ? qz.module.substring(0, 12) + '...' : 'Mixed'}</span>
+                    </td>
+                    <td>{qz.questionCount} Qs</td>
+                    <td>{qz.durationMins} Mins</td>
+                    <td>{qz.passingScorePct || 70}%</td>
+                    <td>
+                      <span className={`badge ${qz.status === 'published' ? 'badge-status' : 'badge-student'}`}>{qz.status}</span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                        <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={() => openQuizResultsModal(qz.id)}>
+                          📊 Results
+                        </button>
+                        <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => openQuizEditorModal(qz)}>
+                          Edit
+                        </button>
+                        <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => toggleQuizStatus(qz)}>
+                          {qz.status === 'published' ? 'Unpublish' : 'Publish'}
+                        </button>
+                        <button className="btn-danger" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => deleteQuiz(qz.id)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -2802,41 +3048,43 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               No student quiz attempt records found.
             </div>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Student Name</th>
-                  <th>School / University</th>
-                  <th>Quiz Title</th>
-                  <th>Score</th>
-                  <th>Percentage</th>
-                  <th>Status</th>
-                  <th>Submitted At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attemptsList.map(att => (
-                  <tr key={att.id}>
-                    <td style={{ fontWeight: '600' }}>
-                      {att.studentName}
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
-                    </td>
-                    <td>{att.school || 'NEUST'}</td>
-                    <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
-                    <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {getAttemptPercentage(att)}%
-                    </td>
-                    <td>
-                      <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
-                        {att.passed ? 'PASSED' : 'FAILED'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Student Name</th>
+                    <th>School / University</th>
+                    <th>Quiz Title</th>
+                    <th>Score</th>
+                    <th>Percentage</th>
+                    <th>Status</th>
+                    <th>Submitted At</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {attemptsList.map(att => (
+                    <tr key={att.id}>
+                      <td style={{ fontWeight: '600' }}>
+                        {att.studentName}
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
+                      </td>
+                      <td>{att.school || 'NEUST'}</td>
+                      <td style={{ maxWidth: '240px', fontSize: '0.85rem' }}>{att.quizTitle}</td>
+                      <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
+                      <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
+                        {getAttemptPercentage(att)}%
+                      </td>
+                      <td>
+                        <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
+                          {att.passed ? 'PASSED' : 'FAILED'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -2860,41 +3108,43 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
             </div>
           </div>
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Module</th>
-                <th>Question Text</th>
-                <th>Correct Ans</th>
-                <th>AI Review Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {questions.map(q => (
-                <tr key={q.ID}>
-                  <td>#{q.ID}</td>
-                  <td>{q.Module}</td>
-                  <td style={{ maxWidth: '380px' }}>{q.QuestionText ? q.QuestionText.substring(0, 80) : ''}...</td>
-                  <td style={{ fontWeight: '700', color: 'var(--success)' }}>{q.CorrectAnswer}</td>
-                  <td>
-                    <span className="badge badge-status">{q.AIReviewStatus || 'Verified'}</span>
-                  </td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => openQuestionModal(q)}>
-                        Edit
-                      </button>
-                      <button className="btn-danger" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => deleteQuestion(q.ID)}>
-                        Delete
-                      </button>
-                    </div>
-                  </td>
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Module</th>
+                  <th>Question Text</th>
+                  <th>Correct Ans</th>
+                  <th>AI Review Status</th>
+                  <th>Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {questions.map(q => (
+                  <tr key={q.ID}>
+                    <td>#{q.ID}</td>
+                    <td>{q.Module}</td>
+                    <td style={{ maxWidth: '380px' }}>{q.QuestionText ? q.QuestionText.substring(0, 80) : ''}...</td>
+                    <td style={{ fontWeight: '700', color: 'var(--success)' }}>{q.CorrectAnswer}</td>
+                    <td>
+                      <span className="badge badge-status">{q.AIReviewStatus || 'Verified'}</span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => openQuestionModal(q)}>
+                          Edit
+                        </button>
+                        <button className="btn-danger" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem' }} onClick={() => deleteQuestion(q.ID)}>
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           {/* PAGINATION BAR */}
           <div className="pagination-bar">

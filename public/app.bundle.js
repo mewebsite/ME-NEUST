@@ -100,6 +100,8 @@ function App() {
   const [selectedUserDetail, setSelectedUserDetail] = useState(null);
   const [selectedQuizFilterForResults, setSelectedQuizFilterForResults] = useState(null);
   const [theme, setTheme] = useState('dark');
+  const [deviceMode, setDeviceMode] = useState(() => localStorage.getItem('me_device_mode') || 'auto');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // App state
   const [stats, setStats] = useState(null);
@@ -135,6 +137,13 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  // Synchronize and persist device mode (auto, mobile, laptop)
+  useEffect(() => {
+    document.documentElement.setAttribute('data-device-mode', deviceMode);
+    document.body.setAttribute('data-device-mode', deviceMode);
+    localStorage.setItem('me_device_mode', deviceMode);
+  }, [deviceMode]);
 
   // Check current session
   useEffect(() => {
@@ -704,7 +713,37 @@ function App() {
       fontWeight: '600',
       letterSpacing: '0.03em'
     }
-  }, "NEUST College of Engineering"))), /*#__PURE__*/React.createElement("nav", {
+  }, "NEUST College of Engineering"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.85rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "device-mode-switcher",
+    title: "Switch Layout Fit: Mobile Phone or Laptop"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('auto'),
+    title: "Auto-Fit: Responsively adapts to current screen size"
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDD04"), " ", /*#__PURE__*/React.createElement("span", {
+    className: "device-btn-label"
+  }, "Auto")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('mobile'),
+    title: "Mobile Phone Mode: Fits layout into touch-friendly smartphone view"
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCF1"), " ", /*#__PURE__*/React.createElement("span", {
+    className: "device-btn-label"
+  }, "Phone")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('laptop'),
+    title: "Laptop Mode: Full widescreen desktop layout"
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCBB"), " ", /*#__PURE__*/React.createElement("span", {
+    className: "device-btn-label"
+  }, "Laptop"))), /*#__PURE__*/React.createElement("nav", {
     className: "nav-items"
   }, /*#__PURE__*/React.createElement("button", {
     className: `nav-btn ${view === 'dashboard' ? 'active' : ''}`,
@@ -792,7 +831,190 @@ function App() {
   }, "Login"), /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     onClick: () => setAuthModal('signup')
-  }, "Sign Up")))), /*#__PURE__*/React.createElement("main", {
+  }, "Sign Up"))), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "mobile-menu-toggle",
+    onClick: () => setMobileMenuOpen(prev => !prev),
+    "aria-label": "Toggle navigation menu",
+    title: "Open Menu"
+  }, mobileMenuOpen ? '✕' : '☰'))), mobileMenuOpen && /*#__PURE__*/React.createElement("div", {
+    className: "mobile-nav-drawer"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.5rem',
+      borderBottom: '1px solid var(--border-color)',
+      paddingBottom: '0.85rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.72rem',
+      color: 'var(--text-muted)',
+      fontWeight: '700',
+      letterSpacing: '0.05em'
+    }
+  }, "LAYOUT DISPLAY MODE"), /*#__PURE__*/React.createElement("div", {
+    className: "device-mode-switcher",
+    style: {
+      width: '100%',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`,
+    style: {
+      flex: 1,
+      justifyContent: 'center'
+    },
+    onClick: () => setDeviceMode('auto')
+  }, "\uD83D\uDD04 Auto-Fit"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`,
+    style: {
+      flex: 1,
+      justifyContent: 'center'
+    },
+    onClick: () => setDeviceMode('mobile')
+  }, "\uD83D\uDCF1 Mobile Phone"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`,
+    style: {
+      flex: 1,
+      justifyContent: 'center'
+    },
+    onClick: () => setDeviceMode('laptop')
+  }, "\uD83D\uDCBB Laptop"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: `drawer-nav-item ${view === 'dashboard' ? 'active' : ''}`,
+    onClick: () => {
+      setUserAnswers({});
+      setActiveQuestionIndex(0);
+      setShowExplanation(false);
+      setActiveQuiz(null);
+      setExamSubmitted(false);
+      setTimerActive(false);
+      setView('dashboard');
+      setMobileMenuOpen(false);
+    }
+  }, "\uD83C\uDFE0 Dashboard"), user && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    className: "drawer-nav-item",
+    onClick: () => {
+      setPracticeModalOpen(true);
+      setMobileMenuOpen(false);
+    }
+  }, "\uD83D\uDCD6 Practice Mode"), /*#__PURE__*/React.createElement("button", {
+    className: "drawer-nav-item",
+    onClick: () => {
+      loadQuizzes();
+      setQuizListModalOpen(true);
+      setMobileMenuOpen(false);
+    }
+  }, "\u23F1\uFE0F Board Quizzes"), /*#__PURE__*/React.createElement("button", {
+    className: "drawer-nav-item",
+    onClick: () => {
+      loadAttempts();
+      setSelectedQuizFilterForResults(null);
+      setQuizResultsModalOpen(true);
+      setMobileMenuOpen(false);
+    }
+  }, "\uD83D\uDCCA My Quiz Results"), /*#__PURE__*/React.createElement("button", {
+    className: `drawer-nav-item ${view === 'audit' ? 'active' : ''}`,
+    onClick: () => {
+      loadQuestions({
+        page: 1,
+        limit: 20
+      });
+      setView('audit');
+      setMobileMenuOpen(false);
+    }
+  }, "\uD83D\uDD0D Question Explorer")), user && user.role === 'admin' && /*#__PURE__*/React.createElement("button", {
+    className: `drawer-nav-item ${view === 'admin' ? 'active' : ''}`,
+    onClick: () => {
+      loadUsers();
+      loadQuestions({
+        page: 1,
+        limit: 20
+      });
+      loadQuizzes();
+      loadAttempts();
+      setView('admin');
+      setMobileMenuOpen(false);
+    }
+  }, "\uD83D\uDEE1\uFE0F Admin Portal"), /*#__PURE__*/React.createElement("button", {
+    className: "drawer-nav-item",
+    onClick: () => {
+      setTheme(t => t === 'dark' ? 'light' : 'dark');
+    }
+  }, theme === 'dark' ? '☀️ Switch to Light Theme' : '🌙 Switch to Dark Theme')), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: '1px solid var(--border-color)',
+      paddingTop: '0.85rem'
+    }
+  }, user ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.65rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    className: `badge ${user.role === 'admin' ? 'badge-admin' : 'badge-student'}`
+  }, user.fullName, " (", user.role, ")"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      padding: '0.35rem 0.75rem',
+      fontSize: '0.8rem'
+    },
+    onClick: () => {
+      setProfileModalOpen(true);
+      setMobileMenuOpen(false);
+    }
+  }, "\u2699\uFE0F Profile")), /*#__PURE__*/React.createElement("button", {
+    className: "btn-danger",
+    style: {
+      width: '100%',
+      padding: '0.6rem'
+    },
+    onClick: () => {
+      logout();
+      setMobileMenuOpen(false);
+    }
+  }, "Logout")) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    onClick: () => {
+      setAuthModal('login');
+      setMobileMenuOpen(false);
+    }
+  }, "Login"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-primary",
+    onClick: () => {
+      setAuthModal('signup');
+      setMobileMenuOpen(false);
+    }
+  }, "Sign Up")))), deviceMode !== 'auto' && /*#__PURE__*/React.createElement("div", {
+    className: "device-mode-status-banner"
+  }, /*#__PURE__*/React.createElement("span", null, deviceMode === 'mobile' ? '📱 Mobile Phone Mode Active — Layout fitted for smartphone screens' : '💻 Laptop / Desktop Mode Active — Full widescreen layout'), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "device-mode-status-reset",
+    onClick: () => setDeviceMode('auto')
+  }, "Reset to Auto \uD83D\uDD04")), /*#__PURE__*/React.createElement("main", {
     className: "main-content"
   }, !user ? /*#__PURE__*/React.createElement(HeroSection, {
     onLoginClick: () => setAuthModal('login'),
@@ -971,7 +1193,10 @@ function App() {
       }
       loadQuizzes();
     }
-  }), /*#__PURE__*/React.createElement(Footer, null));
+  }), /*#__PURE__*/React.createElement(Footer, {
+    deviceMode: deviceMode,
+    setDeviceMode: setDeviceMode
+  }));
 }
 
 // INSTITUTIONAL CREATOR ATTRIBUTION BANNER
@@ -1017,7 +1242,10 @@ function CreatorAttributionBanner() {
 }
 
 // SHARED INSTITUTIONAL FOOTER
-function Footer() {
+function Footer({
+  deviceMode,
+  setDeviceMode
+}) {
   return /*#__PURE__*/React.createElement("footer", {
     style: {
       marginTop: '4rem',
@@ -1073,7 +1301,36 @@ function Footer() {
       maxWidth: '650px',
       margin: '0.5rem auto 0'
     }
-  }, "Official Licensure Board Examination Preparation Platform & Solved 3,105 Item Question Bank Repository."), /*#__PURE__*/React.createElement("div", {
+  }, "Official Licensure Board Examination Preparation Platform & Solved 3,105 Item Question Bank Repository."), setDeviceMode && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: '1.5rem',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: '0.75rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.78rem',
+      color: 'var(--text-dim)',
+      fontWeight: '600'
+    }
+  }, "DISPLAY MODE:"), /*#__PURE__*/React.createElement("div", {
+    className: "device-mode-switcher"
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'auto' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('auto')
+  }, "\uD83D\uDD04 Auto-Fit"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'mobile' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('mobile')
+  }, "\uD83D\uDCF1 Mobile Phone"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: `device-pill-btn ${deviceMode === 'laptop' ? 'active' : ''}`,
+    onClick: () => setDeviceMode('laptop')
+  }, "\uD83D\uDCBB Laptop"))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: '0.78rem',
       color: 'var(--text-dim)',
@@ -1512,17 +1769,19 @@ function HeroSection({
       marginBottom: '1.5rem'
     }
   }, "Verified Mechanical Engineering Question Bank & AI Review System"), /*#__PURE__*/React.createElement("h1", {
+    className: "hero-title",
     style: {
-      fontSize: '3.2rem',
+      fontSize: 'clamp(1.75rem, 5.5vw, 3.2rem)',
       marginBottom: '1.5rem',
       maxWidth: '900px',
-      margin: '0 auto 1.5rem'
+      margin: '0 auto 1.5rem',
+      lineHeight: '1.2'
     }
   }, "Master the Mechanical Engineer Board Exam with ", /*#__PURE__*/React.createElement("span", {
     className: "gradient-text"
   }, "First-Principles Solutions")), /*#__PURE__*/React.createElement("p", {
     style: {
-      fontSize: '1.2rem',
+      fontSize: 'clamp(0.95rem, 2.5vw, 1.2rem)',
       color: 'var(--text-muted)',
       maxWidth: '750px',
       margin: '0 auto 2.5rem'
@@ -1532,20 +1791,21 @@ function HeroSection({
       display: 'flex',
       gap: '1rem',
       justifyContent: 'center',
-      marginBottom: '3.5rem'
+      marginBottom: '3.5rem',
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     style: {
       padding: '0.85rem 2rem',
-      fontSize: '1.1rem'
+      fontSize: '1.05rem'
     },
     onClick: onSignupClick
   }, "Create Free Student Account"), /*#__PURE__*/React.createElement("button", {
     className: "btn-secondary",
     style: {
       padding: '0.85rem 2rem',
-      fontSize: '1.1rem'
+      fontSize: '1.05rem'
     },
     onClick: onLoginClick
   }, "Log In")), /*#__PURE__*/React.createElement("div", {
@@ -2397,6 +2657,7 @@ function QuizResultsModal({
       color: 'var(--text-muted)'
     }
   }, isStudent ? 'No quiz or activity records saved yet. Complete a quiz or diagnostic exam to record your first score!' : 'No student attempt records recorded for this quiz yet.') : /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive",
     style: {
       maxHeight: '45vh',
       overflowY: 'auto'
@@ -2642,6 +2903,7 @@ function UserDetailModal({
       borderRadius: 'var(--radius-md)'
     }
   }, "This student has not attempted any faculty board quizzes yet.") : /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive",
     style: {
       maxHeight: '35vh',
       overflowY: 'auto'
@@ -2833,13 +3095,15 @@ function ExamView({
     }
   }, [examSubmitted, hasRecorded]);
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "glass-card",
+    className: "glass-card exam-top-bar",
     style: {
-      padding: '1rem 1.5rem',
+      padding: '1rem 1.25rem',
       marginBottom: '1.5rem',
       display: 'flex',
       justifyContent: 'space-between',
-      alignItems: 'center'
+      alignItems: 'center',
+      gap: '0.85rem',
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
     className: `badge ${examMode === 'mock' ? 'badge-admin' : 'badge-student'}`,
@@ -3037,10 +3301,13 @@ function ExamView({
       color: 'var(--text-muted)'
     }
   }, /*#__PURE__*/React.createElement("strong", null, "\uD83D\uDCD6 Standard Academic Reference:"), " ", q.References)), /*#__PURE__*/React.createElement("div", {
+    className: "exam-nav-actions",
     style: {
       display: 'flex',
       justifyContent: 'space-between',
-      marginTop: '2rem'
+      marginTop: '2rem',
+      gap: '0.75rem',
+      flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn-secondary",
@@ -3054,7 +3321,7 @@ function ExamView({
     disabled: activeIdx === questions.length - 1,
     onClick: () => setActiveIdx(i => i + 1)
   }, "Next Question \u2192"))), /*#__PURE__*/React.createElement("div", {
-    className: "glass-card",
+    className: "glass-card question-palette-card",
     style: {
       padding: '1.5rem'
     }
@@ -3063,9 +3330,10 @@ function ExamView({
       marginBottom: '1rem'
     }
   }, "Question Navigator"), /*#__PURE__*/React.createElement("div", {
+    className: "question-nav-grid",
     style: {
       display: 'grid',
-      gridTemplateColumns: 'repeat(5, 1fr)',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(44px, 1fr))',
       gap: '0.5rem',
       maxHeight: '420px',
       overflowY: 'auto'
@@ -3255,9 +3523,8 @@ function BatchAuditView({
       fontWeight: '600'
     }
   }, q.QuestionText), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
     style: {
-      display: 'grid',
-      gridTemplateColumns: '1fr 1fr',
       gap: '0.75rem',
       marginBottom: '1.25rem'
     }
@@ -3603,7 +3870,9 @@ function AdminView({
     value: "active"
   }, "Active Accounts"), /*#__PURE__*/React.createElement("option", {
     value: "deactivated"
-  }, "Deactivated Accounts"))), /*#__PURE__*/React.createElement("table", {
+  }, "Deactivated Accounts"))), /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive"
+  }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "User Profile Info"), /*#__PURE__*/React.createElement("th", null, "Role & Status"), /*#__PURE__*/React.createElement("th", null, "University / School"), /*#__PURE__*/React.createElement("th", null, "Target Exam Date"), /*#__PURE__*/React.createElement("th", null, "Exam History Stats"), /*#__PURE__*/React.createElement("th", null, "Actions & Details"))), /*#__PURE__*/React.createElement("tbody", null, filteredUsers.map(u => {
     const uStats = u.stats || {
@@ -3703,7 +3972,7 @@ function AdminView({
       },
       onClick: () => deleteUser(u)
     }, "\uD83D\uDDD1\uFE0F Delete"))));
-  }))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
+  })))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -3725,7 +3994,9 @@ function AdminView({
   }, "Only administrators have permission to create, edit, post, publish, and view student attempt logs.")), /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     onClick: () => openQuizEditorModal(null)
-  }, "+ Create & Post New Quiz")), /*#__PURE__*/React.createElement("table", {
+  }, "+ Create & Post New Quiz")), /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive"
+  }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", null, "Questions"), /*#__PURE__*/React.createElement("th", null, "Time Limit"), /*#__PURE__*/React.createElement("th", null, "Passing Score"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Actions"))), /*#__PURE__*/React.createElement("tbody", null, quizzesList.map(qz => /*#__PURE__*/React.createElement("tr", {
     key: qz.id
@@ -3774,7 +4045,7 @@ function AdminView({
       fontSize: '0.8rem'
     },
     onClick: () => deleteQuiz(qz.id)
-  }, "Delete")))))))), activeTab === 'results' && /*#__PURE__*/React.createElement("div", {
+  }, "Delete"))))))))), activeTab === 'results' && /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -3800,7 +4071,9 @@ function AdminView({
       padding: '2rem',
       color: 'var(--text-muted)'
     }
-  }, "No student quiz attempt records found.") : /*#__PURE__*/React.createElement("table", {
+  }, "No student quiz attempt records found.") : /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive"
+  }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Student Name"), /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Submitted At"))), /*#__PURE__*/React.createElement("tbody", null, attemptsList.map(att => /*#__PURE__*/React.createElement("tr", {
     key: att.id
@@ -3834,7 +4107,7 @@ function AdminView({
       fontSize: '0.8rem',
       color: 'var(--text-muted)'
     }
-  }, att.submittedAt)))))), activeTab === 'questions' && /*#__PURE__*/React.createElement("div", {
+  }, att.submittedAt))))))), activeTab === 'questions' && /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -3869,7 +4142,9 @@ function AdminView({
   }, "Search"), /*#__PURE__*/React.createElement("button", {
     className: "btn-success",
     onClick: () => openQuestionModal(null)
-  }, "+ Add Question"))), /*#__PURE__*/React.createElement("table", {
+  }, "+ Add Question"))), /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive"
+  }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "ID"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", null, "Question Text"), /*#__PURE__*/React.createElement("th", null, "Correct Ans"), /*#__PURE__*/React.createElement("th", null, "AI Review Status"), /*#__PURE__*/React.createElement("th", null, "Actions"))), /*#__PURE__*/React.createElement("tbody", null, questions.map(q => /*#__PURE__*/React.createElement("tr", {
     key: q.ID
@@ -3903,7 +4178,7 @@ function AdminView({
       fontSize: '0.8rem'
     },
     onClick: () => deleteQuestion(q.ID)
-  }, "Delete"))))))), /*#__PURE__*/React.createElement("div", {
+  }, "Delete")))))))), /*#__PURE__*/React.createElement("div", {
     className: "pagination-bar"
   }, /*#__PURE__*/React.createElement("div", {
     className: "pagination-info"

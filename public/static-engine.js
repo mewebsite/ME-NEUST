@@ -913,7 +913,7 @@
         email: email.toLowerCase(),
         password,
         role: 'student', // Strict: Public registration is always student; 4 admins are pre-assigned
-        status: 'active',
+        status: 'pending', // Requires administrator approval before activation
         createdDate: new Date().toISOString().split('T')[0],
         school: school || 'N/A',
         targetExamDate: '2026-10-15',
@@ -927,12 +927,16 @@
       // Update local storage cache
       users.push(newUser);
       setLocal(STORAGE_KEYS.USERS, users);
-      setLocal(STORAGE_KEYS.CURRENT_USER, newUser);
+      // NOTE: Do NOT log in immediately; student must wait for admin approval
 
       // Broadcast live to all connected devices in real time!
       broadcastLiveEvent('USER_REGISTERED', newUser);
 
-      return jsonResponse({ message: 'Account created successfully', token: newUser.id, user: newUser });
+      return jsonResponse({ 
+        message: 'Registration submitted successfully! Your account is currently awaiting administrator approval. You will be able to log in once an administrator approves your registration.', 
+        pending: true, 
+        user: newUser 
+      });
     }
 
     // 2. LOGIN
@@ -952,6 +956,23 @@
       if (!user) {
         return jsonResponse({ error: 'Invalid email or password.' }, 401);
       }
+
+      // Admin Approval Check: If student is pending approval, block login
+      if (user.role === 'student' && user.status === 'pending') {
+        return jsonResponse({ 
+          error: 'Your account is currently awaiting administrator approval. Please wait for an administrator to verify and activate your registration before logging in.',
+          pending: true 
+        }, 403);
+      }
+
+      // Check for deactivated or rejected accounts
+      if (user.status === 'deactivated' || user.status === 'rejected') {
+        return jsonResponse({ 
+          error: 'This account has been deactivated or rejected by an administrator. Please contact your instructor or administrator for assistance.',
+          deactivated: true 
+        }, 403);
+      }
+
       setLocal(STORAGE_KEYS.CURRENT_USER, user);
       return jsonResponse({ message: 'Login successful', token: user.id, user });
     }

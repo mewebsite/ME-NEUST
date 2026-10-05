@@ -140,7 +140,7 @@ app.post('/api/auth/register', async (req, res) => {
     email: email.toLowerCase(),
     passwordHash,
     role: userRole,
-    status: 'active',
+    status: 'pending', // Requires administrator approval before activation
     createdDate: new Date().toISOString().split('T')[0],
     school: school || 'N/A',
     targetExamDate: '2026-10-15'
@@ -149,14 +149,12 @@ app.post('/api/auth/register', async (req, res) => {
   users.push(newUser);
   await saveToCollection('users', users, 'id');
 
-  const token = jwt.sign(
-    { id: newUser.id, email: newUser.email, role: newUser.role, fullName: newUser.fullName },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-
   const { passwordHash: _, ...userWithoutHash } = newUser;
-  res.json({ message: 'Account created successfully', token, user: userWithoutHash });
+  res.json({ 
+    message: 'Registration submitted successfully! Your account is currently awaiting administrator approval. You will be able to log in once an administrator approves your registration.', 
+    pending: true, 
+    user: userWithoutHash 
+  });
 });
 
 // POST /api/auth/login
@@ -172,8 +170,16 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password.' });
   }
 
-  if (user.status === 'deactivated') {
-    return res.status(403).json({ error: 'This account has been deactivated by an administrator.' });
+  // Admin Approval Check: If student is pending approval, block login
+  if (user.role === 'student' && user.status === 'pending') {
+    return res.status(403).json({ 
+      error: 'Your account is currently awaiting administrator approval. Please wait for an administrator to verify and activate your registration before logging in.',
+      pending: true 
+    });
+  }
+
+  if (user.status === 'deactivated' || user.status === 'rejected') {
+    return res.status(403).json({ error: 'This account has been deactivated or rejected by an administrator. Please contact your instructor or administrator for assistance.' });
   }
 
   const isMatch = bcrypt.compareSync(password, user.passwordHash);

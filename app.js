@@ -670,6 +670,9 @@ function App() {
     .then(({ status, data }) => {
       if (status >= 400) {
         alert(data.error || 'Authentication failed');
+      } else if (data.pending) {
+        setAuthModal(null);
+        alert(data.message || 'Registration submitted! Your student account is now awaiting administrator approval. You will be able to log in once an administrator approves your registration.');
       } else {
         // Reset previous session history so each login starts fresh with clean tests
         setUserAnswers({});
@@ -691,7 +694,9 @@ function App() {
     .catch(err => alert('Network error: ' + err.message));
   };
 
-
+  const pendingApprovalCount = (user && user.role === 'admin')
+    ? (usersList || []).filter(u => u && u.role === 'student' && u.status === 'pending').length
+    : 0;
 
   return (
     <div className="app-container">
@@ -795,7 +800,21 @@ function App() {
                 loadAttempts();
                 setView('admin');
               }}>
-                <span className="badge badge-admin">Admin Portal</span>
+                <span className="badge badge-admin" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                  Admin Portal
+                  {pendingApprovalCount > 0 && (
+                    <span style={{
+                      background: '#f59e0b',
+                      color: '#000',
+                      padding: '1px 6px',
+                      borderRadius: '10px',
+                      fontSize: '0.72rem',
+                      fontWeight: '800'
+                    }}>
+                      {pendingApprovalCount}
+                    </span>
+                  )}
+                </span>
               </button>
             )}
 
@@ -927,8 +946,20 @@ function App() {
                 loadAttempts();
                 setView('admin');
                 setMobileMenuOpen(false);
-              }}>
-                🛡️ Admin Portal
+              }} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>🛡️ Admin Portal</span>
+                {pendingApprovalCount > 0 && (
+                  <span style={{
+                    background: '#f59e0b',
+                    color: '#000',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '0.75rem',
+                    fontWeight: '800'
+                  }}>
+                    {pendingApprovalCount} Pending
+                  </span>
+                )}
               </button>
             )}
 
@@ -2286,6 +2317,24 @@ function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
           <button className={`btn-secondary ${authModal === 'signup' ? 'btn-primary' : ''}`} style={{ flex: 1 }} onClick={() => setAuthModal('signup')}>Sign Up</button>
         </div>
 
+        {authModal === 'signup' && (
+          <div style={{
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.35)',
+            borderRadius: '8px',
+            padding: '0.65rem 0.85rem',
+            marginBottom: '1.25rem',
+            fontSize: '0.82rem',
+            color: '#fbbf24',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}>
+            <span style={{ fontSize: '1.1rem' }}>🛡️</span>
+            <span><strong>Admin Approval Required:</strong> New student accounts are reviewed and activated by faculty administrators before login access is granted.</span>
+          </div>
+        )}
+
         <form onSubmit={(e) => handleAuthSubmit(e, authModal, 'student')}>
           {authModal === 'signup' && (
             <div className="form-group">
@@ -2777,9 +2826,62 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
   // User Board Analytics Calculations
   const totalUsersCount = usersList.length;
   const activeStudentsCount = usersList.filter(u => u.role === 'student' && u.status === 'active').length;
+  const pendingUsers = usersList.filter(u => u.role === 'student' && u.status === 'pending');
+  const pendingCount = pendingUsers.length;
   const activeAdminsCount = usersList.filter(u => u.role === 'admin').length;
   const schoolsSet = new Set(usersList.map(u => u.school).filter(Boolean));
   const uniqueSchoolsCount = schoolsSet.size;
+
+  const approveUser = (u) => {
+    fetch(`${API_BASE}/api/users/${u.id}`, {
+      method: 'PUT',
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ status: 'active' })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) alert(data.error);
+      loadUsers();
+    })
+    .catch(err => alert('Failed to approve account: ' + err.message));
+  };
+
+  const rejectUser = (u) => {
+    if (!confirm(`Are you sure you want to reject the registration request for: ${u.fullName || u.email}?`)) return;
+    fetch(`${API_BASE}/api/users/${u.id}`, {
+      method: 'PUT',
+      headers: { 
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ status: 'deactivated' })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.error) alert(data.error);
+      loadUsers();
+    })
+    .catch(err => alert('Failed to reject account: ' + err.message));
+  };
+
+  const approveAllPending = async () => {
+    if (!confirm(`Approve all ${pendingCount} pending student account registrations?`)) return;
+    for (const u of pendingUsers) {
+      await fetch(`${API_BASE}/api/users/${u.id}`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ status: 'active' })
+      });
+    }
+    loadUsers();
+    alert(`Successfully approved ${pendingCount} student account(s)!`);
+  };
 
   const filteredUsers = usersList.filter(u => {
     if (userRoleFilter && u.role !== userRoleFilter) return false;
@@ -2816,6 +2918,17 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
         <button className={`btn-secondary ${activeTab === 'users' ? 'btn-primary' : ''}`} onClick={() => { setActiveTab('users'); loadUsers(); }}>
           👥 Master User Data Board ({usersList.length})
         </button>
+        <button 
+          className={`btn-secondary ${activeTab === 'approvals' ? 'btn-primary' : ''}`} 
+          style={pendingCount > 0 ? { border: '1px solid #f59e0b', color: activeTab === 'approvals' ? '#fff' : '#fbbf24' } : {}}
+          onClick={() => { setActiveTab('approvals'); loadUsers(); }}
+        >
+          ⏳ Registration Approvals {pendingCount > 0 && (
+            <span style={{ background: '#f59e0b', color: '#000', borderRadius: '9999px', padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: 'bold', marginLeft: '0.35rem' }}>
+              {pendingCount}
+            </span>
+          )}
+        </button>
         <button className={`btn-secondary ${activeTab === 'quizzes' ? 'btn-primary' : ''}`} onClick={() => { setActiveTab('quizzes'); loadQuizzes(); }}>
           ⏱️ Quiz Management ({quizzesList.length})
         </button>
@@ -2847,6 +2960,19 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               <div className="stat-icon">🎓</div>
             </div>
 
+            <div 
+              className="glass-card stat-card" 
+              style={{ cursor: 'pointer', border: pendingCount > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : undefined }}
+              onClick={() => setActiveTab('approvals')}
+              title="Click to view pending student registration requests"
+            >
+              <div>
+                <div className="stat-value" style={{ color: '#fbbf24' }}>{pendingCount}</div>
+                <div className="stat-label">Pending Approvals</div>
+              </div>
+              <div className="stat-icon">⏳</div>
+            </div>
+
             <div className="glass-card stat-card">
               <div>
                 <div className="stat-value" style={{ color: 'var(--accent-light)' }}>{activeAdminsCount}</div>
@@ -2863,6 +2989,40 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               <div className="stat-icon">🏛️</div>
             </div>
           </div>
+
+          {pendingCount > 0 && (
+            <div style={{
+              background: 'rgba(245, 158, 11, 0.12)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              borderRadius: '10px',
+              padding: '1rem 1.25rem',
+              marginBottom: '1.5rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <span style={{ fontSize: '1.5rem' }}>⚠️</span>
+                <div>
+                  <div style={{ fontWeight: '700', color: '#fbbf24' }}>
+                    {pendingCount} Student Account Registration{pendingCount > 1 ? 's' : ''} Awaiting Approval
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    New students cannot access the question bank or exams until an administrator approves their profile.
+                  </div>
+                </div>
+              </div>
+              <button 
+                className="btn-primary" 
+                style={{ background: '#f59e0b', color: '#000', fontWeight: '700', border: 'none' }} 
+                onClick={() => setActiveTab('approvals')}
+              >
+                Review & Approve Requests ({pendingCount}) →
+              </button>
+            </div>
+          )}
 
           <div className="glass-card" style={{ padding: '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -2895,6 +3055,7 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               <select className="form-control" style={{ flex: 1, minWidth: '160px' }} value={userStatusFilter} onChange={e => setUserStatusFilter(e.target.value)}>
                 <option value="">All Account Statuses</option>
                 <option value="active">Active Accounts</option>
+                <option value="pending">Pending Approvals ({pendingCount})</option>
                 <option value="deactivated">Deactivated Accounts</option>
               </select>
             </div>
@@ -2924,7 +3085,9 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
                             <span className={`badge ${u.role === 'admin' ? 'badge-admin' : 'badge-student'}`}>{u.role}</span>
-                            <span className={`badge ${u.status === 'active' ? 'badge-status' : 'badge-admin'}`}>{u.status}</span>
+                            <span className={`badge ${u.status === 'active' ? 'badge-status' : u.status === 'pending' ? 'badge-pending' : 'badge-deactivated'}`}>
+                              {u.status === 'pending' ? '⏳ Pending' : u.status}
+                            </span>
                           </div>
                         </td>
                         <td style={{ fontWeight: '500', color: 'var(--primary-light)' }}>{u.school || 'Mapúa University'}</td>
@@ -2939,6 +3102,16 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            {u.status === 'pending' && (
+                              <button 
+                                className="btn-success" 
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', fontWeight: '700' }} 
+                                onClick={() => approveUser(u)}
+                                title="Approve student registration"
+                              >
+                                ✅ Approve
+                              </button>
+                            )}
                             <button 
                               className="btn-primary" 
                               style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} 
@@ -2949,9 +3122,16 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
                             <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => openUserModal(u)}>
                               Edit
                             </button>
-                            <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => toggleUserStatus(u)}>
-                              {u.status === 'active' ? 'Deactivate' : 'Activate'}
-                            </button>
+                            {u.status !== 'pending' && (
+                              <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => toggleUserStatus(u)}>
+                                {u.status === 'active' ? 'Deactivate' : 'Activate'}
+                              </button>
+                            )}
+                            {u.status === 'pending' && (
+                              <button className="btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => rejectUser(u)}>
+                                ❌ Reject
+                              </button>
+                            )}
                             {u.role !== 'admin' && (
                               <button className="btn-danger" style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }} onClick={() => deleteUser(u)}>
                                 🗑️ Delete
@@ -2966,6 +3146,103 @@ function AdminView({ stats, usersList, loadUsers, questions, loadQuestions, quiz
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* REGISTRATION APPROVALS QUEUE TAB */}
+      {activeTab === 'approvals' && (
+        <div className="glass-card" style={{ padding: '1.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span>🛡️</span> Student Registration Approval Queue
+              </h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Review and approve newly registered student accounts before they are permitted to access review questions, diagnostic assessments, and licensure exam simulators.
+              </p>
+            </div>
+            {pendingCount > 0 && (
+              <button 
+                className="btn-success" 
+                style={{ fontWeight: '700', padding: '0.6rem 1.25rem' }} 
+                onClick={approveAllPending}
+              >
+                ✅ Approve All ({pendingCount}) Students
+              </button>
+            )}
+          </div>
+
+          {pendingCount === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3.5rem 1rem', color: 'var(--text-muted)' }}>
+              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
+              <h4 style={{ color: 'var(--text-main)', marginBottom: '0.5rem' }}>All Clear! No Pending Registrations</h4>
+              <p style={{ fontSize: '0.9rem', maxWidth: '520px', margin: '0 auto', lineHeight: '1.5' }}>
+                All registered student accounts have been reviewed and approved. When a new student signs up, their registration request will automatically appear here for administrator verification.
+              </p>
+            </div>
+          ) : (
+            <div className="table-responsive">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Student Applicant</th>
+                    <th>University / School</th>
+                    <th>Target Exam Date</th>
+                    <th>Registration Date</th>
+                    <th>Status</th>
+                    <th>Approval Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingUsers.map(u => (
+                    <tr key={u.id}>
+                      <td>
+                        <div style={{ fontWeight: '600', color: 'var(--text-main)' }}>{u.fullName}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{u.email}</div>
+                        <span className="badge badge-student" style={{ fontSize: '0.68rem', marginTop: '0.2rem' }}>{u.id}</span>
+                      </td>
+                      <td style={{ fontWeight: '500', color: 'var(--primary-light)' }}>
+                        {u.school || 'NEUST College of Engineering'}
+                      </td>
+                      <td style={{ fontSize: '0.85rem' }}>{u.targetExamDate || '2026-10-15'}</td>
+                      <td style={{ fontSize: '0.85rem' }}>{u.createdDate || 'Just now'}</td>
+                      <td>
+                        <span className="badge badge-pending">⏳ Pending Approval</span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <button 
+                            className="btn-success" 
+                            style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem', fontWeight: '700' }} 
+                            onClick={() => approveUser(u)}
+                            title="Approve and activate this student account"
+                          >
+                            ✅ Approve
+                          </button>
+                          <button 
+                            className="btn-secondary" 
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }} 
+                            onClick={() => rejectUser(u)}
+                            title="Reject this student registration"
+                          >
+                            ❌ Reject
+                          </button>
+                          <button 
+                            className="btn-danger" 
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }} 
+                            onClick={() => deleteUser(u)}
+                            title="Delete this student record"
+                          >
+                            🗑️ Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -3669,6 +3946,7 @@ function UserModal({ editingUser, onClose, onSaved }) {
               <label>Status</label>
               <select className="form-control" value={status} onChange={e => setStatus(e.target.value)}>
                 <option value="active">Active</option>
+                <option value="pending">Pending Approval</option>
                 <option value="deactivated">Deactivated</option>
               </select>
             </div>

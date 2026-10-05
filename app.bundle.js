@@ -646,6 +646,9 @@ function App() {
     }) => {
       if (status >= 400) {
         alert(data.error || 'Authentication failed');
+      } else if (data.pending) {
+        setAuthModal(null);
+        alert(data.message || 'Registration submitted! Your student account is now awaiting administrator approval. You will be able to log in once an administrator approves your registration.');
       } else {
         // Reset previous session history so each login starts fresh with clean tests
         setUserAnswers({});
@@ -664,6 +667,7 @@ function App() {
       }
     }).catch(err => alert('Network error: ' + err.message));
   };
+  const pendingApprovalCount = user && user.role === 'admin' ? (usersList || []).filter(u => u && u.role === 'student' && u.status === 'pending').length : 0;
   return /*#__PURE__*/React.createElement("div", {
     className: "app-container"
   }, /*#__PURE__*/React.createElement("header", {
@@ -794,8 +798,22 @@ function App() {
       setView('admin');
     }
   }, /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-admin"
-  }, "Admin Portal")), /*#__PURE__*/React.createElement("button", {
+    className: "badge badge-admin",
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.4rem'
+    }
+  }, "Admin Portal", pendingApprovalCount > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: '#f59e0b',
+      color: '#000',
+      padding: '1px 6px',
+      borderRadius: '10px',
+      fontSize: '0.72rem',
+      fontWeight: '800'
+    }
+  }, pendingApprovalCount))), /*#__PURE__*/React.createElement("button", {
     className: "nav-btn",
     onClick: () => setTheme(t => t === 'dark' ? 'light' : 'dark')
   }, theme === 'dark' ? '☀️ Light' : '🌙 Dark'), user ? /*#__PURE__*/React.createElement("div", {
@@ -945,8 +963,22 @@ function App() {
       loadAttempts();
       setView('admin');
       setMobileMenuOpen(false);
+    },
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between'
     }
-  }, "\uD83D\uDEE1\uFE0F Admin Portal"), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDEE1\uFE0F Admin Portal"), pendingApprovalCount > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: '#f59e0b',
+      color: '#000',
+      padding: '2px 8px',
+      borderRadius: '12px',
+      fontSize: '0.75rem',
+      fontWeight: '800'
+    }
+  }, pendingApprovalCount, " Pending")), /*#__PURE__*/React.createElement("button", {
     className: "drawer-nav-item",
     onClick: () => {
       setTheme(t => t === 'dark' ? 'light' : 'dark');
@@ -2977,7 +3009,24 @@ function AuthModal({
       flex: 1
     },
     onClick: () => setAuthModal('signup')
-  }, "Sign Up")), /*#__PURE__*/React.createElement("form", {
+  }, "Sign Up")), authModal === 'signup' && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'rgba(245, 158, 11, 0.12)',
+      border: '1px solid rgba(245, 158, 11, 0.35)',
+      borderRadius: '8px',
+      padding: '0.65rem 0.85rem',
+      marginBottom: '1.25rem',
+      fontSize: '0.82rem',
+      color: '#fbbf24',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '1.1rem'
+    }
+  }, "\uD83D\uDEE1\uFE0F"), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, "Admin Approval Required:"), " New student accounts are reviewed and activated by faculty administrators before login access is granted.")), /*#__PURE__*/React.createElement("form", {
     onSubmit: e => handleAuthSubmit(e, authModal, 'student')
   }, authModal === 'signup' && /*#__PURE__*/React.createElement("div", {
     className: "form-group"
@@ -3675,9 +3724,59 @@ function AdminView({
   // User Board Analytics Calculations
   const totalUsersCount = usersList.length;
   const activeStudentsCount = usersList.filter(u => u.role === 'student' && u.status === 'active').length;
+  const pendingUsers = usersList.filter(u => u.role === 'student' && u.status === 'pending');
+  const pendingCount = pendingUsers.length;
   const activeAdminsCount = usersList.filter(u => u.role === 'admin').length;
   const schoolsSet = new Set(usersList.map(u => u.school).filter(Boolean));
   const uniqueSchoolsCount = schoolsSet.size;
+  const approveUser = u => {
+    fetch(`${API_BASE}/api/users/${u.id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        status: 'active'
+      })
+    }).then(res => res.json()).then(data => {
+      if (data.error) alert(data.error);
+      loadUsers();
+    }).catch(err => alert('Failed to approve account: ' + err.message));
+  };
+  const rejectUser = u => {
+    if (!confirm(`Are you sure you want to reject the registration request for: ${u.fullName || u.email}?`)) return;
+    fetch(`${API_BASE}/api/users/${u.id}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        status: 'deactivated'
+      })
+    }).then(res => res.json()).then(data => {
+      if (data.error) alert(data.error);
+      loadUsers();
+    }).catch(err => alert('Failed to reject account: ' + err.message));
+  };
+  const approveAllPending = async () => {
+    if (!confirm(`Approve all ${pendingCount} pending student account registrations?`)) return;
+    for (const u of pendingUsers) {
+      await fetch(`${API_BASE}/api/users/${u.id}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: 'active'
+        })
+      });
+    }
+    loadUsers();
+    alert(`Successfully approved ${pendingCount} student account(s)!`);
+  };
   const filteredUsers = usersList.filter(u => {
     if (userRoleFilter && u.role !== userRoleFilter) return false;
     if (userStatusFilter && u.status !== userStatusFilter) return false;
@@ -3740,6 +3839,26 @@ function AdminView({
       loadUsers();
     }
   }, "\uD83D\uDC65 Master User Data Board (", usersList.length, ")"), /*#__PURE__*/React.createElement("button", {
+    className: `btn-secondary ${activeTab === 'approvals' ? 'btn-primary' : ''}`,
+    style: pendingCount > 0 ? {
+      border: '1px solid #f59e0b',
+      color: activeTab === 'approvals' ? '#fff' : '#fbbf24'
+    } : {},
+    onClick: () => {
+      setActiveTab('approvals');
+      loadUsers();
+    }
+  }, "\u23F3 Registration Approvals ", pendingCount > 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: '#f59e0b',
+      color: '#000',
+      borderRadius: '9999px',
+      padding: '0.1rem 0.5rem',
+      fontSize: '0.75rem',
+      fontWeight: 'bold',
+      marginLeft: '0.35rem'
+    }
+  }, pendingCount)), /*#__PURE__*/React.createElement("button", {
     className: `btn-secondary ${activeTab === 'quizzes' ? 'btn-primary' : ''}`,
     onClick: () => {
       setActiveTab('quizzes');
@@ -3782,6 +3901,23 @@ function AdminView({
   }, "Active Student Reviewees")), /*#__PURE__*/React.createElement("div", {
     className: "stat-icon"
   }, "\uD83C\uDF93")), /*#__PURE__*/React.createElement("div", {
+    className: "glass-card stat-card",
+    style: {
+      cursor: 'pointer',
+      border: pendingCount > 0 ? '1px solid rgba(245, 158, 11, 0.4)' : undefined
+    },
+    onClick: () => setActiveTab('approvals'),
+    title: "Click to view pending student registration requests"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "stat-value",
+    style: {
+      color: '#fbbf24'
+    }
+  }, pendingCount), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "Pending Approvals")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-icon"
+  }, "\u23F3")), /*#__PURE__*/React.createElement("div", {
     className: "glass-card stat-card"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "stat-value",
@@ -3803,7 +3939,49 @@ function AdminView({
     className: "stat-label"
   }, "Universities Represented")), /*#__PURE__*/React.createElement("div", {
     className: "stat-icon"
-  }, "\uD83C\uDFDB\uFE0F"))), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFDB\uFE0F"))), pendingCount > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: 'rgba(245, 158, 11, 0.12)',
+      border: '1px solid rgba(245, 158, 11, 0.4)',
+      borderRadius: '10px',
+      padding: '1rem 1.25rem',
+      marginBottom: '1.5rem',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '1rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.75rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '1.5rem'
+    }
+  }, "\u26A0\uFE0F"), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: '700',
+      color: '#fbbf24'
+    }
+  }, pendingCount, " Student Account Registration", pendingCount > 1 ? 's' : '', " Awaiting Approval"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.85rem',
+      color: 'var(--text-muted)'
+    }
+  }, "New students cannot access the question bank or exams until an administrator approves their profile."))), /*#__PURE__*/React.createElement("button", {
+    className: "btn-primary",
+    style: {
+      background: '#f59e0b',
+      color: '#000',
+      fontWeight: '700',
+      border: 'none'
+    },
+    onClick: () => setActiveTab('approvals')
+  }, "Review & Approve Requests (", pendingCount, ") \u2192")), /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -3869,6 +4047,8 @@ function AdminView({
   }, "All Account Statuses"), /*#__PURE__*/React.createElement("option", {
     value: "active"
   }, "Active Accounts"), /*#__PURE__*/React.createElement("option", {
+    value: "pending"
+  }, "Pending Approvals (", pendingCount, ")"), /*#__PURE__*/React.createElement("option", {
     value: "deactivated"
   }, "Deactivated Accounts"))), /*#__PURE__*/React.createElement("div", {
     className: "table-responsive"
@@ -3909,8 +4089,8 @@ function AdminView({
     }, /*#__PURE__*/React.createElement("span", {
       className: `badge ${u.role === 'admin' ? 'badge-admin' : 'badge-student'}`
     }, u.role), /*#__PURE__*/React.createElement("span", {
-      className: `badge ${u.status === 'active' ? 'badge-status' : 'badge-admin'}`
-    }, u.status))), /*#__PURE__*/React.createElement("td", {
+      className: `badge ${u.status === 'active' ? 'badge-status' : u.status === 'pending' ? 'badge-pending' : 'badge-deactivated'}`
+    }, u.status === 'pending' ? '⏳ Pending' : u.status))), /*#__PURE__*/React.createElement("td", {
       style: {
         fontWeight: '500',
         color: 'var(--primary-light)'
@@ -3943,7 +4123,16 @@ function AdminView({
         gap: '0.4rem',
         flexWrap: 'wrap'
       }
-    }, /*#__PURE__*/React.createElement("button", {
+    }, u.status === 'pending' && /*#__PURE__*/React.createElement("button", {
+      className: "btn-success",
+      style: {
+        padding: '0.35rem 0.65rem',
+        fontSize: '0.8rem',
+        fontWeight: '700'
+      },
+      onClick: () => approveUser(u),
+      title: "Approve student registration"
+    }, "\u2705 Approve"), /*#__PURE__*/React.createElement("button", {
       className: "btn-primary",
       style: {
         padding: '0.35rem 0.75rem',
@@ -3957,14 +4146,21 @@ function AdminView({
         fontSize: '0.8rem'
       },
       onClick: () => openUserModal(u)
-    }, "Edit"), /*#__PURE__*/React.createElement("button", {
+    }, "Edit"), u.status !== 'pending' && /*#__PURE__*/React.createElement("button", {
       className: "btn-secondary",
       style: {
         padding: '0.35rem 0.65rem',
         fontSize: '0.8rem'
       },
       onClick: () => toggleUserStatus(u)
-    }, u.status === 'active' ? 'Deactivate' : 'Activate'), u.role !== 'admin' && /*#__PURE__*/React.createElement("button", {
+    }, u.status === 'active' ? 'Deactivate' : 'Activate'), u.status === 'pending' && /*#__PURE__*/React.createElement("button", {
+      className: "btn-secondary",
+      style: {
+        padding: '0.35rem 0.65rem',
+        fontSize: '0.8rem'
+      },
+      onClick: () => rejectUser(u)
+    }, "\u274C Reject"), u.role !== 'admin' && /*#__PURE__*/React.createElement("button", {
       className: "btn-danger",
       style: {
         padding: '0.35rem 0.65rem',
@@ -3972,7 +4168,130 @@ function AdminView({
       },
       onClick: () => deleteUser(u)
     }, "\uD83D\uDDD1\uFE0F Delete"))));
-  })))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
+  })))))), activeTab === 'approvals' && /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '1.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '1.5rem',
+      flexWrap: 'wrap',
+      gap: '1rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDEE1\uFE0F"), " Student Registration Approval Queue"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: 'var(--text-muted)',
+      fontSize: '0.85rem'
+    }
+  }, "Review and approve newly registered student accounts before they are permitted to access review questions, diagnostic assessments, and licensure exam simulators.")), pendingCount > 0 && /*#__PURE__*/React.createElement("button", {
+    className: "btn-success",
+    style: {
+      fontWeight: '700',
+      padding: '0.6rem 1.25rem'
+    },
+    onClick: approveAllPending
+  }, "\u2705 Approve All (", pendingCount, ") Students")), pendingCount === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: '3.5rem 1rem',
+      color: 'var(--text-muted)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '3rem',
+      marginBottom: '1rem'
+    }
+  }, "\uD83C\uDF89"), /*#__PURE__*/React.createElement("h4", {
+    style: {
+      color: 'var(--text-main)',
+      marginBottom: '0.5rem'
+    }
+  }, "All Clear! No Pending Registrations"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: '0.9rem',
+      maxWidth: '520px',
+      margin: '0 auto',
+      lineHeight: '1.5'
+    }
+  }, "All registered student accounts have been reviewed and approved. When a new student signs up, their registration request will automatically appear here for administrator verification.")) : /*#__PURE__*/React.createElement("div", {
+    className: "table-responsive"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "data-table"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Student Applicant"), /*#__PURE__*/React.createElement("th", null, "University / School"), /*#__PURE__*/React.createElement("th", null, "Target Exam Date"), /*#__PURE__*/React.createElement("th", null, "Registration Date"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Approval Actions"))), /*#__PURE__*/React.createElement("tbody", null, pendingUsers.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.id
+  }, /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: '600',
+      color: 'var(--text-main)'
+    }
+  }, u.fullName), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.8rem',
+      color: 'var(--text-muted)'
+    }
+  }, u.email), /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-student",
+    style: {
+      fontSize: '0.68rem',
+      marginTop: '0.2rem'
+    }
+  }, u.id)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontWeight: '500',
+      color: 'var(--primary-light)'
+    }
+  }, u.school || 'NEUST College of Engineering'), /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontSize: '0.85rem'
+    }
+  }, u.targetExamDate || '2026-10-15'), /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontSize: '0.85rem'
+    }
+  }, u.createdDate || 'Just now'), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-pending"
+  }, "\u23F3 Pending Approval")), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.5rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-success",
+    style: {
+      padding: '0.4rem 0.85rem',
+      fontSize: '0.85rem',
+      fontWeight: '700'
+    },
+    onClick: () => approveUser(u),
+    title: "Approve and activate this student account"
+  }, "\u2705 Approve"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      padding: '0.4rem 0.75rem',
+      fontSize: '0.85rem'
+    },
+    onClick: () => rejectUser(u),
+    title: "Reject this student registration"
+  }, "\u274C Reject"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-danger",
+    style: {
+      padding: '0.4rem 0.75rem',
+      fontSize: '0.85rem'
+    },
+    onClick: () => deleteUser(u),
+    title: "Delete this student record"
+  }, "\uD83D\uDDD1\uFE0F Delete"))))))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -4928,6 +5247,8 @@ function UserModal({
   }, /*#__PURE__*/React.createElement("option", {
     value: "active"
   }, "Active"), /*#__PURE__*/React.createElement("option", {
+    value: "pending"
+  }, "Pending Approval"), /*#__PURE__*/React.createElement("option", {
     value: "deactivated"
   }, "Deactivated")))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"

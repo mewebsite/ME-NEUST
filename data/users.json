@@ -12,19 +12,5 @@
     "diagnosticCompleted": true,
     "diagnosticScore": 14,
     "diagnosticDate": "2026-08-11"
-  },
-  {
-    "id": "usr_1786434961655",
-    "fullName": "Frans",
-    "email": "frans@gmail.com",
-    "passwordHash": "$2a$10$no4fgk6KY5dit/KVMEtXY.Ha.NBuDoxUmHVvcFsuwU7MVLP/rQhga",
-    "role": "student",
-    "status": "active",
-    "createdDate": "2026-08-11",
-    "school": "NEUST",
-    "targetExamDate": "2026-10-15",
-    "diagnosticCompleted": true,
-    "diagnosticScore": 13,
-    "diagnosticDate": "2026-08-11"
   }
 ]

@@ -192,40 +192,6 @@
       status: "active",
       createdDate: "2026-07-27",
       school: "NEUST"
-    },
-    {
-      id: "usr_1786434961655",
-      fullName: "Frans",
-      email: "frans@gmail.com",
-      password: "student123",
-      role: "student",
-      status: "active",
-      createdDate: "2026-08-11",
-      school: "NEUST",
-      targetExamDate: "2026-10-15",
-      diagnosticCompleted: true,
-      diagnosticScore: 13,
-      diagnosticDate: "2026-08-11"
-    },
-    {
-      id: "usr_1790821984469",
-      fullName: "Jerico A. Portelo",
-      email: "jericoaquino133@gmail.com",
-      password: "student123",
-      role: "student",
-      status: "active",
-      createdDate: "2026-10-01",
-      school: "NEUST"
-    },
-    {
-      id: "usr_1790854935333",
-      fullName: "kenneth matutino",
-      email: "kcmatutino24@gmail.com",
-      password: "student123",
-      role: "student",
-      status: "active",
-      createdDate: "2026-10-01",
-      school: "NEUST"
     }
   ];
 
@@ -242,6 +208,13 @@
       name.includes('test student') ||
       name === 'maria santos' ||
       name === 'renz' ||
+      name.includes('jerico') ||
+      email.includes('jerico') ||
+      name.includes('kenneth') ||
+      email.includes('matutino') ||
+      name.includes('fran') ||
+      email.includes('frans') ||
+      email.includes('talapstore001') ||
       (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
       id === 'usr_1787791492377' ||
       id === 'usr_1785723259255' ||
@@ -250,7 +223,10 @@
       id === 'usr_1791158752028' ||
       id === 'usr_1791158752041' ||
       id === 'usr_1791158752460' ||
-      id === 'usr_1791158752849'
+      id === 'usr_1791158752849' ||
+      id === 'usr_1786434961655' ||
+      id === 'usr_1790821984469' ||
+      id === 'usr_1790854935333'
     );
   }
 
@@ -267,6 +243,13 @@
       name.includes('test student') ||
       name === 'maria santos' ||
       name === 'renz' ||
+      name.includes('jerico') ||
+      email.includes('jerico') ||
+      name.includes('kenneth') ||
+      email.includes('matutino') ||
+      name.includes('fran') ||
+      email.includes('frans') ||
+      email.includes('talapstore001') ||
       (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
       sid === 'usr_1787791492377' ||
       sid === 'usr_1785723259255' ||
@@ -275,7 +258,10 @@
       sid === 'usr_1791158752028' ||
       sid === 'usr_1791158752041' ||
       sid === 'usr_1791158752460' ||
-      sid === 'usr_1791158752849'
+      sid === 'usr_1791158752849' ||
+      sid === 'usr_1786434961655' ||
+      sid === 'usr_1790821984469' ||
+      sid === 'usr_1790854935333'
     );
   }
 

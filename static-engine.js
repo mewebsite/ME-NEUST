@@ -100,14 +100,21 @@
       for (const k of Object.keys(data)) {
         fields[k] = toFirestoreValue(data[k]);
       }
-      await originalFetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ fields })
       });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error(`[Firestore Cloud] Save failed (${res.status}) for ${collectionName}/${docId}:`, errText);
+        return false;
+      }
       console.log(`[Firestore Cloud] Saved ${collectionName}/${docId}`);
+      return true;
     } catch (e) {
       console.error(`[Firestore Cloud] Error saving ${collectionName}/${docId}:`, e);
+      return false;
     }
   }
 
@@ -1032,7 +1039,7 @@
 
         users.push(newUser);
         setLocal(STORAGE_KEYS.USERS, users);
-        cloudSaveDoc('users', newUser.id, newUser).catch(console.error);
+        await cloudSaveDoc('users', newUser.id, newUser);
         broadcastLiveEvent('NEW_USER', newUser);
 
         return jsonResponse({ message: 'User account created successfully', user: newUser });
@@ -1060,7 +1067,7 @@
         if (updates.targetExamDate) users[idx].targetExamDate = updates.targetExamDate;
 
         setLocal(STORAGE_KEYS.USERS, users);
-        cloudSaveDoc('users', id, users[idx]).catch(console.error);
+        await cloudSaveDoc('users', id, users[idx]);
         broadcastLiveEvent('UPDATE_USER', users[idx]);
 
         return jsonResponse({ message: 'User updated successfully', user: users[idx] });

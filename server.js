@@ -64,34 +64,111 @@ function syncCSV(questions) {
 
 // Helper to read/write JSON files safely
 
+const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1/projects/me-neust-website-v2/databases/(default)/documents';
+
+function toFirestoreValue(val) {
+  if (val === null || val === undefined) return { nullValue: null };
+  if (typeof val === 'boolean') return { booleanValue: val };
+  if (typeof val === 'number') {
+    return Number.isInteger(val) ? { integerValue: String(val) } : { doubleValue: val };
+  }
+  if (typeof val === 'string') return { stringValue: val };
+  if (Array.isArray(val)) {
+    return { arrayValue: { values: val.map(toFirestoreValue) } };
+  }
+  if (typeof val === 'object') {
+    const fields = {};
+    for (const k of Object.keys(val)) {
+      fields[k] = toFirestoreValue(val[k]);
+    }
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(val) };
+}
+
+function fromFirestoreValue(val) {
+  if (!val) return null;
+  if ('stringValue' in val) return val.stringValue;
+  if ('integerValue' in val) return parseInt(val.integerValue, 10);
+  if ('doubleValue' in val) return val.doubleValue;
+  if ('booleanValue' in val) return val.booleanValue;
+  if ('nullValue' in val) return null;
+  if ('arrayValue' in val) return (val.arrayValue.values || []).map(fromFirestoreValue);
+  if ('mapValue' in val) {
+    const obj = {};
+    const fields = val.mapValue.fields || {};
+    for (const k of Object.keys(fields)) {
+      obj[k] = fromFirestoreValue(fields[k]);
+    }
+    return obj;
+  }
+  return null;
+}
+
+function fromFirestoreDoc(doc) {
+  if (!doc || !doc.fields) return null;
+  const obj = {};
+  for (const k of Object.keys(doc.fields)) {
+    obj[k] = fromFirestoreValue(doc.fields[k]);
+  }
+  if (doc.name) {
+    const parts = doc.name.split('/');
+    obj.id = parts[parts.length - 1];
+  }
+  return obj;
+}
+
 async function fetchCollection(collectionName) {
   try {
-    const snapshot = await db.collection(collectionName).get();
-    return snapshot.docs.map(doc => doc.data());
+    const res = await fetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000`);
+    if (!res.ok) throw new Error('Firestore REST fetch failed: ' + res.status);
+    const data = await res.json();
+    return (data.documents || []).map(fromFirestoreDoc).filter(Boolean);
   } catch (e) {
-    console.error('Error fetching collection ' + collectionName, e);
-    return [];
+    try {
+      const snapshot = await db.collection(collectionName).get();
+      return snapshot.docs.map(doc => doc.data());
+    } catch (err) {
+      console.error('Error fetching collection ' + collectionName, err.message);
+      return [];
+    }
   }
 }
 
 async function saveToCollection(collectionName, data, idField = 'id') {
   try {
-    const CHUNK_SIZE = 450;
-    for (let i = 0; i < data.length; i += CHUNK_SIZE) {
-      const chunk = data.slice(i, i + CHUNK_SIZE);
-      const batch = db.batch();
-      chunk.forEach(item => {
-        const docId = item[idField] ? String(item[idField]) : db.collection(collectionName).doc().id;
-        const ref = db.collection(collectionName).doc(docId);
-        batch.set(ref, item);
+    for (const item of data) {
+      const docId = item[idField] ? String(item[idField]) : String(Date.now());
+      const fields = {};
+      for (const k of Object.keys(item)) {
+        fields[k] = toFirestoreValue(item[k]);
+      }
+      await fetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
       });
-      await batch.commit();
     }
     if (collectionName === 'questions') {
       syncCSV(data);
     }
   } catch (e) {
-    console.error('Error saving collection ' + collectionName, e);
+    try {
+      const CHUNK_SIZE = 450;
+      for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+        const chunk = data.slice(i, i + CHUNK_SIZE);
+        const batch = db.batch();
+        chunk.forEach(item => {
+          const docId = item[idField] ? String(item[idField]) : db.collection(collectionName).doc().id;
+          const ref = db.collection(collectionName).doc(docId);
+          batch.set(ref, item);
+        });
+        await batch.commit();
+      }
+      if (collectionName === 'questions') syncCSV(data);
+    } catch (err) {
+      console.error('Error saving collection ' + collectionName, err.message);
+    }
   }
 }
 

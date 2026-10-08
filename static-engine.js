@@ -197,8 +197,7 @@
 
   function isTestUser(u) {
     if (!u) return true;
-    const email = (u.email || '').toLowerCase();
-    const name = (u.fullName || '').toLowerCase();
+    const email = (u.email || '').toLowerCase().trim();
     const id = u.id || '';
 
     // Filter old duplicate admin seed IDs from previous versions
@@ -209,18 +208,6 @@
       email.includes('teststudent') ||
       email.includes('test_') ||
       email === 'dsds@gmail.com' ||
-      email === 'lorenz@gmail.com' ||
-      name.includes('test student') ||
-      name === 'maria santos' ||
-      name === 'renz' ||
-      name.includes('jerico') ||
-      email.includes('jerico') ||
-      name.includes('kenneth') ||
-      email.includes('matutino') ||
-      name.includes('fran') ||
-      email.includes('frans') ||
-      email.includes('talapstore001') ||
-      (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
       id === 'usr_1787791492377' ||
       id === 'usr_1785723259255' ||
       id === 'usr_1786429568399' ||
@@ -237,25 +224,12 @@
 
   function isTestAttempt(a) {
     if (!a) return true;
-    const email = (a.studentEmail || '').toLowerCase();
-    const name = (a.studentName || '').toLowerCase();
+    const email = (a.studentEmail || '').toLowerCase().trim();
     const sid = a.studentId || '';
     return (
       email.includes('teststudent') ||
       email.includes('test_') ||
       email === 'dsds@gmail.com' ||
-      email === 'lorenz@gmail.com' ||
-      name.includes('test student') ||
-      name === 'maria santos' ||
-      name === 'renz' ||
-      name.includes('jerico') ||
-      email.includes('jerico') ||
-      name.includes('kenneth') ||
-      email.includes('matutino') ||
-      name.includes('fran') ||
-      email.includes('frans') ||
-      email.includes('talapstore001') ||
-      (name === 'lorenz' && email !== 'castrojohnlorenz015@gmail.com') ||
       sid === 'usr_1787791492377' ||
       sid === 'usr_1785723259255' ||
       sid === 'usr_1786429568399' ||
@@ -272,24 +246,32 @@
 
   function mergeUsers(existing, incoming) {
     const map = new Map();
-    (existing || []).forEach(u => {
-      if (u && !isTestUser(u)) {
-        const k = (u.id || u.email || '').toLowerCase();
-        if (k) map.set(k, u);
-      }
-    });
-    (incoming || []).forEach(u => {
-      if (u && !isTestUser(u)) {
-        const k = (u.id || u.email || '').toLowerCase();
-        if (k) {
-          if (map.has(k)) {
-            map.set(k, { ...map.get(k), ...u });
-          } else {
-            map.set(k, u);
-          }
+    const addOrUpdate = (u) => {
+      if (!u || isTestUser(u)) return;
+      const emailKey = (u.email || '').toLowerCase().trim();
+      const idKey = (u.id || '').toLowerCase().trim();
+
+      let matchedKey = null;
+      for (const [k, existingUser] of map.entries()) {
+        const exEmail = (existingUser.email || '').toLowerCase().trim();
+        const exId = (existingUser.id || '').toLowerCase().trim();
+        if ((emailKey && exEmail === emailKey) || (idKey && exId === idKey)) {
+          matchedKey = k;
+          break;
         }
       }
-    });
+
+      if (matchedKey) {
+        map.set(matchedKey, { ...map.get(matchedKey), ...u });
+      } else {
+        const primaryKey = idKey || emailKey;
+        if (primaryKey) map.set(primaryKey, u);
+      }
+    };
+
+    (existing || []).forEach(addOrUpdate);
+    (incoming || []).forEach(addOrUpdate);
+
     return Array.from(map.values());
   }
 
@@ -664,22 +646,21 @@
   }
 
   async function getAllUsers() {
-    let users = [];
+    const local = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u));
+    let base = mergeUsers(SEED_USERS, local);
     try {
       const cloudUsers = await cloudFetchCollection('users');
       if (cloudUsers && cloudUsers.length > 0) {
-        users = cloudUsers.filter(u => !isTestUser(u));
-        const merged = mergeUsers(SEED_USERS, users);
+        const validCloud = cloudUsers.filter(u => !isTestUser(u));
+        const merged = mergeUsers(base, validCloud);
         setLocal(STORAGE_KEYS.USERS, merged);
         return merged;
       }
     } catch (e) {
       console.warn('[Firestore Cloud] Error fetching users:', e);
     }
-    const local = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u));
-    users = mergeUsers(SEED_USERS, local);
-    setLocal(STORAGE_KEYS.USERS, users);
-    return users;
+    setLocal(STORAGE_KEYS.USERS, base);
+    return base;
   }
 
   async function getAllAttempts() {

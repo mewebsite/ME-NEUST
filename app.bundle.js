@@ -87,6 +87,125 @@ function getAttemptPercentage(att) {
   const total = getAttemptTotal(att);
   return total > 0 ? Math.round(score / total * 100) : 0;
 }
+
+// FLOATING GLASSMORPHIC TOAST NOTIFICATION SYSTEM
+function ToastContainer({
+  toasts,
+  removeToast
+}) {
+  if (!toasts || toasts.length === 0) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "toast-container",
+    "aria-live": "polite"
+  }, toasts.map(t => {
+    let icon = 'ℹ️';
+    if (t.type === 'success') icon = '✅';else if (t.type === 'error') icon = '❌';else if (t.type === 'warning') icon = '⚠️';
+    return /*#__PURE__*/React.createElement("div", {
+      key: t.id,
+      className: `toast-item toast-${t.type || 'info'}`,
+      onClick: () => removeToast(t.id),
+      role: "status"
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '1.15rem',
+        flexShrink: 0
+      }
+    }, icon), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        wordBreak: 'break-word'
+      }
+    }, t.message), /*#__PURE__*/React.createElement("span", {
+      style: {
+        opacity: 0.6,
+        fontSize: '0.85rem',
+        cursor: 'pointer',
+        marginLeft: '0.5rem'
+      }
+    }, "\u2715"));
+  }));
+}
+
+// MODERN ACTION CONFIRMATION MODAL
+function ConfirmModal({
+  isOpen,
+  title,
+  message,
+  confirmText = 'Confirm',
+  cancelText = 'Cancel',
+  type = 'danger',
+  onConfirm,
+  onCancel
+}) {
+  if (!isOpen) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-overlay",
+    onClick: onCancel,
+    style: {
+      zIndex: 100000
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-content glass-card",
+    style: {
+      maxWidth: '440px',
+      padding: '1.75rem',
+      textAlign: 'center'
+    },
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: '56px',
+      height: '56px',
+      borderRadius: '50%',
+      background: type === 'danger' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+      color: type === 'danger' ? 'var(--danger)' : 'var(--primary)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontSize: '1.75rem',
+      margin: '0 auto 1.25rem'
+    }
+  }, type === 'danger' ? '⚠️' : 'ℹ️'), /*#__PURE__*/React.createElement("h3", {
+    style: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      marginBottom: '0.6rem',
+      color: 'var(--text-main)'
+    }
+  }, title || 'Please Confirm'), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: '0.92rem',
+      color: 'var(--text-muted)',
+      lineHeight: '1.5',
+      marginBottom: '1.5rem'
+    }
+  }, message), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.75rem',
+      justifyContent: 'center'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      flex: 1,
+      padding: '0.65rem 1rem'
+    },
+    onClick: onCancel
+  }, cancelText), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: type === 'danger' ? 'btn-danger' : 'btn-primary',
+    style: {
+      flex: 1,
+      padding: '0.65rem 1rem'
+    },
+    onClick: () => {
+      if (onConfirm) onConfirm();
+      onCancel();
+    }
+  }, confirmText))));
+}
 function App() {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -102,6 +221,60 @@ function App() {
   const [theme, setTheme] = useState('dark');
   const [deviceMode, setDeviceMode] = useState(() => localStorage.getItem('me_device_mode') || 'auto');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Floating Toast Notifications & Action Confirm Dialog
+  const [toasts, setToasts] = useState([]);
+  const [confirmState, setConfirmState] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
+    type: 'danger',
+    onConfirm: null
+  });
+  const showToast = (message, type = 'info', duration = 3500) => {
+    const id = Date.now() + Math.random().toString(36).substring(2, 9);
+    setToasts(prev => [...prev, {
+      id,
+      message,
+      type
+    }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, duration);
+  };
+  const removeToast = id => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+  const showConfirmDialog = ({
+    title,
+    message,
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    type = 'danger',
+    onConfirm
+  }) => {
+    setConfirmState({
+      isOpen: true,
+      title,
+      message,
+      confirmText,
+      cancelText,
+      type,
+      onConfirm
+    });
+  };
+  const closeConfirmDialog = () => {
+    setConfirmState(prev => ({
+      ...prev,
+      isOpen: false
+    }));
+  };
+  useEffect(() => {
+    window.showToast = showToast;
+    window.showConfirmDialog = showConfirmDialog;
+  }, []);
 
   // App state
   const [stats, setStats] = useState(null);
@@ -290,6 +463,7 @@ function App() {
     setExamSubmitted(false);
     setTimerActive(false);
     setView('dashboard');
+    showToast('Signed out of session', 'info');
   };
   const downloadReviewedCSV = () => {
     const generateClientCSV = () => {
@@ -314,6 +488,7 @@ function App() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      showToast('Question Bank CSV downloaded successfully', 'success');
     };
     fetch(`${API_BASE}/api/download/csv`, {
       headers: {
@@ -335,6 +510,7 @@ function App() {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      showToast('Question Bank CSV downloaded successfully', 'success');
     }).catch(() => {
       generateClientCSV();
     });
@@ -432,7 +608,7 @@ function App() {
       setExamTimer(90 * 60);
       setTimerActive(true);
       setView('exam');
-    }).catch(err => alert('Error launching diagnostic benchmark: ' + err.message));
+    }).catch(err => showToast('Error launching diagnostic benchmark: ' + err.message, 'error'));
   };
   const startAdaptiveSmartQuiz = () => {
     fetch(`${API_BASE}/api/adaptive/smart-quiz`, {
@@ -457,7 +633,7 @@ function App() {
       setExamTimer(30 * 60);
       setTimerActive(true);
       setView('exam');
-    }).catch(err => alert('Error launching smart quiz: ' + err.message));
+    }).catch(err => showToast('Error launching smart quiz: ' + err.message, 'error'));
   };
   const startBoardSimulation = () => {
     fetch(`${API_BASE}/api/adaptive/simulation/start`, {
@@ -482,7 +658,7 @@ function App() {
       setExamTimer(240 * 60);
       setTimerActive(true);
       setView('exam');
-    }).catch(err => alert('Error launching board simulation: ' + err.message));
+    }).catch(err => showToast('Error launching board simulation: ' + err.message, 'error'));
   };
   const recordQuizAttempt = (score, total, pct, passed, timeSpentSecs) => {
     if (activeQuiz && activeQuiz.isDiagnostic) {
@@ -592,22 +768,30 @@ function App() {
       })
     }).then(() => loadQuizzes());
   };
-  const deleteQuiz = id => {
-    if (confirm('Are you sure you want to permanently delete this board quiz?')) {
-      setQuizzesList(prev => prev.filter(q => q.id !== id));
-      fetch(`${API_BASE}/api/quizzes/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      }).then(res => res.json()).then(data => {
-        if (data.error) alert('Error: ' + data.error);
-        loadQuizzes();
-      }).catch(err => {
-        console.error('Delete quiz error:', err);
-        loadQuizzes();
-      });
-    }
+  const deleteQuiz = (id, title) => {
+    const quizTitle = title || (quizzesList.find(q => q && q.id === id) || {}).title || `Quiz #${id}`;
+    showConfirmDialog({
+      title: 'Delete Board Quiz',
+      message: `Are you sure you want to permanently delete board quiz "${quizTitle}"? All student attempts associated with it will remain in history logs.`,
+      confirmText: 'Delete Quiz',
+      type: 'danger',
+      onConfirm: () => {
+        setQuizzesList(prev => prev.filter(q => q.id !== id));
+        fetch(`${API_BASE}/api/quizzes/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        }).then(res => res.json()).then(data => {
+          if (data.error) showToast('Error: ' + data.error, 'error');else showToast(`Board quiz "${quizTitle}" deleted successfully`, 'success');
+          loadQuizzes();
+        }).catch(err => {
+          console.error('Delete quiz error:', err);
+          showToast('Delete quiz error: ' + err.message, 'error');
+          loadQuizzes();
+        });
+      }
+    });
   };
 
   // Timer countdown for Quiz
@@ -645,10 +829,10 @@ function App() {
       data
     }) => {
       if (status >= 400) {
-        alert(data.error || 'Authentication failed');
+        showToast(data.error || 'Authentication failed', 'error');
       } else if (data.pending) {
         setAuthModal(null);
-        alert(data.message || 'Registration submitted! Your student account is now awaiting administrator approval. You will be able to log in once an administrator approves your registration.');
+        showToast(data.message || 'Registration submitted! Your student account is now awaiting administrator approval. You will be able to log in once an administrator approves your registration.', 'warning', 6500);
       } else {
         // Reset previous session history so each login starts fresh with clean tests
         setUserAnswers({});
@@ -664,8 +848,9 @@ function App() {
         setAuthModal(null);
         loadStats(data.token);
         loadQuizzes();
+        showToast(`Welcome back, ${data.user?.fullName || 'Reviewee'}!`, 'success');
       }
-    }).catch(err => alert('Network error: ' + err.message));
+    }).catch(err => showToast('Network error: ' + err.message, 'error'));
   };
   const pendingApprovalCount = user && user.role === 'admin' ? (usersList || []).filter(u => u && u.role === 'student' && u.status === 'pending').length : 0;
   return /*#__PURE__*/React.createElement("div", {
@@ -1051,7 +1236,10 @@ function App() {
   }, !user ? /*#__PURE__*/React.createElement(HeroSection, {
     onLoginClick: () => setAuthModal('login'),
     onSignupClick: () => setAuthModal('signup')
-  }) : /*#__PURE__*/React.createElement("div", null, view === 'dashboard' && /*#__PURE__*/React.createElement(DashboardView, {
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: view
+  }, view === 'dashboard' && /*#__PURE__*/React.createElement(DashboardView, {
     token: token,
     user: user,
     stats: stats,
@@ -1145,7 +1333,9 @@ function App() {
     },
     downloadReviewedCSV: downloadReviewedCSV,
     deleteQuiz: deleteQuiz,
-    toggleQuizStatus: toggleQuizStatus
+    toggleQuizStatus: toggleQuizStatus,
+    showToast: showToast,
+    showConfirmDialog: showConfirmDialog
   }))), authModal && /*#__PURE__*/React.createElement(AuthModal, {
     authModal: authModal,
     setAuthModal: setAuthModal,
@@ -1225,6 +1415,18 @@ function App() {
       }
       loadQuizzes();
     }
+  }), /*#__PURE__*/React.createElement(ConfirmModal, {
+    isOpen: confirmState.isOpen,
+    title: confirmState.title,
+    message: confirmState.message,
+    confirmText: confirmState.confirmText,
+    cancelText: confirmState.cancelText,
+    type: confirmState.type,
+    onConfirm: confirmState.onConfirm,
+    onCancel: closeConfirmDialog
+  }), /*#__PURE__*/React.createElement(ToastContainer, {
+    toasts: toasts,
+    removeToast: removeToast
   }), /*#__PURE__*/React.createElement(Footer, {
     deviceMode: deviceMode,
     setDeviceMode: setDeviceMode
@@ -3662,7 +3864,9 @@ function AdminView({
   openUserDetailModal,
   downloadReviewedCSV,
   deleteQuiz,
-  toggleQuizStatus
+  toggleQuizStatus,
+  showToast = (msg, type) => window.showToast?.(msg, type),
+  showConfirmDialog = cfg => window.showConfirmDialog?.(cfg)
 }) {
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'quizzes', 'results', 'questions'
   const [currentPage, setCurrentPage] = useState(1);
@@ -3691,34 +3895,52 @@ function AdminView({
       body: JSON.stringify({
         status: newStatus
       })
-    }).then(() => loadUsers());
+    }).then(() => {
+      showToast(`User status set to ${newStatus}`, 'info');
+      loadUsers();
+    });
   };
   const deleteUser = u => {
     if (u.role === 'admin') {
-      alert('System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.');
+      showToast('System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.', 'warning');
       return;
     }
-    if (confirm(`Are you sure you want to permanently delete user account: ${u.fullName || u.email}? This will erase their user record and quiz history.`)) {
-      fetch(`${API_BASE}/api/users/${u.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      }).then(res => res.json()).then(data => {
-        if (data.error) alert(data.error);
-        loadUsers();
-      }).catch(err => alert(err.message));
-    }
+    showConfirmDialog({
+      title: 'Delete User Account',
+      message: `Are you sure you want to permanently delete user account: "${u.fullName || u.email}"? This will erase their user record and quiz history.`,
+      confirmText: 'Delete Account',
+      type: 'danger',
+      onConfirm: () => {
+        fetch(`${API_BASE}/api/users/${u.id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        }).then(res => res.json()).then(data => {
+          if (data.error) showToast(data.error, 'error');else showToast(`User "${u.fullName || u.email}" deleted successfully`, 'success');
+          loadUsers();
+        }).catch(err => showToast('Failed to delete user: ' + err.message, 'error'));
+      }
+    });
   };
   const deleteQuestion = id => {
-    if (confirm('Are you sure you want to delete question #' + id + '?')) {
-      fetch(`${API_BASE}/api/questions/${id}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      }).then(() => fetchAdminQuestions(currentPage));
-    }
+    showConfirmDialog({
+      title: 'Delete Question',
+      message: `Are you sure you want to permanently delete question #${id} from the question bank?`,
+      confirmText: 'Delete Question',
+      type: 'danger',
+      onConfirm: () => {
+        fetch(`${API_BASE}/api/questions/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          }
+        }).then(() => {
+          showToast(`Question #${id} deleted`, 'success');
+          fetchAdminQuestions(currentPage);
+        });
+      }
+    });
   };
 
   // User Board Analytics Calculations
@@ -3740,42 +3962,62 @@ function AdminView({
         status: 'active'
       })
     }).then(res => res.json()).then(data => {
-      if (data.error) alert(data.error);
+      if (data.error) showToast(data.error, 'error');else showToast(`Student "${u.fullName || u.email}" approved and activated!`, 'success');
       loadUsers();
-    }).catch(err => alert('Failed to approve account: ' + err.message));
+    }).catch(err => showToast('Failed to approve account: ' + err.message, 'error'));
   };
   const rejectUser = u => {
-    if (!confirm(`Are you sure you want to reject the registration request for: ${u.fullName || u.email}?`)) return;
-    fetch(`${API_BASE}/api/users/${u.id}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        status: 'deactivated'
-      })
-    }).then(res => res.json()).then(data => {
-      if (data.error) alert(data.error);
-      loadUsers();
-    }).catch(err => alert('Failed to reject account: ' + err.message));
+    showConfirmDialog({
+      title: 'Reject Registration Request',
+      message: `Are you sure you want to reject the registration request for "${u.fullName || u.email}"?`,
+      confirmText: 'Reject Request',
+      type: 'danger',
+      onConfirm: () => {
+        fetch(`${API_BASE}/api/users/${u.id}`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: 'deactivated'
+          })
+        }).then(res => res.json()).then(data => {
+          if (data.error) showToast(data.error, 'error');else showToast(`Registration for "${u.fullName || u.email}" was rejected`, 'warning');
+          loadUsers();
+        }).catch(err => showToast('Failed to reject account: ' + err.message, 'error'));
+      }
+    });
   };
-  const approveAllPending = async () => {
-    if (!confirm(`Approve all ${pendingCount} pending student account registrations?`)) return;
-    for (const u of pendingUsers) {
-      await fetch(`${API_BASE}/api/users/${u.id}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          status: 'active'
-        })
-      });
-    }
-    loadUsers();
-    alert(`Successfully approved ${pendingCount} student account(s)!`);
+  const approveAllPending = () => {
+    showConfirmDialog({
+      title: 'Approve All Pending Students',
+      message: `Approve all ${pendingCount} pending student account registrations? They will immediately receive access to log in.`,
+      confirmText: `Approve All (${pendingCount})`,
+      type: 'primary',
+      onConfirm: async () => {
+        let count = 0;
+        for (const u of pendingUsers) {
+          try {
+            await fetch(`${API_BASE}/api/users/${u.id}`, {
+              method: 'PUT',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                status: 'active'
+              })
+            });
+            count++;
+          } catch (err) {
+            console.error('Error approving user:', u.id, err);
+          }
+        }
+        loadUsers();
+        showToast(`Successfully approved ${count} student account(s)!`, 'success');
+      }
+    });
   };
   const filteredUsers = usersList.filter(u => {
     if (userRoleFilter && u.role !== userRoleFilter) return false;
@@ -3876,7 +4118,10 @@ function AdminView({
       setActiveTab('questions');
       fetchAdminQuestions(1);
     }
-  }, "\uD83D\uDCDD Question Bank (", stats ? stats.totalQuestions : totalQuestionsCount, ")")), activeTab === 'users' && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCDD Question Bank (", stats ? stats.totalQuestions : totalQuestionsCount, ")")), activeTab === 'users' && /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: "tab-users"
+  }, /*#__PURE__*/React.createElement("div", {
     className: "stats-grid",
     style: {
       marginBottom: '1.5rem'
@@ -4169,6 +4414,9 @@ function AdminView({
       onClick: () => deleteUser(u)
     }, "\uD83D\uDDD1\uFE0F Delete"))));
   })))))), activeTab === 'approvals' && /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: "tab-approvals"
+  }, /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -4291,7 +4539,10 @@ function AdminView({
     },
     onClick: () => deleteUser(u),
     title: "Delete this student record"
-  }, "\uD83D\uDDD1\uFE0F Delete"))))))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDDD1\uFE0F Delete")))))))))), activeTab === 'quizzes' && /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: "tab-quizzes"
+  }, /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -4363,8 +4614,11 @@ function AdminView({
       padding: '0.3rem 0.6rem',
       fontSize: '0.8rem'
     },
-    onClick: () => deleteQuiz(qz.id)
-  }, "Delete"))))))))), activeTab === 'results' && /*#__PURE__*/React.createElement("div", {
+    onClick: () => deleteQuiz(qz.id, qz.title)
+  }, "Delete")))))))))), activeTab === 'results' && /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: "tab-results"
+  }, /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -4426,7 +4680,10 @@ function AdminView({
       fontSize: '0.8rem',
       color: 'var(--text-muted)'
     }
-  }, att.submittedAt))))))), activeTab === 'questions' && /*#__PURE__*/React.createElement("div", {
+  }, att.submittedAt)))))))), activeTab === 'questions' && /*#__PURE__*/React.createElement("div", {
+    className: "tab-content-fade",
+    key: "tab-questions"
+  }, /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem'
@@ -4511,7 +4768,7 @@ function AdminView({
     className: "btn-secondary",
     disabled: currentPage >= totalPagesCount,
     onClick: () => fetchAdminQuestions(currentPage + 1)
-  }, "Next \u2192")))));
+  }, "Next \u2192"))))));
 }
 
 // ADMIN QUIZ CREATE / EDIT MODAL
@@ -4630,11 +4887,16 @@ function QuizEditorModal({
     }).then(res => res.json()).then(data => {
       if (data.error) {
         setError(data.error);
+        window.showToast?.(data.error, 'error');
       } else {
+        window.showToast?.(isEdit ? 'Quiz updated successfully' : 'Quiz created and published', 'success');
         onSaved(data.quiz);
         onClose();
       }
-    }).catch(err => setError(err.message));
+    }).catch(err => {
+      setError(err.message);
+      window.showToast?.('Error saving quiz: ' + err.message, 'error');
+    });
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",
@@ -5052,12 +5314,17 @@ function ProfileModal({
     }).then(res => res.json()).then(data => {
       if (data.error) {
         setError(data.error);
+        window.showToast?.(data.error, 'error');
       } else {
         setMessage('Profile updated successfully!');
+        window.showToast?.('Profile updated successfully!', 'success');
         setUser(data.user);
-        setTimeout(() => onClose(), 1200);
+        setTimeout(() => onClose(), 800);
       }
-    }).catch(err => setError(err.message));
+    }).catch(err => {
+      setError(err.message);
+      window.showToast?.('Error updating profile: ' + err.message, 'error');
+    });
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",
@@ -5177,11 +5444,16 @@ function UserModal({
     }).then(res => res.json()).then(data => {
       if (data.error) {
         setError(data.error);
+        window.showToast?.(data.error, 'error');
       } else {
+        window.showToast?.(isEdit ? 'User updated successfully' : 'User account created', 'success');
         onSaved();
         onClose();
       }
-    }).catch(err => setError(err.message));
+    }).catch(err => {
+      setError(err.message);
+      window.showToast?.('Error saving user: ' + err.message, 'error');
+    });
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",
@@ -5330,11 +5602,16 @@ function QuestionModal({
     }).then(res => res.json()).then(data => {
       if (data.error) {
         setError(data.error);
+        window.showToast?.(data.error, 'error');
       } else {
+        window.showToast?.(isEdit ? `Question #${editingQuestion.ID} updated successfully` : 'Question created and added to bank', 'success');
         onSaved();
         onClose();
       }
-    }).catch(err => setError(err.message));
+    }).catch(err => {
+      setError(err.message);
+      window.showToast?.('Error saving question: ' + err.message, 'error');
+    });
   };
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",

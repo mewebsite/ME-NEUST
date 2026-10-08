@@ -972,6 +972,30 @@
       return jsonResponse({ user: currentUser });
     }
 
+    // 3.5 PROFILE UPDATE (PUT /api/auth/profile)
+    if (urlStr.includes('/api/auth/profile') && method === 'PUT') {
+      const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, null);
+      if (!currentUser || !currentUser.id) {
+        return jsonResponse({ error: 'Unauthorized. Please login.' }, 401);
+      }
+      const { fullName, school, targetExamDate, newPassword } = body;
+      const users = await getAllUsers();
+      const idx = users.findIndex(u => u.id === currentUser.id || (u.email && u.email.toLowerCase() === (currentUser.email || '').toLowerCase()));
+      if (idx !== -1) {
+        if (fullName) users[idx].fullName = fullName;
+        if (school !== undefined) users[idx].school = school;
+        if (targetExamDate) users[idx].targetExamDate = targetExamDate;
+        if (newPassword) users[idx].password = newPassword;
+
+        setLocal(STORAGE_KEYS.USERS, users);
+        setLocal(STORAGE_KEYS.CURRENT_USER, users[idx]);
+        await cloudSaveDoc('users', users[idx].id, users[idx]);
+        broadcastLiveEvent('UPDATE_USER', users[idx]);
+        return jsonResponse({ message: 'Profile updated successfully', user: users[idx] });
+      }
+      return jsonResponse({ error: 'User record not found.' }, 404);
+    }
+
     // 4. ADMIN USER MANAGEMENT
     if (urlStr.includes('/api/users')) {
       const cleanUrl = urlStr.split('?')[0].replace(/\/+$/, '');

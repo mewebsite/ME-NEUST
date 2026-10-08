@@ -1422,3 +1422,9 @@ button:active {
   }
 }
 
+.spin-icon {
+  display: inline-block;
+  animation: rotateGear 0.75s linear infinite;
+  transform-origin: center center;
+}
+

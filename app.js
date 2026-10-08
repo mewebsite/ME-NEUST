@@ -277,56 +277,87 @@ function App() {
   }, [token]);
 
   const loadStats = (authToken) => {
-    fetch(`${API_BASE}/api/questions/stats`, {
-      headers: { 'Authorization': `Bearer ${authToken || token}` }
+    const activeToken = authToken || token || localStorage.getItem('token') || '';
+    return fetch(`${API_BASE}/api/questions/stats?_t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
-    .then(data => setStats(data))
-    .catch(console.error);
+    .then(data => {
+      setStats(data);
+      return data;
+    })
+    .catch(err => {
+      console.error('Error loading stats:', err);
+      return null;
+    });
   };
 
   const loadQuestions = (params = {}) => {
     const query = new URLSearchParams(params).toString();
-    fetch(`${API_BASE}/api/questions?${query}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const activeToken = token || localStorage.getItem('token') || '';
+    return fetch(`${API_BASE}/api/questions?${query}&_t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
     .then(data => {
       setQuestions(data.questions || []);
       setTotalQuestionsCount(data.total || 0);
       setTotalPagesCount(data.totalPages || 1);
+      return data;
     })
-    .catch(console.error);
+    .catch(err => {
+      console.error('Error loading questions:', err);
+      return null;
+    });
   };
 
   const loadQuizzes = () => {
-    fetch(`${API_BASE}/api/quizzes`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const activeToken = token || localStorage.getItem('token') || '';
+    return fetch(`${API_BASE}/api/quizzes?_t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
     .then(data => {
       setQuizzesList(data.quizzes || []);
       setMyAttempts(data.myAttempts || []);
+      return data;
     })
-    .catch(console.error);
+    .catch(err => {
+      console.error('Error loading quizzes:', err);
+      return null;
+    });
   };
 
   const loadAttempts = () => {
-    fetch(`${API_BASE}/api/attempts`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const activeToken = token || localStorage.getItem('token') || '';
+    return fetch(`${API_BASE}/api/attempts?_t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
-    .then(data => setAttemptsList(data.attempts || []))
-    .catch(console.error);
+    .then(data => {
+      setAttemptsList(data.attempts || []);
+      return data;
+    })
+    .catch(err => {
+      console.error('Error loading attempts:', err);
+      return null;
+    });
   };
 
   const loadUsers = () => {
-    fetch(`${API_BASE}/api/users/full`, {
-      headers: { 'Authorization': `Bearer ${token}` }
+    const activeToken = token || localStorage.getItem('token') || '';
+    return fetch(`${API_BASE}/api/users/full?_t=${Date.now()}`, {
+      headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
-    .then(data => setUsersList(data.users || []))
-    .catch(console.error);
+    .then(data => {
+      setUsersList(data.users || []);
+      return data;
+    })
+    .catch(err => {
+      console.error('Error loading users:', err);
+      return null;
+    });
   };
 
   // Real-Time Live Sync: Automatically keep quizzes, attempts, users, and stats synchronized across all accounts & devices
@@ -1244,6 +1275,7 @@ function App() {
             {view === 'admin' && user.role === 'admin' && (
               <AdminView 
                 stats={stats}
+                loadStats={loadStats}
                 usersList={usersList}
                 loadUsers={loadUsers}
                 questions={questions}
@@ -2926,6 +2958,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
 // ADMIN DASHBOARD, USER MASTER BOARD, QUIZ & RESULTS MANAGEMENT VIEW
 function AdminView({ 
   stats, 
+  loadStats,
   usersList, 
   loadUsers, 
   questions, 
@@ -2950,6 +2983,7 @@ function AdminView({
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'quizzes', 'results', 'questions'
   const [currentPage, setCurrentPage] = useState(1);
   const [adminSearch, setAdminSearch] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filters for User Data Board
   const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -3116,6 +3150,35 @@ function AdminView({
     return true;
   });
 
+  const handleRefreshLiveData = async () => {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    showToast('Connecting to Cloud Firestore & refreshing live records...', 'info');
+    try {
+      const activeToken = localStorage.getItem('token');
+      await Promise.all([
+        loadUsers ? loadUsers() : Promise.resolve(),
+        loadAttempts ? loadAttempts() : Promise.resolve(),
+        loadQuizzes ? loadQuizzes() : Promise.resolve(),
+        loadStats ? loadStats(activeToken) : Promise.resolve()
+      ]);
+      if (activeTab === 'questions') {
+        fetchAdminQuestions(currentPage);
+      }
+      if (typeof window !== 'undefined' && window.dispatchEvent) {
+        window.dispatchEvent(new CustomEvent('me_force_live_sync'));
+      }
+      showToast('Live Cloud data successfully refreshed & synchronized!', 'success');
+    } catch (err) {
+      console.error('Refresh live data error:', err);
+      showToast('Failed to refresh data: ' + (err.message || 'Network error'), 'error');
+    } finally {
+      setTimeout(() => {
+        setIsRefreshing(false);
+      }, 600);
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
@@ -3124,8 +3187,21 @@ function AdminView({
           <p style={{ color: 'var(--text-muted)' }}>Complete user directory, student academic records, quiz management, and question bank administration.</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn-secondary" onClick={() => { loadUsers(); loadAttempts(); loadQuizzes(); }} title="Force Live Sync from Cloud">
-            🔄 Refresh Live Data
+          <button 
+            className="btn-secondary" 
+            onClick={handleRefreshLiveData} 
+            disabled={isRefreshing}
+            title="Force Live Sync from Cloud Firestore and Peer Devices"
+            style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              opacity: isRefreshing ? 0.75 : 1, 
+              cursor: isRefreshing ? 'wait' : 'pointer' 
+            }}
+          >
+            <span className={isRefreshing ? 'spin-icon' : ''} style={{ display: 'inline-block' }}>🔄</span>
+            <span>{isRefreshing ? 'Syncing Live Data...' : 'Refresh Live Data'}</span>
           </button>
           <button className="btn-success" onClick={downloadReviewedCSV}>
             📥 Export Live CSV
@@ -3541,7 +3617,16 @@ function AdminView({
                 Complete breakdown of student scores, pass/fail status, schools, and attempt completion times.
               </p>
             </div>
-            <button className="btn-secondary" onClick={loadAttempts}>🔄 Refresh Logs</button>
+            <button 
+              className="btn-secondary" 
+              onClick={async () => {
+                showToast('Refreshing quiz attempt score logs...', 'info');
+                await loadAttempts();
+                showToast('Score logs refreshed!', 'success');
+              }}
+            >
+              🔄 Refresh Logs
+            </button>
           </div>
 
           {attemptsList.length === 0 ? (

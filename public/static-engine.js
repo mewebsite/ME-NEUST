@@ -84,7 +84,14 @@
   // Cloud Firestore API Helpers
   async function cloudFetchCollection(collectionName) {
     try {
-      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000`);
+      const cacheBuster = Date.now();
+      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000&_cb=${cacheBuster}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      });
       if (!res.ok) throw new Error('Firestore fetch status ' + res.status);
       const data = await res.json();
       return (data.documents || []).map(fromFirestoreDoc).filter(Boolean);
@@ -676,6 +683,12 @@
     } else {
       setTimeout(initLiveSyncEngine, 100);
     }
+
+    // Force live sync trigger from UI refresh button
+    window.addEventListener('me_force_live_sync', () => {
+      console.log('[Live Engine] Forced synchronization triggered by user refresh.');
+      broadcastLiveEvent('REQUEST_STATE', { requester: LIVE_CLIENT_ID });
+    });
   }
 
   async function getAllUsers() {

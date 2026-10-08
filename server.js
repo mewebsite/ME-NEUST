@@ -172,6 +172,44 @@ async function saveToCollection(collectionName, data, idField = 'id') {
   }
 }
 
+async function deleteDocFromCollection(collectionName, docId) {
+  try {
+    const res = await fetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+      method: 'DELETE'
+    });
+    console.log(`[Firestore REST] Deleted ${collectionName}/${docId} -> status ${res.status}`);
+  } catch (e) {
+    console.error(`[Firestore REST] Error deleting ${collectionName}/${docId}:`, e.message);
+  }
+  try {
+    if (typeof db !== 'undefined' && db && db.collection) {
+      await db.collection(collectionName).doc(docId).delete();
+    }
+  } catch (err) {}
+}
+
+async function saveDocToCollection(collectionName, docId, item) {
+  try {
+    const fields = {};
+    for (const k of Object.keys(item)) {
+      fields[k] = toFirestoreValue(item[k]);
+    }
+    const res = await fetch(`${FIRESTORE_BASE}/${collectionName}/${docId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
+    });
+    console.log(`[Firestore REST] Saved doc ${collectionName}/${docId} -> status ${res.status}`);
+  } catch (e) {
+    console.error(`[Firestore REST] Error saving ${collectionName}/${docId}:`, e.message);
+  }
+  try {
+    if (typeof db !== 'undefined' && db && db.collection) {
+      await db.collection(collectionName).doc(docId).set(item, { merge: true });
+    }
+  } catch (err) {}
+}
+
 
 // Authentication Middleware
 function authenticateToken(req, res, next) {
@@ -528,7 +566,13 @@ app.delete('/api/questions/:id', authenticateToken, requireAdmin, async (req, re
     return res.status(404).json({ error: 'Question not found' });
   }
 
-  await saveToCollection('questions', questions, 'ID');
+  await deleteDocFromCollection('questions', id);
+  await saveDocToCollection('deleted_questions', id, {
+    id,
+    deletedAt: new Date().toISOString(),
+    deletedBy: req.user.email || 'admin'
+  });
+  syncCSV(questions);
   res.json({ message: 'Question deleted successfully' });
 });
 
@@ -537,7 +581,15 @@ app.delete('/api/questions/:id', authenticateToken, requireAdmin, async (req, re
 
 // GET /api/quizzes (Authenticated - Students get published only, Admins get all)
 app.get('/api/quizzes', authenticateToken, async (req, res) => {
-  const quizzes = await fetchCollection('quizzes');
+  let quizzes = await fetchCollection('quizzes');
+  let deletedDocs = [];
+  try {
+    deletedDocs = await fetchCollection('deleted_quizzes');
+  } catch (e) {}
+  const deletedIds = (deletedDocs || []).map(d => d.id).filter(Boolean);
+  if (deletedIds.length > 0) {
+    quizzes = quizzes.filter(q => !deletedIds.includes(q.id));
+  }
   const attempts = await fetchCollection('attempts');
   const myAttempts = attempts.filter(a => a.studentId === req.user.id);
 
@@ -610,7 +662,14 @@ app.delete('/api/quizzes/:id', authenticateToken, requireAdmin, async (req, res)
     return res.status(404).json({ error: 'Quiz not found' });
   }
 
-  await saveToCollection('quizzes', quizzes, 'id');
+  await deleteDocFromCollection('quizzes', id);
+  await saveDocToCollection('deleted_quizzes', id, {
+    id,
+    deletedAt: new Date().toISOString(),
+    deletedBy: req.user.email || req.user.fullName || 'admin'
+  });
+  await writeJsonFile(QUIZZES_FILE, quizzes);
+
   res.json({ message: 'Quiz deleted successfully' });
 });
 
@@ -1063,7 +1122,16 @@ app.post('/api/adaptive/smart-quiz/submit', authenticateToken, async (req, res) 
 
 // GET /api/users/full (Admin Only - Complete Master User Directory with Quiz Stats & Attempt Logs)
 app.get('/api/users/full', authenticateToken, requireAdmin, async (req, res) => {
-  const users = await fetchCollection('users');
+  let users = await fetchCollection('users');
+  let deletedDocs = [];
+  try {
+    deletedDocs = await fetchCollection('deleted_users');
+  } catch (e) {}
+  const deletedIds = (deletedDocs || []).map(d => d.id).filter(Boolean);
+  if (deletedIds.length > 0) {
+    users = users.filter(u => !deletedIds.includes(u.id));
+  }
+
   const attempts = await fetchCollection('attempts');
 
   const fullUserData = users.map(u => {
@@ -1093,7 +1161,15 @@ app.get('/api/users/full', authenticateToken, requireAdmin, async (req, res) => 
 
 // GET /api/users (Admin Only)
 app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
-  const users = await fetchCollection('users');
+  let users = await fetchCollection('users');
+  let deletedDocs = [];
+  try {
+    deletedDocs = await fetchCollection('deleted_users');
+  } catch (e) {}
+  const deletedIds = (deletedDocs || []).map(d => d.id).filter(Boolean);
+  if (deletedIds.length > 0) {
+    users = users.filter(u => !deletedIds.includes(u.id));
+  }
   const sanitized = users.map(({ passwordHash, ...rest }) => rest);
   res.json({ users: sanitized });
 });
@@ -1179,8 +1255,15 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) =
     return res.status(400).json({ error: 'System Protection: Administrator accounts cannot be deleted directly.' });
   }
 
+  await deleteDocFromCollection('users', id);
+  await saveDocToCollection('deleted_users', id, {
+    id,
+    deletedAt: new Date().toISOString(),
+    deletedBy: req.user.email || 'admin'
+  });
+
   users = users.filter(u => u.id !== id);
-  await saveToCollection('users', users, 'id');
+  await writeJsonFile(USERS_FILE, users);
   res.json({ message: 'User account permanently deleted successfully' });
 });
 

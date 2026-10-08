@@ -352,6 +352,7 @@
       const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
       const localDeleted = getLocal('me_deleted_quiz_ids', []);
+      const localDeletedUsers = getLocal('me_deleted_user_ids', []);
 
       const payload = JSON.stringify({
         type: 'SNAPSHOT',
@@ -359,7 +360,8 @@
           users: localUsers,
           attempts: localAttempts.slice(0, 100),
           quizzes: localQuizzes,
-          deletedQuizIds: localDeleted
+          deletedQuizIds: localDeleted,
+          deletedUserIds: localDeletedUsers
         },
         sender: LIVE_CLIENT_ID,
         timestamp: Date.now()
@@ -557,8 +559,8 @@
       }
     }
 
-    if (type === 'DELETE_QUIZ') {
-      const { quizId } = data || {};
+    if (type === 'DELETE_QUIZ' || type === 'QUIZ_DELETE') {
+      const quizId = (data && (data.quizId || data.id)) || '';
       if (quizId) {
         let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
         currentQuizzes = currentQuizzes.filter(q => q && q.id !== quizId);
@@ -578,6 +580,7 @@
       const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
       const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
       const localDeleted = getLocal('me_deleted_quiz_ids', []);
+      const localDeletedUsers = getLocal('me_deleted_user_ids', []);
       if (localUsers.length > 0 || localAttempts.length > 0 || localQuizzes.length > 0) {
         try {
           const payload = JSON.stringify({
@@ -586,7 +589,8 @@
               users: localUsers, 
               attempts: localAttempts.slice(0, 50), 
               quizzes: localQuizzes,
-              deletedQuizIds: localDeleted
+              deletedQuizIds: localDeleted,
+              deletedUserIds: localDeletedUsers
             },
             sender: LIVE_CLIENT_ID,
             timestamp: Date.now()
@@ -600,19 +604,40 @@
     }
 
     if (type === 'STATE_RESPONSE' || type === 'SNAPSHOT') {
-      const { users, attempts, quizzes, deletedQuizIds } = data || {};
+      const { users, attempts, quizzes, deletedQuizIds, deletedUserIds } = data || {};
       let changed = false;
 
       if (Array.isArray(deletedQuizIds) && deletedQuizIds.length > 0) {
         let currentDeleted = getLocal('me_deleted_quiz_ids', []);
         const mergedDeleted = Array.from(new Set([...currentDeleted, ...deletedQuizIds]));
         setLocal('me_deleted_quiz_ids', mergedDeleted);
+
+        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+        const purged = currentQuizzes.filter(q => q && !mergedDeleted.includes(q.id));
+        if (purged.length !== currentQuizzes.length) {
+          setLocal(STORAGE_KEYS.QUIZZES, purged);
+          changed = true;
+        }
       }
       const allDeleted = getLocal('me_deleted_quiz_ids', []);
 
-      if (Array.isArray(users) && users.length > 0) {
+      if (Array.isArray(deletedUserIds) && deletedUserIds.length > 0) {
+        let currentDeletedUsers = getLocal('me_deleted_user_ids', []);
+        const mergedDeletedUsers = Array.from(new Set([...currentDeletedUsers, ...deletedUserIds]));
+        setLocal('me_deleted_user_ids', mergedDeletedUsers);
+
         let currentUsers = getLocal(STORAGE_KEYS.USERS, []);
-        const merged = mergeUsers(currentUsers, users);
+        const purgedUsers = currentUsers.filter(u => u && !mergedDeletedUsers.includes(u.id));
+        if (purgedUsers.length !== currentUsers.length) {
+          setLocal(STORAGE_KEYS.USERS, purgedUsers);
+          changed = true;
+        }
+      }
+      const allDeletedUsers = getLocal('me_deleted_user_ids', []);
+
+      if (Array.isArray(users) && users.length > 0) {
+        let currentUsers = getLocal(STORAGE_KEYS.USERS, []).filter(u => !allDeletedUsers.includes(u.id));
+        const merged = mergeUsers(currentUsers, users).filter(u => !allDeletedUsers.includes(u.id));
         if (merged.length !== currentUsers.length) {
           setLocal(STORAGE_KEYS.USERS, merged);
           changed = true;
@@ -629,12 +654,13 @@
           changed = true;
         }
       }
-      if (Array.isArray(quizzes) && quizzes.length > 0) {
-        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      if (Array.isArray(quizzes)) {
+        let currentQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []).filter(q => q && !allDeleted.includes(q.id));
         const map = new Map();
         currentQuizzes.forEach(q => { if (q && q.id && !allDeleted.includes(q.id)) map.set(q.id, q); });
         quizzes.forEach(q => { if (q && q.id && !allDeleted.includes(q.id)) map.set(q.id, q); });
-        setLocal(STORAGE_KEYS.QUIZZES, Array.from(map.values()));
+        const mergedQ = Array.from(map.values()).filter(q => !allDeleted.includes(q.id));
+        setLocal(STORAGE_KEYS.QUIZZES, mergedQ);
         changed = true;
       }
       if (changed) {
@@ -653,13 +679,26 @@
   }
 
   async function getAllUsers() {
-    const local = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u));
-    let base = mergeUsers(SEED_USERS, local);
+    const localDeletedUserIds = getLocal('me_deleted_user_ids', []);
+    let cloudDeletedDocs = null;
+    try {
+      cloudDeletedDocs = await cloudFetchCollection('deleted_users');
+    } catch (e) {
+      console.warn('[Firestore Cloud] Error fetching deleted_users:', e);
+    }
+    const cloudDeletedUserIds = (cloudDeletedDocs || []).map(d => d.id || d._id).filter(Boolean);
+    const allDeletedUserIds = Array.from(new Set([...cloudDeletedUserIds, ...localDeletedUserIds]));
+    setLocal('me_deleted_user_ids', allDeletedUserIds);
+
+    const local = getLocal(STORAGE_KEYS.USERS, []).filter(u => !isTestUser(u) && !allDeletedUserIds.includes(u.id));
+    let base = mergeUsers(SEED_USERS, local).filter(u => !allDeletedUserIds.includes(u.id));
+
     try {
       const cloudUsers = await cloudFetchCollection('users');
-      if (cloudUsers && cloudUsers.length > 0) {
-        const validCloud = cloudUsers.filter(u => !isTestUser(u));
-        const merged = mergeUsers(base, validCloud);
+      if (cloudUsers !== null && Array.isArray(cloudUsers)) {
+        const validCloud = cloudUsers.filter(u => !isTestUser(u) && !allDeletedUserIds.includes(u.id));
+        // SEED_USERS + validCloud is authoritative
+        const merged = mergeUsers(SEED_USERS, validCloud).filter(u => !allDeletedUserIds.includes(u.id));
         setLocal(STORAGE_KEYS.USERS, merged);
         return merged;
       }
@@ -723,9 +762,6 @@
 
     // 3. Retrieve local quizzes from local storage
     let localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-    if (localQuizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
-      localQuizzes = [...window.INITIAL_QUIZZES];
-    }
 
     // 4. Fetch active quizzes from Cloud Firestore (if available)
     let cloudQuizzes = null;
@@ -735,25 +771,32 @@
       console.warn('[Firestore Cloud] Error fetching quizzes:', e);
     }
 
-    // 5. Merge Cloud and Local Quizzes safely:
-    // If cloudQuizzes is an array: merge cloud and local by ID so neither is lost
-    // If cloudQuizzes is null (e.g. 429 quota or offline): retain localQuizzes safely intact!
-    let mergedQuizzes = [];
+    // 5. Authoritative Source of Truth:
+    // When Cloud Firestore is reachable and returns an array: cloudQuizzes is authoritative!
+    // Never resurrect quizzes that were deleted on other devices.
+    let activeQuizzes = [];
     if (cloudQuizzes !== null && Array.isArray(cloudQuizzes)) {
-      const map = new Map();
-      localQuizzes.forEach(q => { if (q && q.id) map.set(q.id, q); });
-      cloudQuizzes.forEach(q => { if (q && q.id) map.set(q.id, q); });
-      mergedQuizzes = Array.from(map.values());
+      activeQuizzes = cloudQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+
+      // Preserve any locally created quiz pending sync if not deleted
+      localQuizzes.forEach(lq => {
+        if (lq && lq.id && lq.pendingSync && !allDeletedIds.includes(lq.id)) {
+          if (!activeQuizzes.some(aq => aq.id === lq.id)) {
+            activeQuizzes.unshift(lq);
+          }
+        }
+      });
     } else {
-      mergedQuizzes = localQuizzes;
+      // Offline fallback: Use local quizzes, strictly filtering out any known deleted quizzes
+      if (localQuizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
+        localQuizzes = [...window.INITIAL_QUIZZES];
+      }
+      activeQuizzes = localQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
     }
 
-    // 6. Absolute Guarantee: Exclude any quiz in allDeletedIds
-    const sanitized = mergedQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
-
-    // 7. Update local cache with sanitized, live active quizzes
-    setLocal(STORAGE_KEYS.QUIZZES, sanitized);
-    return sanitized;
+    // 6. Overwrite local storage so stale deleted quizzes are completely purged from this device
+    setLocal(STORAGE_KEYS.QUIZZES, activeQuizzes);
+    return activeQuizzes;
   }
 
   function calculateAdaptiveAnalyticsSync(studentId, users, attempts) {
@@ -1110,10 +1153,26 @@
           return jsonResponse({ error: 'System Protection: Administrator accounts cannot be deleted directly to maintain platform stability.' }, 400);
         }
 
+        let deletedUserIds = getLocal('me_deleted_user_ids', []);
+        if (!deletedUserIds.includes(id)) {
+          deletedUserIds.push(id);
+          setLocal('me_deleted_user_ids', deletedUserIds);
+        }
+
         const filteredUsers = users.filter(u => u.id !== id);
         setLocal(STORAGE_KEYS.USERS, filteredUsers);
+
+        // Await deletion and tombstone creation in Cloud Firestore
+        await cloudSaveDoc('deleted_users', id, {
+          id,
+          deletedAt: new Date().toISOString(),
+          deletedBy: currentUser.email || currentUser.fullName || 'admin'
+        });
         await cloudDeleteDoc('users', id);
+
         broadcastLiveEvent('DELETE_USER', { id });
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'USER_DELETE', id } }));
+        publishRetainedSnapshot();
 
         return jsonResponse({ message: 'User account permanently deleted successfully' });
       }
@@ -1703,23 +1762,25 @@
 
         // 2. Immediately remove from local cache
         let quizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-        if (quizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
-          quizzes = [...window.INITIAL_QUIZZES];
-        }
         quizzes = quizzes.filter(q => q && q.id !== id);
         setLocal(STORAGE_KEYS.QUIZZES, quizzes);
 
         // 3. Broadcast deletion event to all connected devices in real time!
         broadcastLiveEvent('DELETE_QUIZ', { quizId: id });
+        broadcastLiveEvent('QUIZ_DELETE', { quizId: id });
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_DELETE', quizId: id } }));
 
-        // 4. Persist deletion to Cloud Firestore in background (non-blocking)
+        // 4. Persist deletion to Cloud Firestore (AWAITED to guarantee cross-device consistency)
         const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
-        cloudSaveDoc('deleted_quizzes', id, {
+        await cloudSaveDoc('deleted_quizzes', id, {
           id,
           deletedAt: new Date().toISOString(),
           deletedBy: currentUser.email || currentUser.fullName || 'admin'
-        }).catch(console.error);
-        cloudDeleteDoc('quizzes', id).catch(console.error);
+        });
+        await cloudDeleteDoc('quizzes', id);
+
+        // 5. Instantly refresh the MQTT retained snapshot so new connections never see the deleted quiz
+        publishRetainedSnapshot();
 
         return jsonResponse({ message: 'Quiz permanently deleted across all devices and accounts.', quizId: id });
       }

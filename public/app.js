@@ -348,6 +348,9 @@ function App() {
       if (detail.type === 'QUIZ_DELETE' && detail.quizId) {
         setQuizzesList(prev => prev.filter(q => q && q.id !== detail.quizId));
       }
+      if (detail.type === 'USER_DELETE' && detail.id) {
+        setUsersList(prev => prev.filter(u => u && u.id !== detail.id));
+      }
       if (detail.type === 'QUIZ_UPDATE' && detail.quiz) {
         setQuizzesList(prev => {
           const idx = prev.findIndex(q => q && q.id === detail.quiz.id);

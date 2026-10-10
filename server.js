@@ -624,7 +624,8 @@ app.post('/api/quizzes', authenticateToken, requireAdmin, async (req, res) => {
   };
 
   quizzes.unshift(newQuiz);
-  await saveToCollection('quizzes', quizzes, 'id');
+  await saveDocToCollection('quizzes', newQuiz.id, newQuiz);
+  await writeJsonFile(QUIZZES_FILE, quizzes);
   res.json({ message: 'Quiz created and posted successfully', quiz: newQuiz });
 });
 
@@ -647,7 +648,8 @@ app.put('/api/quizzes/:id', authenticateToken, requireAdmin, async (req, res) =>
   if (updates.selectionMode) quizzes[idx].selectionMode = updates.selectionMode;
   if (updates.specificQuestionIds !== undefined) quizzes[idx].specificQuestionIds = updates.specificQuestionIds;
 
-  await saveToCollection('quizzes', quizzes, 'id');
+  await saveDocToCollection('quizzes', id, quizzes[idx]);
+  await writeJsonFile(QUIZZES_FILE, quizzes);
   res.json({ message: 'Quiz updated successfully', quiz: quizzes[idx] });
 });
 

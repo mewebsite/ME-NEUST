@@ -84,8 +84,7 @@
   // Cloud Firestore API Helpers
   async function cloudFetchCollection(collectionName) {
     try {
-      const cacheBuster = Date.now();
-      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000&_cb=${cacheBuster}`, {
+      const res = await originalFetch(`${FIRESTORE_BASE}/${collectionName}?pageSize=1000`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -1672,7 +1671,7 @@
       if (method === 'GET') {
         const quizzes = await getAllQuizzes();
         const attempts = await getAllAttempts();
-        const currentUser = getLocal(STORAGE_KEYS.CURRENT_USER, {});
+        const currentUser = resolveCurrentUser(token);
         const myAttempts = attempts.filter(a => a && (a.studentId === currentUser.id || (currentUser.email && a.studentEmail && currentUser.email.toLowerCase() === a.studentEmail.toLowerCase())));
         
         let filteredQuizzes = quizzes;
@@ -1727,9 +1726,14 @@
 
         // Broadcast to all connected devices in real time via WebSockets
         broadcastLiveEvent('NEW_QUIZ', newQuiz);
+        broadcastLiveEvent('QUIZ_UPDATE', newQuiz);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_UPDATE', quiz: newQuiz } }));
 
-        // Save to Cloud Firestore in background (non-blocking)
-        cloudSaveDoc('quizzes', newQuiz.id, newQuiz).catch(console.error);
+        // Await persistence to Cloud Firestore to guarantee cloud consistency
+        await cloudSaveDoc('quizzes', newQuiz.id, newQuiz);
+
+        // Instantly publish updated snapshot to MQTT broker for all peers and reconnecting devices
+        publishRetainedSnapshot();
 
         return jsonResponse({ message: 'Quiz created and published live across all devices.', quiz: newQuiz });
       }
@@ -1756,7 +1760,12 @@
 
         setLocal(STORAGE_KEYS.QUIZZES, quizzes);
         broadcastLiveEvent('UPDATE_QUIZ', quizzes[idx]);
-        cloudSaveDoc('quizzes', id, quizzes[idx]).catch(console.error);
+        broadcastLiveEvent('QUIZ_UPDATE', quizzes[idx]);
+        window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_UPDATE', quiz: quizzes[idx] } }));
+
+        // Await Cloud Firestore update and refresh broker snapshot
+        await cloudSaveDoc('quizzes', id, quizzes[idx]);
+        publishRetainedSnapshot();
 
         return jsonResponse({ message: 'Quiz updated live across all devices.', quiz: quizzes[idx] });
       }

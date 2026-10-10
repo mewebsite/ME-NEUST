@@ -280,6 +280,7 @@ function App() {
   const [stats, setStats] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [quizzesList, setQuizzesList] = useState([]);
+  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [attemptsList, setAttemptsList] = useState([]);
   const [myAttempts, setMyAttempts] = useState([]);
   const [activeQuiz, setActiveQuiz] = useState(null);
@@ -369,6 +370,7 @@ function App() {
     });
   };
   const loadQuizzes = () => {
+    setIsLoadingQuizzes(true);
     const activeToken = token || localStorage.getItem('token') || '';
     return fetch(`${API_BASE}/api/quizzes?_t=${Date.now()}`, {
       headers: {
@@ -376,12 +378,18 @@ function App() {
         'Cache-Control': 'no-cache'
       }
     }).then(res => res.json()).then(data => {
-      setQuizzesList(data.quizzes || []);
-      setMyAttempts(data.myAttempts || []);
+      if (data && Array.isArray(data.quizzes)) {
+        setQuizzesList(data.quizzes);
+      }
+      if (data && Array.isArray(data.myAttempts)) {
+        setMyAttempts(data.myAttempts);
+      }
       return data;
     }).catch(err => {
       console.error('Error loading quizzes:', err);
       return null;
+    }).finally(() => {
+      setIsLoadingQuizzes(false);
     });
   };
   const loadAttempts = () => {
@@ -1399,7 +1407,9 @@ function App() {
       setQuizResultsModalOpen(true);
     },
     toggleQuizStatus: toggleQuizStatus,
-    deleteQuiz: deleteQuiz
+    deleteQuiz: deleteQuiz,
+    isLoading: isLoadingQuizzes,
+    onRefresh: loadQuizzes
   }), quizResultsModalOpen && /*#__PURE__*/React.createElement(QuizResultsModal, {
     attempts: attemptsList,
     quizzes: quizzesList,
@@ -2635,9 +2645,16 @@ function QuizListModal({
   openQuizEditorModal,
   openQuizResultsModal,
   toggleQuizStatus,
-  deleteQuiz
+  deleteQuiz,
+  isLoading = false,
+  onRefresh
 }) {
   const isAdmin = user && user.role === 'admin';
+  useEffect(() => {
+    if (onRefresh && quizzes.length === 0) {
+      onRefresh();
+    }
+  }, []);
   return /*#__PURE__*/React.createElement("div", {
     className: "modal-overlay",
     onClick: onClose
@@ -2665,9 +2682,28 @@ function QuizListModal({
   }, isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt and retake official licensure board exam quizzes posted by administrators. All attempts are saved in your academic record.')), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      gap: '0.5rem'
+      gap: '0.5rem',
+      alignItems: 'center',
+      flexWrap: 'wrap'
     }
-  }, isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+  }, onRefresh && /*#__PURE__*/React.createElement("button", {
+    className: "btn-secondary",
+    style: {
+      padding: '0.4rem 0.85rem',
+      fontSize: '0.85rem',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.4rem'
+    },
+    onClick: onRefresh,
+    disabled: isLoading,
+    title: "Synchronize quizzes with Cloud Firestore"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: isLoading ? 'spin-icon' : '',
+    style: {
+      display: 'inline-block'
+    }
+  }, "\uD83D\uDD04"), /*#__PURE__*/React.createElement("span", null, isLoading ? 'Syncing...' : 'Sync Live')), isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
     className: "btn-secondary",
     style: {
       padding: '0.4rem 0.9rem',
@@ -2689,13 +2725,45 @@ function QuizListModal({
       padding: '0.4rem 0.8rem'
     },
     onClick: onClose
-  }, "\u2715 Close"))), quizzes.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  }, "\u2715 Close"))), isLoading && quizzes.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: 'center',
-      padding: '2rem',
+      padding: '3rem',
       color: 'var(--text-muted)'
     }
-  }, "No quizzes are currently published by faculty administrators.") : /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "spin-icon",
+    style: {
+      fontSize: '2rem',
+      marginBottom: '1rem',
+      display: 'inline-block'
+    }
+  }, "\uD83D\uDD04"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: '1rem',
+      color: 'var(--text-main)'
+    }
+  }, "Fetching active licensure board quizzes from Cloud Database...")) : quizzes.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: '2.5rem',
+      color: 'var(--text-muted)'
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      marginBottom: '1.25rem',
+      fontSize: '1rem'
+    }
+  }, "No quizzes are currently published by faculty administrators."), onRefresh && /*#__PURE__*/React.createElement("button", {
+    className: "btn-primary",
+    onClick: onRefresh,
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      margin: '0 auto'
+    }
+  }, "\uD83D\uDD04 Fetch Quizzes from Cloud Database")) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',

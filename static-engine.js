@@ -208,6 +208,97 @@
     }
   ];
 
+  // --- SEED QUIZZES (Baseline licensure board prep assessments) ---
+  const SEED_QUIZZES = [
+    {
+      id: "qz_01",
+      title: "Module 1: Power Plant Engineering Comprehensive Quiz",
+      description: "Official faculty assessment covering Thermodynamics, Heat Transfer, Steam/Gas Turbines, and Boilers.",
+      module: "Module 1 - Power Plant Elements",
+      questionCount: 50,
+      durationMins: 50,
+      passingScorePct: 70,
+      status: "published",
+      selectionMode: "random",
+      specificQuestionIds: [],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-07-28"
+    },
+    {
+      id: "qz_02",
+      title: "Module 2: Thermal Cycles & Power Plant Design Quiz",
+      description: "Assessment on Rankine, Brayton, and Combined Cycles, Hydroelectric systems, and Chimney Sizing.",
+      module: "Module 2 - Power Plant Design",
+      questionCount: 50,
+      durationMins: 50,
+      passingScorePct: 70,
+      status: "published",
+      selectionMode: "random",
+      specificQuestionIds: [],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-07-30"
+    },
+    {
+      id: "qz_03",
+      title: "Refrigeration & Air Conditioning Board Exam Practice Quiz",
+      description: "Vapor compression cycles, Absorption systems, Psychrometric chart analysis, and COP calculations.",
+      module: "Module 5 - Refrigeration Engineering",
+      questionCount: 30,
+      durationMins: 30,
+      passingScorePct: 75,
+      status: "published",
+      selectionMode: "random",
+      specificQuestionIds: [],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-08-01"
+    },
+    {
+      id: "qz_04",
+      title: "Full Licensure Exam Simulation Mock Board Quiz",
+      description: "Comprehensive 100-question mixed assessment across all 6 Mechanical Engineering Licensure modules.",
+      module: "",
+      questionCount: 100,
+      durationMins: 100,
+      passingScorePct: 70,
+      status: "published",
+      selectionMode: "random",
+      specificQuestionIds: [],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-08-02"
+    },
+    {
+      id: "qz_1785725408616",
+      title: "Combined Power Plant & Refrigeration Block Exam",
+      description: "Faculty quiz combining Module 1 (Power Plant) and Module 5 (Refrigeration)",
+      module: "Module 1 - Power Plant Elements, Module 5 - Refrigeration Engineering",
+      questionCount: 30,
+      durationMins: 30,
+      passingScorePct: 75,
+      status: "published",
+      selectionMode: "random",
+      specificQuestionIds: [],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-08-03"
+    },
+    {
+      id: "qz_1785726123836",
+      title: "Hand-Picked Special Exam Paper",
+      description: "Faculty selected exact items #1, #5, #10, #15",
+      module: "Module 1 - Power Plant Elements",
+      questionCount: 4,
+      durationMins: 20,
+      passingScorePct: 75,
+      status: "published",
+      selectionMode: "manual",
+      specificQuestionIds: ["1", "5", "10", "15"],
+      createdBy: "Dr. Roberto Santos, PE",
+      createdDate: "2026-08-03"
+    }
+  ];
+  if (typeof window !== 'undefined') {
+    window.INITIAL_QUIZZES = SEED_QUIZZES;
+  }
+
   function isTestUser(u) {
     if (!u) return true;
     const email = (u.email || '').toLowerCase().trim();
@@ -356,7 +447,10 @@
     try {
       const localUsers = getLocal(STORAGE_KEYS.USERS, []);
       const localAttempts = getLocal(STORAGE_KEYS.ATTEMPTS, []);
-      const localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      let localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+      if (localQuizzes.length === 0) {
+        localQuizzes = [...SEED_QUIZZES];
+      }
       const localDeleted = getLocal('me_deleted_quiz_ids', []);
       const localDeletedUsers = getLocal('me_deleted_user_ids', []);
 
@@ -758,24 +852,17 @@
   }
 
   async function getAllQuizzes() {
-    // 1. Retrieve all known locally deleted quiz IDs
-    const localDeletedIds = getLocal('me_deleted_quiz_ids', []);
-
-    // 2. Fetch deleted quizzes from Cloud Firestore (if available)
+    // 1. Fetch deleted quizzes from Cloud Firestore (authoritative)
     let cloudDeletedDocs = null;
     try {
       cloudDeletedDocs = await cloudFetchCollection('deleted_quizzes');
     } catch (e) {
       console.warn('[Firestore Cloud] Error fetching deleted_quizzes:', e);
     }
+    const localDeletedIds = getLocal('me_deleted_quiz_ids', []);
     const cloudDeletedIds = (cloudDeletedDocs || []).map(d => d.id || d._id).filter(Boolean);
-    const allDeletedIds = Array.from(new Set([...cloudDeletedIds, ...localDeletedIds]));
-    setLocal('me_deleted_quiz_ids', allDeletedIds);
 
-    // 3. Retrieve local quizzes from local storage
-    let localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
-
-    // 4. Fetch active quizzes from Cloud Firestore (if available)
+    // 2. Fetch active quizzes from Cloud Firestore (authoritative)
     let cloudQuizzes = null;
     try {
       cloudQuizzes = await cloudFetchCollection('quizzes');
@@ -783,12 +870,35 @@
       console.warn('[Firestore Cloud] Error fetching quizzes:', e);
     }
 
-    // 5. Authoritative Source of Truth:
-    // When Cloud Firestore is reachable and returns an array: cloudQuizzes is authoritative!
-    // Never resurrect quizzes that were deleted on other devices.
+    // Crucial: If active quizzes exist in Cloud Firestore, clean up any stale localDeletedIds that might have suppressed them!
+    if (cloudQuizzes && Array.isArray(cloudQuizzes)) {
+      const activeCloudIds = new Set(cloudQuizzes.map(q => q && q.id).filter(Boolean));
+      const cleanedLocalDeleted = localDeletedIds.filter(id => !activeCloudIds.has(id));
+      if (cleanedLocalDeleted.length !== localDeletedIds.length) {
+        setLocal('me_deleted_quiz_ids', cleanedLocalDeleted);
+      }
+    }
+
+    // Authoritative deleted IDs: if Cloud Firestore was reachable, cloudDeletedDocs is source of truth
+    const allDeletedIds = cloudDeletedDocs !== null
+      ? cloudDeletedIds
+      : Array.from(new Set([...cloudDeletedIds, ...localDeletedIds]));
+    setLocal('me_deleted_quiz_ids', allDeletedIds);
+
+    // 3. Retrieve local quizzes from local storage
+    let localQuizzes = getLocal(STORAGE_KEYS.QUIZZES, []);
+
+    // 4. Determine authoritative active quizzes
     let activeQuizzes = [];
-    if (cloudQuizzes !== null && Array.isArray(cloudQuizzes)) {
+    if (cloudQuizzes !== null && Array.isArray(cloudQuizzes) && cloudQuizzes.length > 0) {
       activeQuizzes = cloudQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+
+      // Ensure all standard baseline SEED_QUIZZES are present if not deleted
+      SEED_QUIZZES.forEach(sq => {
+        if (!allDeletedIds.includes(sq.id) && !activeQuizzes.some(aq => aq.id === sq.id)) {
+          activeQuizzes.push(sq);
+        }
+      });
 
       // Preserve any locally created quiz pending sync if not deleted
       localQuizzes.forEach(lq => {
@@ -799,14 +909,17 @@
         }
       });
     } else {
-      // Offline fallback: Use local quizzes, strictly filtering out any known deleted quizzes
-      if (localQuizzes.length === 0 && window.INITIAL_QUIZZES && Array.isArray(window.INITIAL_QUIZZES)) {
-        localQuizzes = [...window.INITIAL_QUIZZES];
+      // Offline fallback: Use local quizzes or seed quizzes
+      if (localQuizzes.length === 0) {
+        localQuizzes = [...SEED_QUIZZES];
       }
       activeQuizzes = localQuizzes.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+      if (activeQuizzes.length === 0) {
+        activeQuizzes = SEED_QUIZZES.filter(q => q && q.id && !allDeletedIds.includes(q.id));
+      }
     }
 
-    // 6. Overwrite local storage so stale deleted quizzes are completely purged from this device
+    // 5. Overwrite local storage with the authoritative merged list
     setLocal(STORAGE_KEYS.QUIZZES, activeQuizzes);
     return activeQuizzes;
   }

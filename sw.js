@@ -4,15 +4,15 @@
  * regardless of whether the user or host computer is offline or online.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.4.2';
+const CACHE_NAME = 'me-boardprep-cache-v2.4.3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=2.4.2',
-  './questions-data.js?v=2.4.2',
-  './paho-mqtt.min.js?v=2.4.2',
-  './static-engine.js?v=2.4.2',
-  './app.bundle.js?v=2.4.2',
+  './styles.css?v=2.4.3',
+  './questions-data.js?v=2.4.3',
+  './paho-mqtt.min.js?v=2.4.3',
+  './static-engine.js?v=2.4.3',
+  './app.bundle.js?v=2.4.3',
   './images/neust_seal.png',
   './images/neust_coe_seal.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',
@@ -59,7 +59,23 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Stale-While-Revalidate with offline fallback
+  // Network-First for HTML navigation requests to ensure mobile devices always get latest scripts
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            const respClone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match('./index.html') || caches.match('./'))
+    );
+    return;
+  }
+
+  // Stale-While-Revalidate with offline fallback for static assets
   event.respondWith(
     caches.match(event.request).then(cachedResponse => {
       if (cachedResponse) {
@@ -79,9 +95,7 @@ self.addEventListener('fetch', event => {
         }
         return response;
       }).catch(() => {
-        if (event.request.mode === 'navigate') {
-          return caches.match('./index.html') || caches.match('./');
-        }
+        return caches.match('./index.html') || caches.match('./');
       });
     })
   );

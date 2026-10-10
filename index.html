@@ -14,32 +14,46 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
   
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="styles.css?v=2.4.2">
+  <link rel="stylesheet" href="styles.css?v=2.4.3">
   
   <!-- React Production Libraries -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
   <!-- Bundled Question Bank & Quizzes Data (3,105 Questions) -->
-  <script src="questions-data.js?v=2.4.2"></script>
+  <script src="questions-data.js?v=2.4.3"></script>
 
   <!-- Real-Time WebSocket Synchronization Client -->
-  <script src="paho-mqtt.min.js?v=2.4.2"></script>
+  <script src="paho-mqtt.min.js?v=2.4.3"></script>
 
   <!-- Real-Time Cloud Firestore Sync Engine -->
-  <script src="static-engine.js?v=2.4.2"></script>
+  <script src="static-engine.js?v=2.4.3"></script>
 </head>
 <body>
   <div id="root"></div>
   <!-- High-Speed Pre-Compiled Application Bundle -->
-  <script src="app.bundle.js?v=2.4.2"></script>
+  <script src="app.bundle.js?v=2.4.3"></script>
   
   <!-- Offline Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then(reg => console.log('[Service Worker] Active & Registered:', reg.scope))
+          .then(reg => {
+            console.log('[Service Worker] Active & Registered:', reg.scope);
+            if (reg.update) reg.update();
+            reg.onupdatefound = () => {
+              const installingWorker = reg.installing;
+              if (installingWorker) {
+                installingWorker.onstatechange = () => {
+                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    console.log('[Service Worker] New version detected! Auto-reloading to apply latest updates...');
+                    window.location.reload();
+                  }
+                };
+              }
+            };
+          })
           .catch(err => console.warn('[Service Worker] Registration error:', err));
       });
     }

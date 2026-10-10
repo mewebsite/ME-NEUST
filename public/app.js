@@ -217,6 +217,7 @@ function App() {
   const [stats, setStats] = useState(null);
   const [questions, setQuestions] = useState([]);
   const [quizzesList, setQuizzesList] = useState([]);
+  const [isLoadingQuizzes, setIsLoadingQuizzes] = useState(false);
   const [attemptsList, setAttemptsList] = useState([]);
   const [myAttempts, setMyAttempts] = useState([]);
   const [activeQuiz, setActiveQuiz] = useState(null);
@@ -312,19 +313,27 @@ function App() {
   };
 
   const loadQuizzes = () => {
+    setIsLoadingQuizzes(true);
     const activeToken = token || localStorage.getItem('token') || '';
     return fetch(`${API_BASE}/api/quizzes?_t=${Date.now()}`, {
       headers: { 'Authorization': `Bearer ${activeToken}`, 'Cache-Control': 'no-cache' }
     })
     .then(res => res.json())
     .then(data => {
-      setQuizzesList(data.quizzes || []);
-      setMyAttempts(data.myAttempts || []);
+      if (data && Array.isArray(data.quizzes)) {
+        setQuizzesList(data.quizzes);
+      }
+      if (data && Array.isArray(data.myAttempts)) {
+        setMyAttempts(data.myAttempts);
+      }
       return data;
     })
     .catch(err => {
       console.error('Error loading quizzes:', err);
       return null;
+    })
+    .finally(() => {
+      setIsLoadingQuizzes(false);
     });
   };
 
@@ -1354,6 +1363,8 @@ function App() {
           }}
           toggleQuizStatus={toggleQuizStatus}
           deleteQuiz={deleteQuiz}
+          isLoading={isLoadingQuizzes}
+          onRefresh={loadQuizzes}
         />
       )}
 
@@ -2088,8 +2099,26 @@ function PracticeConfigModal({ onClose, onStart }) {
 }
 
 // POSTED QUIZZES LIBRARY MODAL FOR STUDENTS & FACULTY
-function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, openQuizEditorModal, openQuizResultsModal, toggleQuizStatus, deleteQuiz }) {
+function QuizListModal({ 
+  quizzes, 
+  myAttempts = [], 
+  onClose, 
+  onLaunch, 
+  user, 
+  openQuizEditorModal, 
+  openQuizResultsModal, 
+  toggleQuizStatus, 
+  deleteQuiz,
+  isLoading = false,
+  onRefresh
+}) {
   const isAdmin = user && user.role === 'admin';
+
+  useEffect(() => {
+    if (onRefresh && quizzes.length === 0) {
+      onRefresh();
+    }
+  }, []);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -2101,7 +2130,19 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
               {isAdmin ? 'Manage, compose, publish, or view student attempt logs.' : 'Attempt and retake official licensure board exam quizzes posted by administrators. All attempts are saved in your academic record.'}
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {onRefresh && (
+              <button 
+                className="btn-secondary" 
+                style={{ padding: '0.4rem 0.85rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }} 
+                onClick={onRefresh}
+                disabled={isLoading}
+                title="Synchronize quizzes with Cloud Firestore"
+              >
+                <span className={isLoading ? 'spin-icon' : ''} style={{ display: 'inline-block' }}>🔄</span>
+                <span>{isLoading ? 'Syncing...' : 'Sync Live'}</span>
+              </button>
+            )}
             {isAdmin && (
               <>
                 <button className="btn-secondary" style={{ padding: '0.4rem 0.9rem', fontSize: '0.85rem', borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={() => openQuizResultsModal(null)}>
@@ -2116,9 +2157,19 @@ function QuizListModal({ quizzes, myAttempts = [], onClose, onLaunch, user, open
           </div>
         </div>
 
-        {quizzes.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
-            No quizzes are currently published by faculty administrators.
+        {isLoading && quizzes.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+            <div className="spin-icon" style={{ fontSize: '2rem', marginBottom: '1rem', display: 'inline-block' }}>🔄</div>
+            <p style={{ fontSize: '1rem', color: 'var(--text-main)' }}>Fetching active licensure board quizzes from Cloud Database...</p>
+          </div>
+        ) : quizzes.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--text-muted)' }}>
+            <p style={{ marginBottom: '1.25rem', fontSize: '1rem' }}>No quizzes are currently published by faculty administrators.</p>
+            {onRefresh && (
+              <button className="btn-primary" onClick={onRefresh} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', margin: '0 auto' }}>
+                🔄 Fetch Quizzes from Cloud Database
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', maxHeight: '60vh', overflowY: 'auto' }}>

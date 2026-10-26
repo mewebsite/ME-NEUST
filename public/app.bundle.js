@@ -8,25 +8,25 @@ const MODULE_OPTIONS = [{
   label: 'All Curriculum Modules (Comprehensive Mixed)'
 }, {
   value: 'Module 1 - Power Plant Elements',
-  label: 'Module 1: Power Plant Elements (1,111 Qs)'
+  label: 'Module 1: Power Plant Elements (1,610 Qs)'
 }, {
   value: 'Module 2 - Power Plant Design',
-  label: 'Module 2: Power Plant Design (790 Qs)'
+  label: 'Module 2: Power Plant Design (1,119 Qs)'
 }, {
   value: 'Module 3 - Industrial Plant Engineering',
-  label: 'Module 3: Industrial Plant Engineering (313 Qs)'
+  label: 'Module 3: Industrial Plant Engineering (677 Qs)'
 }, {
   value: 'Module 4 - Industrial Plant Design',
-  label: 'Module 4: Industrial Plant Design (295 Qs)'
+  label: 'Module 4: Industrial Plant Design (329 Qs)'
 }, {
-  value: 'Module 5 - Refrigeration Engineering',
-  label: 'Module 5: Refrigeration Engineering (392 Qs)'
+  value: 'Module 5 - Refrigeration Engineering and Its Application',
+  label: 'Module 5: Refrigeration Engineering (861 Qs)'
 }, {
   value: 'Module 6 - Air Conditioning',
-  label: 'Module 6: Air Conditioning (157 Qs)'
+  label: 'Module 6: Air Conditioning (294 Qs)'
 }, {
   value: 'Unclassified',
-  label: 'Unclassified / General (48 Qs)'
+  label: 'Unclassified / General (146 Qs)'
 }];
 
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
@@ -1585,7 +1585,7 @@ function Footer({
       maxWidth: '650px',
       margin: '0.5rem auto 0'
     }
-  }, "Official Licensure Board Examination Preparation Platform & Solved 3,105 Item Question Bank Repository."), setDeviceMode && /*#__PURE__*/React.createElement("div", {
+  }, "Official Licensure Board Examination Preparation Platform & Solved 5,036 Item Question Bank Repository."), setDeviceMode && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: '1.5rem',
       display: 'flex',
@@ -2070,7 +2070,7 @@ function HeroSection({
       maxWidth: '750px',
       margin: '0 auto 2.5rem'
     }
-  }, "Comprehensive question bank of 3,105 solved items covering Power Plant Engineering, Industrial Plant Design, Heat Transfer, Refrigeration & Air Conditioning, and ME Design."), /*#__PURE__*/React.createElement("div", {
+  }, "Comprehensive question bank of 5,036 solved items covering Power Plant Engineering, Industrial Plant Design, Heat Transfer, Refrigeration & Air Conditioning, and ME Design."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '1rem',
@@ -2140,7 +2140,7 @@ function HeroSection({
       marginBottom: '0.75rem',
       color: 'var(--success)'
     }
-  }, "\u26A1 3,105 Solved Questions"), /*#__PURE__*/React.createElement("p", {
+  }, "\u26A1 5,036 Solved Questions"), /*#__PURE__*/React.createElement("p", {
     style: {
       color: 'var(--text-muted)',
       fontSize: '0.95rem'
@@ -2269,8 +2269,8 @@ function DashboardView({
   loadQuestions,
   downloadReviewedCSV
 }) {
-  const totalCount = stats ? stats.totalQuestions : 3105;
-  const reviewedCount = stats ? stats.reviewedQuestions : 3105;
+  const totalCount = stats ? stats.totalQuestions : 5036;
+  const reviewedCount = stats ? stats.reviewedQuestions : 5036;
   const totalBatches = stats ? stats.totalBatchesCompleted : 63;
   const postedQuizzes = stats ? stats.publishedQuizzesCount : 4;
   const totalAttempts = stats ? stats.totalAttemptsCount || 0 : 0;
@@ -3301,7 +3301,7 @@ function AuthModal({
       marginBottom: '1.5rem',
       fontSize: '0.9rem'
     }
-  }, "Access 3,105 Solved Mechanical Engineering Licensure Questions"), /*#__PURE__*/React.createElement("div", {
+  }, "Access 5,036 Solved Mechanical Engineering Licensure Questions"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.5rem',
@@ -3781,7 +3781,7 @@ function BatchAuditView({
       fontSize: '1.8rem',
       marginBottom: '0.5rem'
     }
-  }, "Question Bank Explorer (3,105 Items)"), /*#__PURE__*/React.createElement("p", {
+  }, "Question Bank Explorer (5,036 Items)"), /*#__PURE__*/React.createElement("p", {
     style: {
       color: 'var(--text-muted)'
     }
@@ -5141,7 +5141,7 @@ function QuizEditorModal({
       color: 'var(--text-dim)',
       marginTop: '0.2rem'
     }
-  }, "Hand-pick specific questions from the 3,105 item bank to form a fixed exam paper.")))), /*#__PURE__*/React.createElement("div", {
+  }, "Hand-pick specific questions from the 5,036 item bank to form a fixed exam paper.")))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5196,7 +5196,7 @@ function QuizEditorModal({
       borderRadius: '6px',
       border: '1px solid rgba(245, 158, 11, 0.3)'
     }
-  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " Sampling from all 3,105 items across the full curriculum repository.") : /*#__PURE__*/React.createElement("div", {
+  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " Sampling from all 5,036 items across the full curriculum repository.") : /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: '0.8rem',
       color: 'var(--primary-light)',

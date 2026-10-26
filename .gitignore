@@ -5,3 +5,4 @@ cloudflared.exe
 .DS_Store
 *.log
 scripts/
+temp_downloads/

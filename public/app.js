@@ -4,13 +4,13 @@ const API_BASE = '';
 
 const MODULE_OPTIONS = [
   { value: '', label: 'All Curriculum Modules (Comprehensive Mixed)' },
-  { value: 'Module 1 - Power Plant Elements', label: 'Module 1: Power Plant Elements (1,111 Qs)' },
-  { value: 'Module 2 - Power Plant Design', label: 'Module 2: Power Plant Design (790 Qs)' },
-  { value: 'Module 3 - Industrial Plant Engineering', label: 'Module 3: Industrial Plant Engineering (313 Qs)' },
-  { value: 'Module 4 - Industrial Plant Design', label: 'Module 4: Industrial Plant Design (295 Qs)' },
-  { value: 'Module 5 - Refrigeration Engineering', label: 'Module 5: Refrigeration Engineering (392 Qs)' },
-  { value: 'Module 6 - Air Conditioning', label: 'Module 6: Air Conditioning (157 Qs)' },
-  { value: 'Unclassified', label: 'Unclassified / General (48 Qs)' }
+  { value: 'Module 1 - Power Plant Elements', label: 'Module 1: Power Plant Elements (1,610 Qs)' },
+  { value: 'Module 2 - Power Plant Design', label: 'Module 2: Power Plant Design (1,119 Qs)' },
+  { value: 'Module 3 - Industrial Plant Engineering', label: 'Module 3: Industrial Plant Engineering (677 Qs)' },
+  { value: 'Module 4 - Industrial Plant Design', label: 'Module 4: Industrial Plant Design (329 Qs)' },
+  { value: 'Module 5 - Refrigeration Engineering and Its Application', label: 'Module 5: Refrigeration Engineering (861 Qs)' },
+  { value: 'Module 6 - Air Conditioning', label: 'Module 6: Air Conditioning (294 Qs)' },
+  { value: 'Unclassified', label: 'Unclassified / General (146 Qs)' }
 ];
 
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
@@ -1509,7 +1509,7 @@ function Footer({ deviceMode, setDeviceMode }) {
         College of Engineering — Department of Mechanical Engineering (Est. 1968)
       </p>
       <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.5rem', maxWidth: '650px', margin: '0.5rem auto 0' }}>
-        Official Licensure Board Examination Preparation Platform & Solved 3,105 Item Question Bank Repository.
+        Official Licensure Board Examination Preparation Platform & Solved 5,036 Item Question Bank Repository.
       </p>
       
       {setDeviceMode && (
@@ -1794,7 +1794,7 @@ function HeroSection({ onLoginClick, onSignupClick }) {
         Master the Mechanical Engineer Board Exam with <span className="gradient-text">First-Principles Solutions</span>
       </h1>
       <p style={{ fontSize: 'clamp(0.95rem, 2.5vw, 1.2rem)', color: 'var(--text-muted)', maxWidth: '750px', margin: '0 auto 2.5rem' }}>
-        Comprehensive question bank of 3,105 solved items covering Power Plant Engineering, Industrial Plant Design, Heat Transfer, Refrigeration & Air Conditioning, and ME Design.
+        Comprehensive question bank of 5,036 solved items covering Power Plant Engineering, Industrial Plant Design, Heat Transfer, Refrigeration & Air Conditioning, and ME Design.
       </p>
 
       <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '3.5rem', flexWrap: 'wrap' }}>
@@ -1823,7 +1823,7 @@ function HeroSection({ onLoginClick, onSignupClick }) {
         </div>
 
         <div className="glass-card" style={{ padding: '2rem', textAlign: 'left' }}>
-          <h3 style={{ marginBottom: '0.75rem', color: 'var(--success)' }}>⚡ 3,105 Solved Questions</h3>
+          <h3 style={{ marginBottom: '0.75rem', color: 'var(--success)' }}>⚡ 5,036 Solved Questions</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
             100% verified question bank across 63 review batches covering all 6 board exam modules.
           </p>
@@ -1888,8 +1888,8 @@ function HeroSection({ onLoginClick, onSignupClick }) {
 
 // STUDENT & MAIN DASHBOARD VIEW
 function DashboardView({ token, user, stats, openPracticeModal, openQuizListModal, openQuizResultsModal, startDiagnosticBenchmark, startAdaptiveSmartQuiz, startBoardSimulation, setView, loadQuestions, downloadReviewedCSV }) {
-  const totalCount = stats ? stats.totalQuestions : 3105;
-  const reviewedCount = stats ? stats.reviewedQuestions : 3105;
+  const totalCount = stats ? stats.totalQuestions : 5036;
+  const reviewedCount = stats ? stats.reviewedQuestions : 5036;
   const totalBatches = stats ? stats.totalBatchesCompleted : 63;
   const postedQuizzes = stats ? stats.publishedQuizzesCount : 4;
   const totalAttempts = stats ? (stats.totalAttemptsCount || 0) : 0;
@@ -2548,7 +2548,7 @@ function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
           {authModal === 'login' ? 'Welcome Back' : 'Create Student Account'}
         </h2>
         <p style={{ textAlign: 'center', color: 'var(--text-muted)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-          Access 3,105 Solved Mechanical Engineering Licensure Questions
+          Access 5,036 Solved Mechanical Engineering Licensure Questions
         </p>
 
         <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
@@ -2905,7 +2905,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Question Bank Explorer (3,105 Items)</h2>
+          <h2 style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>Question Bank Explorer (5,036 Items)</h2>
           <p style={{ color: 'var(--text-muted)' }}>
             Independently solved, fact-checked, and enhanced questions with academic textbook references and review-tracking metadata across 63 batches.
           </p>
@@ -4004,7 +4004,7 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                   📌 Manual Question Picker
                 </div>
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '0.2rem' }}>
-                  Hand-pick specific questions from the 3,105 item bank to form a fixed exam paper.
+                  Hand-pick specific questions from the 5,036 item bank to form a fixed exam paper.
                 </div>
               </div>
             </div>
@@ -4029,7 +4029,7 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
             <div className="glass-card" style={{ padding: '0.85rem', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)' }}>
               {selectedModules.length === 0 ? (
                 <div style={{ fontSize: '0.8rem', color: '#fbbf24', marginBottom: '0.6rem', padding: '0.35rem 0.6rem', background: 'rgba(245, 158, 11, 0.12)', borderRadius: '6px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-                  ⚡ <strong>All Modules Selected (Comprehensive):</strong> Sampling from all 3,105 items across the full curriculum repository.
+                  ⚡ <strong>All Modules Selected (Comprehensive):</strong> Sampling from all 5,036 items across the full curriculum repository.
                 </div>
               ) : (
                 <div style={{ fontSize: '0.8rem', color: 'var(--primary-light)', marginBottom: '0.6rem', padding: '0.35rem 0.6rem', background: 'rgba(56, 189, 248, 0.12)', borderRadius: '6px', border: '1px solid var(--border-glow)' }}>

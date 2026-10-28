@@ -397,6 +397,7 @@ app.get('/api/questions', authenticateToken, async (req, res) => {
       (q.Subtopic && q.Subtopic.toLowerCase().includes(s)) ||
       (q.Module && q.Module.toLowerCase().includes(s)) ||
       (q.Explanation && q.Explanation.toLowerCase().includes(s)) ||
+      (q.CompleteSolution && q.CompleteSolution.toLowerCase().includes(s)) ||
       (q.References && q.References.toLowerCase().includes(s))
     );
   }

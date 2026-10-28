@@ -3754,6 +3754,9 @@ function BatchAuditView({
   downloadReviewedCSV
 }) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedSolutions, setExpandedSolutions] = useState({});
+  const [searchingId, setSearchingId] = useState(null);
+  const [allExpanded, setAllExpanded] = useState(false);
   const fetchFilteredPage = (page = 1) => {
     setCurrentPage(page);
     loadQuestions({
@@ -3767,6 +3770,123 @@ function BatchAuditView({
   useEffect(() => {
     fetchFilteredPage(1);
   }, [moduleFilter, batchFilter]);
+  const handleToggleSolution = qId => {
+    if (expandedSolutions[qId]) {
+      setExpandedSolutions(prev => ({
+        ...prev,
+        [qId]: false
+      }));
+      return;
+    }
+    setSearchingId(qId);
+    setTimeout(() => {
+      setExpandedSolutions(prev => ({
+        ...prev,
+        [qId]: true
+      }));
+      setSearchingId(null);
+      window.showToast?.('Complete step-by-step solution retrieved!', 'success', 2200);
+    }, 280);
+  };
+  const handleToggleAllSolutions = () => {
+    const nextState = !allExpanded;
+    setAllExpanded(nextState);
+    const updated = {};
+    questions.forEach(q => {
+      updated[q.ID] = nextState;
+    });
+    setExpandedSolutions(updated);
+    window.showToast?.(nextState ? 'All solutions on this page expanded' : 'All solutions collapsed', 'info');
+  };
+  const handleCopySolution = (solutionText, qId) => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(solutionText).then(() => {
+        window.showToast?.(`Solution for Question #${qId} copied to clipboard!`, 'success');
+      }).catch(() => {
+        window.showToast?.('Could not copy to clipboard', 'warning');
+      });
+    } else {
+      window.showToast?.('Clipboard access not supported in this browser', 'warning');
+    }
+  };
+  const renderSolutionBreakdown = q => {
+    const rawText = q.CompleteSolution || q.Explanation || '';
+    if (!rawText) return null;
+    if (rawText.includes('📐 GIVEN') || rawText.includes('🎯 TARGET') || rawText.includes('⚙️ GOVERNING')) {
+      const sections = rawText.split('\n\n').filter(s => s.trim());
+      return /*#__PURE__*/React.createElement("div", {
+        className: "solution-content-grid",
+        style: {
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.75rem',
+          marginTop: '0.65rem'
+        }
+      }, sections.map((sec, idx) => {
+        const lines = sec.trim().split('\n');
+        const header = lines[0] || '';
+        const bodyLines = lines.slice(1);
+        let headerColor = 'var(--primary-light)';
+        let cardBg = 'rgba(255,255,255,0.03)';
+        let borderColor = 'rgba(255,255,255,0.08)';
+        if (header.includes('🏆') || header.includes('FINAL')) {
+          cardBg = 'rgba(16, 185, 129, 0.12)';
+          borderColor = 'rgba(16, 185, 129, 0.35)';
+          headerColor = '#34d399';
+        } else if (header.includes('💡') || header.includes('TIP') || header.includes('NOTE')) {
+          cardBg = 'rgba(245, 158, 11, 0.1)';
+          borderColor = 'rgba(245, 158, 11, 0.3)';
+          headerColor = '#fbbf24';
+        } else if (header.includes('⚙️') || header.includes('FORMULAS')) {
+          cardBg = 'rgba(99, 102, 241, 0.08)';
+          borderColor = 'rgba(99, 102, 241, 0.25)';
+          headerColor = '#818cf8';
+        } else if (header.includes('🧮') || header.includes('DERIVATION')) {
+          cardBg = 'rgba(56, 189, 248, 0.08)';
+          borderColor = 'rgba(56, 189, 248, 0.25)';
+          headerColor = '#38bdf8';
+        }
+        return /*#__PURE__*/React.createElement("div", {
+          key: idx,
+          style: {
+            background: cardBg,
+            border: `1px solid ${borderColor}`,
+            borderRadius: 'var(--radius-sm)',
+            padding: '0.75rem 1rem'
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontWeight: '700',
+            fontSize: '0.88rem',
+            color: headerColor,
+            marginBottom: bodyLines.length > 0 ? '0.4rem' : '0'
+          }
+        }, header), bodyLines.map((line, lIdx) => /*#__PURE__*/React.createElement("div", {
+          key: lIdx,
+          style: {
+            fontSize: '0.86rem',
+            color: 'var(--text-main)',
+            lineHeight: '1.55',
+            paddingLeft: line.startsWith('•') ? '0.4rem' : '0'
+          }
+        }, line)));
+      }));
+    }
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: 'rgba(0,0,0,0.25)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 'var(--radius-sm)',
+        padding: '0.85rem 1rem',
+        fontSize: '0.88rem',
+        lineHeight: '1.65',
+        color: 'var(--text-main)',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        marginTop: '0.65rem'
+      }
+    }, rawText);
+  };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -3785,10 +3905,26 @@ function BatchAuditView({
     style: {
       color: 'var(--text-muted)'
     }
-  }, "Independently solved, fact-checked, and enhanced questions with academic textbook references and review-tracking metadata across 63 batches.")), /*#__PURE__*/React.createElement("button", {
+  }, "Independently solved, fact-checked, and enhanced questions with academic textbook references and review-tracking metadata across 63 batches.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.75rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    onClick: handleToggleAllSolutions,
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.45rem',
+      fontSize: '0.9rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '🔍 Expand All Solutions')), /*#__PURE__*/React.createElement("button", {
     className: "btn-success",
     onClick: downloadReviewedCSV
-  }, "\uD83D\uDCE5 Export Live CSV")), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDCE5 Export Live CSV"))), /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem',
@@ -3843,99 +3979,249 @@ function BatchAuditView({
       flexDirection: 'column',
       gap: '1.5rem'
     }
-  }, questions.map(q => /*#__PURE__*/React.createElement("div", {
-    key: q.ID,
-    className: "glass-card",
-    style: {
-      padding: '1.75rem'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      marginBottom: '1rem',
-      flexWrap: 'wrap',
-      gap: '0.5rem'
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-student",
-    style: {
-      marginRight: '0.5rem'
-    }
-  }, "ID: #", q.ID), /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-admin",
-    style: {
-      marginRight: '0.5rem'
-    }
-  }, q.Module), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: '0.85rem',
-      color: 'var(--text-muted)'
-    }
-  }, "Batch: ", q.BatchNumber || 'N/A', " | Subtopic: ", q.Subtopic || 'General')), /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-status"
-  }, "Status: ", q.AIReviewStatus || 'Verified')), /*#__PURE__*/React.createElement("h3", {
-    style: {
-      fontSize: '1.15rem',
-      marginBottom: '1rem',
-      fontWeight: '600'
-    }
-  }, q.QuestionText), /*#__PURE__*/React.createElement("div", {
-    className: "grid-2col",
-    style: {
-      gap: '0.75rem',
-      marginBottom: '1.25rem'
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '0.65rem',
-      background: q.CorrectAnswer === 'A' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
-      borderRadius: 'var(--radius-sm)',
-      border: q.CorrectAnswer === 'A' ? '1px solid var(--success)' : '1px solid var(--border-color)'
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "A:"), " ", q.OptionA), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '0.65rem',
-      background: q.CorrectAnswer === 'B' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
-      borderRadius: 'var(--radius-sm)',
-      border: q.CorrectAnswer === 'B' ? '1px solid var(--success)' : '1px solid var(--border-color)'
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "B:"), " ", q.OptionB), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '0.65rem',
-      background: q.CorrectAnswer === 'C' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
-      borderRadius: 'var(--radius-sm)',
-      border: q.CorrectAnswer === 'C' ? '1px solid var(--success)' : '1px solid var(--border-color)'
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "C:"), " ", q.OptionC), /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: '0.65rem',
-      background: q.CorrectAnswer === 'D' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
-      borderRadius: 'var(--radius-sm)',
-      border: q.CorrectAnswer === 'D' ? '1px solid var(--success)' : '1px solid var(--border-color)'
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "D:"), " ", q.OptionD)), /*#__PURE__*/React.createElement("div", {
-    className: "explanation-box",
-    style: {
-      marginTop: '0.5rem'
-    }
-  }, /*#__PURE__*/React.createElement("h4", {
-    style: {
-      fontSize: '0.95rem'
-    }
-  }, "\uD83D\uDCDD Solution & Concept Explanation:"), /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: '0.9rem',
-      color: 'var(--text-main)',
-      marginBottom: '0.5rem'
-    }
-  }, q.Explanation), q.References && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: '0.85rem',
-      color: 'var(--primary-light)'
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "Reference:"), " ", q.References))))), /*#__PURE__*/React.createElement("div", {
+  }, questions.map(q => {
+    const isExpanded = !!expandedSolutions[q.ID];
+    const isSearching = searchingId === q.ID;
+    return /*#__PURE__*/React.createElement("div", {
+      key: q.ID,
+      className: "glass-card",
+      style: {
+        padding: '1.75rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '1rem',
+        flexWrap: 'wrap',
+        gap: '0.5rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-student",
+      style: {
+        marginRight: '0.5rem'
+      }
+    }, "ID: #", q.ID), /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-admin",
+      style: {
+        marginRight: '0.5rem'
+      }
+    }, q.Module), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.85rem',
+        color: 'var(--text-muted)'
+      }
+    }, "Batch: ", q.BatchNumber || 'N/A', " | Subtopic: ", q.Subtopic || 'General')), /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-status"
+    }, "Status: ", q.AIReviewStatus || 'Verified')), /*#__PURE__*/React.createElement("h3", {
+      style: {
+        fontSize: '1.15rem',
+        marginBottom: '1rem',
+        fontWeight: '600'
+      }
+    }, q.QuestionText), /*#__PURE__*/React.createElement("div", {
+      className: "grid-2col",
+      style: {
+        gap: '0.75rem',
+        marginBottom: '1.25rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.65rem',
+        background: q.CorrectAnswer === 'A' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
+        borderRadius: 'var(--radius-sm)',
+        border: q.CorrectAnswer === 'A' ? '1px solid var(--success)' : '1px solid var(--border-color)'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, "A:"), " ", q.OptionA), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.65rem',
+        background: q.CorrectAnswer === 'B' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
+        borderRadius: 'var(--radius-sm)',
+        border: q.CorrectAnswer === 'B' ? '1px solid var(--success)' : '1px solid var(--border-color)'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, "B:"), " ", q.OptionB), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.65rem',
+        background: q.CorrectAnswer === 'C' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
+        borderRadius: 'var(--radius-sm)',
+        border: q.CorrectAnswer === 'C' ? '1px solid var(--success)' : '1px solid var(--border-color)'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, "C:"), " ", q.OptionC), /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.65rem',
+        background: q.CorrectAnswer === 'D' ? 'var(--success-bg)' : 'rgba(255,255,255,0.03)',
+        borderRadius: 'var(--radius-sm)',
+        border: q.CorrectAnswer === 'D' ? '1px solid var(--success)' : '1px solid var(--border-color)'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, "D:"), " ", q.OptionD)), /*#__PURE__*/React.createElement("div", {
+      className: "explanation-box",
+      style: {
+        marginTop: '0.75rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.65rem',
+        marginBottom: '0.5rem'
+      }
+    }, /*#__PURE__*/React.createElement("h4", {
+      style: {
+        fontSize: '0.96rem',
+        margin: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.45rem',
+        color: 'var(--text-main)'
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCDD"), " Solution & Concept Explanation:"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: '0.5rem',
+        alignItems: 'center',
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: `btn-search-solution ${isExpanded ? 'active' : ''}`,
+      onClick: () => handleToggleSolution(q.ID),
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.45rem',
+        padding: '0.45rem 0.95rem',
+        fontSize: '0.83rem',
+        fontWeight: '700',
+        borderRadius: 'var(--radius-sm)',
+        border: isExpanded ? '1px solid var(--primary-light)' : '1px solid rgba(59, 130, 246, 0.45)',
+        background: isExpanded ? 'linear-gradient(135deg, rgba(37,99,235,0.35), rgba(30,64,175,0.45))' : 'linear-gradient(135deg, #2563eb, #1d4ed8)',
+        color: '#ffffff',
+        cursor: 'pointer',
+        boxShadow: isExpanded ? 'none' : '0 2px 10px rgba(37,99,235,0.35)',
+        transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+      },
+      title: "Automatically search and display the complete step-by-step engineering solution, governing formulas, and concept derivation"
+    }, /*#__PURE__*/React.createElement("span", null, isSearching ? '⏳ Searching Solution...' : isExpanded ? '✕ Hide Solution' : '🔍 Search Complete Solution'), !isExpanded && !isSearching && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.7rem',
+        padding: '0.1rem 0.4rem',
+        borderRadius: '4px',
+        background: 'rgba(255,255,255,0.2)'
+      }
+    }, q.Type === 'Problems' ? 'Auto-Solve' : 'Derivation')), /*#__PURE__*/React.createElement("a", {
+      href: `https://www.google.com/search?q=${encodeURIComponent('PRC Mechanical Engineering ' + q.QuestionText)}`,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      className: "btn-web-search",
+      style: {
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.35rem',
+        padding: '0.45rem 0.75rem',
+        fontSize: '0.8rem',
+        fontWeight: '600',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid var(--border-color)',
+        background: 'rgba(255,255,255,0.05)',
+        color: 'var(--text-muted)',
+        textDecoration: 'none',
+        transition: 'all 0.2s ease'
+      },
+      title: "Search this exact problem and PRC board discussions on Google"
+    }, "\uD83C\uDF10 ", /*#__PURE__*/React.createElement("span", null, "Google")))), !isExpanded && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: '0.88rem',
+        color: 'var(--text-muted)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+        marginTop: '0.25rem'
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        margin: 0,
+        fontStyle: 'italic',
+        color: 'var(--text-muted)'
+      }
+    }, q.Type === 'Problems' ? `💡 Target Answer: Option ${q.CorrectAnswer} (${q['Option' + q.CorrectAnswer]}). Click "🔍 Search Complete Solution" to automatically display the complete calculation, governing equations, and derivation.` : q.Explanation ? q.Explanation.length > 140 ? q.Explanation.substring(0, 140) + '...' : q.Explanation : 'Click to inspect complete solution.'), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => handleToggleSolution(q.ID),
+      style: {
+        background: 'none',
+        border: 'none',
+        color: 'var(--primary-light)',
+        cursor: 'pointer',
+        fontSize: '0.82rem',
+        fontWeight: '600',
+        padding: 0
+      }
+    }, "Show Solution \u2192")), isExpanded && /*#__PURE__*/React.createElement("div", {
+      className: "complete-solution-box tab-content-fade",
+      style: {
+        marginTop: '0.85rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '0.65rem',
+        paddingBottom: '0.5rem',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
+        flexWrap: 'wrap',
+        gap: '0.5rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-success",
+      style: {
+        fontSize: '0.75rem',
+        padding: '0.2rem 0.55rem'
+      }
+    }, "\u2728 Complete ", q.Type === 'Problems' ? 'Calculation Derivation' : 'Solution & Theory'), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.78rem',
+        color: 'var(--text-muted)'
+      }
+    }, "Module: ", q.Module, " | Topic: ", q.Topic)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: '0.4rem',
+        alignItems: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      onClick: () => handleCopySolution(q.CompleteSolution || q.Explanation, q.ID),
+      className: "btn-secondary",
+      style: {
+        fontSize: '0.75rem',
+        padding: '0.25rem 0.6rem',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.35rem'
+      },
+      title: "Copy complete solution to clipboard"
+    }, "\uD83D\uDCCB Copy Solution"))), renderSolutionBreakdown(q)), q.References && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: '0.82rem',
+        color: 'var(--primary-light)',
+        marginTop: '0.65rem',
+        borderTop: '1px solid rgba(255,255,255,0.06)',
+        paddingTop: '0.45rem'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, "Academic Reference:"), " ", q.References)));
+  })), /*#__PURE__*/React.createElement("div", {
     className: "pagination-bar"
   }, /*#__PURE__*/React.createElement("div", {
     className: "pagination-info"

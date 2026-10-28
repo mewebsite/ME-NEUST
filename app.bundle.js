@@ -3846,27 +3846,34 @@ function BatchAuditView({
           borderColor = 'rgba(56, 189, 248, 0.25)';
           headerColor = '#38bdf8';
         }
+        const isFormula = header.includes('⚙️') || header.includes('FORMULAS');
         return /*#__PURE__*/React.createElement("div", {
           key: idx,
           style: {
             background: cardBg,
             border: `1px solid ${borderColor}`,
             borderRadius: 'var(--radius-sm)',
-            padding: '0.75rem 1rem'
+            padding: '0.85rem 1.15rem'
           }
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             fontWeight: '700',
-            fontSize: '0.88rem',
+            fontSize: '0.9rem',
             color: headerColor,
-            marginBottom: bodyLines.length > 0 ? '0.4rem' : '0'
+            marginBottom: bodyLines.length > 0 ? '0.45rem' : '0'
           }
         }, header), bodyLines.map((line, lIdx) => /*#__PURE__*/React.createElement("div", {
           key: lIdx,
           style: {
-            fontSize: '0.86rem',
-            color: 'var(--text-main)',
-            lineHeight: '1.55',
+            fontSize: isFormula ? '0.92rem' : '0.86rem',
+            fontFamily: isFormula ? 'var(--font-mono, monospace)' : 'inherit',
+            fontWeight: isFormula ? '600' : 'normal',
+            color: isFormula ? '#c7d2fe' : 'var(--text-main)',
+            lineHeight: '1.6',
+            padding: isFormula && !line.startsWith('• Governing') ? '0.25rem 0.6rem' : '0',
+            background: isFormula && !line.startsWith('• Governing') ? 'rgba(0,0,0,0.3)' : 'transparent',
+            borderRadius: isFormula ? '4px' : '0',
+            marginTop: isFormula ? '0.25rem' : '0',
             paddingLeft: line.startsWith('•') ? '0.4rem' : '0'
           }
         }, line)));
@@ -3921,7 +3928,7 @@ function BatchAuditView({
       gap: '0.45rem',
       fontSize: '0.9rem'
     }
-  }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '🔍 Expand All Solutions')), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions')), /*#__PURE__*/React.createElement("button", {
     className: "btn-success",
     onClick: downloadReviewedCSV
   }, "\uD83D\uDCE5 Export Live CSV"))), /*#__PURE__*/React.createElement("div", {
@@ -4103,15 +4110,15 @@ function BatchAuditView({
         boxShadow: isExpanded ? 'none' : '0 2px 10px rgba(37,99,235,0.35)',
         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
       },
-      title: "Automatically search and display the complete step-by-step engineering solution, governing formulas, and concept derivation"
-    }, /*#__PURE__*/React.createElement("span", null, isSearching ? '⏳ Searching Solution...' : isExpanded ? '✕ Hide Solution' : '🔍 Search Complete Solution'), !isExpanded && !isSearching && /*#__PURE__*/React.createElement("span", {
+      title: "Automatically display the complete engineering formulas and step-by-step mathematical calculation"
+    }, /*#__PURE__*/React.createElement("span", null, isSearching ? '⏳ Retrieving Solution...' : isExpanded ? '✕ Hide Solution' : '📐 Formula & Complete Solution'), !isExpanded && !isSearching && /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: '0.7rem',
         padding: '0.1rem 0.4rem',
         borderRadius: '4px',
         background: 'rgba(255,255,255,0.2)'
       }
-    }, q.Type === 'Problems' ? 'Auto-Solve' : 'Derivation')), /*#__PURE__*/React.createElement("a", {
+    }, q.Type === 'Problems' ? 'Formula & Steps' : 'Concept & Theory')), /*#__PURE__*/React.createElement("a", {
       href: `https://www.google.com/search?q=${encodeURIComponent('PRC Mechanical Engineering ' + q.QuestionText)}`,
       target: "_blank",
       rel: "noopener noreferrer",
@@ -4148,7 +4155,7 @@ function BatchAuditView({
         fontStyle: 'italic',
         color: 'var(--text-muted)'
       }
-    }, q.Type === 'Problems' ? `💡 Target Answer: Option ${q.CorrectAnswer} (${q['Option' + q.CorrectAnswer]}). Click "🔍 Search Complete Solution" to automatically display the complete calculation, governing equations, and derivation.` : q.Explanation ? q.Explanation.length > 140 ? q.Explanation.substring(0, 140) + '...' : q.Explanation : 'Click to inspect complete solution.'), /*#__PURE__*/React.createElement("button", {
+    }, q.Type === 'Problems' ? `💡 Target Answer: Option ${q.CorrectAnswer} (${q['Option' + q.CorrectAnswer]}). Click "📐 Formula & Complete Solution" to view exact formula and full step-by-step mathematical calculation.` : q.Explanation ? q.Explanation.length > 140 ? q.Explanation.substring(0, 140) + '...' : q.Explanation : 'Click to inspect complete solution.'), /*#__PURE__*/React.createElement("button", {
       type: "button",
       onClick: () => handleToggleSolution(q.ID),
       style: {
@@ -4160,7 +4167,7 @@ function BatchAuditView({
         fontWeight: '600',
         padding: 0
       }
-    }, "Show Solution \u2192")), isExpanded && /*#__PURE__*/React.createElement("div", {
+    }, "Show Formula & Solution \u2192")), isExpanded && /*#__PURE__*/React.createElement("div", {
       className: "complete-solution-box tab-content-fade",
       style: {
         marginTop: '0.85rem'

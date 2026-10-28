@@ -2976,18 +2976,31 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
               headerColor = '#38bdf8';
             }
 
+            const isFormula = header.includes('⚙️') || header.includes('FORMULAS');
+
             return (
               <div key={idx} style={{
                 background: cardBg,
                 border: `1px solid ${borderColor}`,
                 borderRadius: 'var(--radius-sm)',
-                padding: '0.75rem 1rem'
+                padding: '0.85rem 1.15rem'
               }}>
-                <div style={{ fontWeight: '700', fontSize: '0.88rem', color: headerColor, marginBottom: bodyLines.length > 0 ? '0.4rem' : '0' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.9rem', color: headerColor, marginBottom: bodyLines.length > 0 ? '0.45rem' : '0' }}>
                   {header}
                 </div>
                 {bodyLines.map((line, lIdx) => (
-                  <div key={lIdx} style={{ fontSize: '0.86rem', color: 'var(--text-main)', lineHeight: '1.55', paddingLeft: line.startsWith('•') ? '0.4rem' : '0' }}>
+                  <div key={lIdx} style={{
+                    fontSize: isFormula ? '0.92rem' : '0.86rem',
+                    fontFamily: isFormula ? 'var(--font-mono, monospace)' : 'inherit',
+                    fontWeight: isFormula ? '600' : 'normal',
+                    color: isFormula ? '#c7d2fe' : 'var(--text-main)',
+                    lineHeight: '1.6',
+                    padding: isFormula && !line.startsWith('• Governing') ? '0.25rem 0.6rem' : '0',
+                    background: isFormula && !line.startsWith('• Governing') ? 'rgba(0,0,0,0.3)' : 'transparent',
+                    borderRadius: isFormula ? '4px' : '0',
+                    marginTop: isFormula ? '0.25rem' : '0',
+                    paddingLeft: line.startsWith('•') ? '0.4rem' : '0'
+                  }}>
                     {line}
                   </div>
                 ))}
@@ -3032,7 +3045,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
             onClick={handleToggleAllSolutions}
             style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.9rem' }}
           >
-            <span>{allExpanded ? '✕ Collapse All Solutions' : '🔍 Expand All Solutions'}</span>
+            <span>{allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions'}</span>
           </button>
           <button className="btn-success" onClick={downloadReviewedCSV}>
             📥 Export Live CSV
@@ -3111,7 +3124,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
                   </h4>
 
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    {/* SEARCH COMPLETE SOLUTION BUTTON */}
+                    {/* FORMULA & COMPLETE SOLUTION BUTTON */}
                     <button
                       type="button"
                       className={`btn-search-solution ${isExpanded ? 'active' : ''}`}
@@ -3131,12 +3144,12 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
                         boxShadow: isExpanded ? 'none' : '0 2px 10px rgba(37,99,235,0.35)',
                         transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
                       }}
-                      title="Automatically search and display the complete step-by-step engineering solution, governing formulas, and concept derivation"
+                      title="Automatically display the complete engineering formulas and step-by-step mathematical calculation"
                     >
-                      <span>{isSearching ? '⏳ Searching Solution...' : isExpanded ? '✕ Hide Solution' : '🔍 Search Complete Solution'}</span>
+                      <span>{isSearching ? '⏳ Retrieving Solution...' : isExpanded ? '✕ Hide Solution' : '📐 Formula & Complete Solution'}</span>
                       {!isExpanded && !isSearching && (
                         <span style={{ fontSize: '0.7rem', padding: '0.1rem 0.4rem', borderRadius: '4px', background: 'rgba(255,255,255,0.2)' }}>
-                          {q.Type === 'Problems' ? 'Auto-Solve' : 'Derivation'}
+                          {q.Type === 'Problems' ? 'Formula & Steps' : 'Concept & Theory'}
                         </span>
                       )}
                     </button>
@@ -3173,7 +3186,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
                   <div style={{ fontSize: '0.88rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.25rem' }}>
                     <p style={{ margin: 0, fontStyle: 'italic', color: 'var(--text-muted)' }}>
                       {q.Type === 'Problems'
-                        ? `💡 Target Answer: Option ${q.CorrectAnswer} (${q['Option' + q.CorrectAnswer]}). Click "🔍 Search Complete Solution" to automatically display the complete calculation, governing equations, and derivation.`
+                        ? `💡 Target Answer: Option ${q.CorrectAnswer} (${q['Option' + q.CorrectAnswer]}). Click "📐 Formula & Complete Solution" to view exact formula and full step-by-step mathematical calculation.`
                         : (q.Explanation ? (q.Explanation.length > 140 ? q.Explanation.substring(0, 140) + '...' : q.Explanation) : 'Click to inspect complete solution.')
                       }
                     </p>
@@ -3182,7 +3195,7 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
                       onClick={() => handleToggleSolution(q.ID)}
                       style={{ background: 'none', border: 'none', color: 'var(--primary-light)', cursor: 'pointer', fontSize: '0.82rem', fontWeight: '600', padding: 0 }}
                     >
-                      Show Solution →
+                      Show Formula & Solution →
                     </button>
                   </div>
                 )}

@@ -421,15 +421,18 @@ function App() {
       }
     }, 300000);
 
-    // Refresh immediately when window or tab becomes active
+    // Refresh when window or tab becomes active (throttled: 'focus' and 'visibilitychange'
+    // fire together, and every click back from DevTools re-triggers focus)
+    let lastFocusSync = Date.now();
     const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        loadQuizzes();
-        loadStats(token);
-        if (user && user.role === 'admin') {
-          loadUsers();
-          loadAttempts();
-        }
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastFocusSync < 30000) return;
+      lastFocusSync = Date.now();
+      loadQuizzes();
+      loadStats(token);
+      if (user && user.role === 'admin') {
+        loadUsers();
+        loadAttempts();
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);

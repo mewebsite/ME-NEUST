@@ -4,20 +4,23 @@
  * regardless of whether the user or host computer is offline or online.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.6.0';
+const CACHE_NAME = 'me-boardprep-cache-v2.6.1';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=2.6.0',
-  './questions-data.js?v=2.6.0',
-  './paho-mqtt.min.js?v=2.6.0',
-  './static-engine.js?v=2.6.0',
-  './app.bundle.js?v=2.6.0',
+  './styles.css?v=2.6.1',
+  './questions-data.js?v=2.6.1',
+  './paho-mqtt.min.js?v=2.6.1',
+  './static-engine.js?v=2.6.1',
+  './app.bundle.js?v=2.6.1',
   './images/neust_seal.png',
   './images/neust_coe_seal.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
 ];
+
+// Hosts (besides our own origin) whose responses are safe to cache for offline use
+const CACHEABLE_HOSTS = ['unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -40,63 +43,79 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
+// Safe cache write: never throws an unhandled rejection
+function safePut(request, response) {
+  return caches.open(CACHE_NAME)
+    .then(cache => cache.put(request, response))
+    .catch(err => console.warn('[Service Worker] Cache put skipped:', request.url, err && err.message));
+}
 
-  // Bypass WebSocket connections, Firestore Cloud API, and broker traffic
+// Offline fallback to the cached app shell (caches.match returns a Promise, so chain instead of ||)
+function shellFallback() {
+  return caches.match('./index.html').then(r => r || caches.match('./'));
+}
+
+self.addEventListener('fetch', event => {
+  const request = event.request;
+
+  // Only GET requests over http(s) can be stored in the Cache API.
+  // This skips chrome-extension://, data:, blob:, etc. (fixes "Request scheme 'chrome-extension' is unsupported")
+  if (request.method !== 'GET' || !request.url.startsWith('http')) return;
+
+  const url = new URL(request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+
+  // Bypass WebSocket, API, Firestore, broker, analytics and any other third-party traffic
   if (
-    url.protocol === 'ws:' || 
-    url.protocol === 'wss:' || 
-    url.pathname.includes('/api/') || 
-    url.hostname.includes('firestore.googleapis.com') || 
-    url.hostname.includes('broker.emqx.io')
+    url.pathname.includes('/api/') ||
+    (!isSameOrigin && !CACHEABLE_HOSTS.includes(url.hostname))
   ) {
     return;
   }
 
-  // Network-First for HTML navigation requests to ensure mobile devices always get latest scripts
-  if (event.request.mode === 'navigate') {
+  // Network-First for HTML navigation requests to ensure devices always get latest scripts
+  if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request)
+      fetch(request)
         .then(networkResponse => {
           if (networkResponse && networkResponse.status === 200) {
-            const respClone = networkResponse.clone();
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
+            safePut(request, networkResponse.clone());
           }
           return networkResponse;
         })
-        .catch(() => caches.match('./index.html') || caches.match('./'))
+        .catch(() => shellFallback())
     );
     return;
   }
 
-  // Stale-While-Revalidate with offline fallback for static assets
+  // Versioned assets (?v=...) are immutable: pure Cache-First, no background re-download
+  // (avoids re-fetching the 15 MB question bank on every page open)
+  const isVersioned = url.searchParams.has('v');
+
   event.respondWith(
-    caches.match(event.request).then(cachedResponse => {
+    caches.match(request).then(cachedResponse => {
       if (cachedResponse) {
-        // Fetch fresh copy in background if network is available
-        fetch(event.request).then(networkResponse => {
-          if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then(cache => cache.put(event.request, networkResponse));
-          }
-        }).catch(() => {});
+        if (!isVersioned) {
+          // Stale-While-Revalidate for unversioned assets
+          fetch(request).then(networkResponse => {
+            if (networkResponse && networkResponse.status === 200) {
+              safePut(request, networkResponse);
+            }
+          }).catch(() => {});
+        }
         return cachedResponse;
       }
 
-      return fetch(event.request).then(response => {
-        if (response && response.status === 200 && event.request.method === 'GET') {
-          const respClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, respClone));
+      return fetch(request).then(response => {
+        if (response && (response.status === 200 || response.type === 'opaque')) {
+          safePut(request, response.clone());
         }
         return response;
-      }).catch(() => {
-        return caches.match('./index.html') || caches.match('./');
-      });
+      }).catch(() => shellFallback());
     })
   );
 });

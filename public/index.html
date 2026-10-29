@@ -7,6 +7,8 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>ME BoardPrep - Mechanical Engineering Question Bank & Licensure Exam Simulator</title>
+  <link rel="icon" type="image/png" href="images/neust_seal.png">
+  <link rel="apple-touch-icon" href="images/neust_seal.png">
   
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -14,46 +16,43 @@
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
   
   <!-- CSS Styles -->
-  <link rel="stylesheet" href="styles.css?v=2.6.0">
+  <link rel="stylesheet" href="styles.css?v=2.6.1">
   
   <!-- React Production Libraries -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
   <!-- Bundled Question Bank & Quizzes Data (5,036 Questions) -->
-  <script src="questions-data.js?v=2.6.0"></script>
+  <script src="questions-data.js?v=2.6.1"></script>
 
   <!-- Real-Time WebSocket Synchronization Client -->
-  <script src="paho-mqtt.min.js?v=2.6.0"></script>
+  <script src="paho-mqtt.min.js?v=2.6.1"></script>
 
   <!-- Real-Time Cloud Firestore Sync Engine -->
-  <script src="static-engine.js?v=2.6.0"></script>
+  <script src="static-engine.js?v=2.6.1"></script>
 </head>
 <body>
   <div id="root"></div>
   <!-- High-Speed Pre-Compiled Application Bundle -->
-  <script src="app.bundle.js?v=2.6.0"></script>
+  <script src="app.bundle.js?v=2.6.1"></script>
   
   <!-- Offline Service Worker Registration -->
   <script>
     if ('serviceWorker' in navigator) {
+      // Never force-reload the page (it caused the "auto refresh" effect and could wipe an in-progress exam).
+      // HTML is network-first and assets are versioned, so the next visit picks up the new version automatically.
+      const hadController = !!navigator.serviceWorker.controller;
+      let updateNotified = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || updateNotified) return; // first install: nothing to announce
+        updateNotified = true;
+        console.log('[Service Worker] New version installed — it will be used on the next visit.');
+        if (window.showToast) window.showToast('A new version is ready and will apply on your next visit.', 'info');
+      });
+
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
-          .then(reg => {
-            console.log('[Service Worker] Active & Registered:', reg.scope);
-            if (reg.update) reg.update();
-            reg.onupdatefound = () => {
-              const installingWorker = reg.installing;
-              if (installingWorker) {
-                installingWorker.onstatechange = () => {
-                  if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('[Service Worker] New version detected! Auto-reloading to apply latest updates...');
-                    window.location.reload();
-                  }
-                };
-              }
-            };
-          })
+          .then(reg => console.log('[Service Worker] Active & Registered:', reg.scope))
           .catch(err => console.warn('[Service Worker] Registration error:', err));
       });
     }

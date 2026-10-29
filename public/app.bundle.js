@@ -2301,9 +2301,6 @@ function DashboardView({
       flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("button", {
-    className: "btn-success",
-    onClick: downloadReviewedCSV
-  }, "\uD83D\uDCE5 Export Live CSV"), /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     onClick: openPracticeModal
   }, "\uD83D\uDCD6 Practice Mode"), /*#__PURE__*/React.createElement("button", {
@@ -3931,10 +3928,7 @@ function BatchAuditView({
       gap: '0.45rem',
       fontSize: '0.9rem'
     }
-  }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions')), /*#__PURE__*/React.createElement("button", {
-    className: "btn-success",
-    onClick: downloadReviewedCSV
-  }, "\uD83D\uDCE5 Export Live CSV"))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions')))), /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem',
@@ -4502,10 +4496,7 @@ function AdminView({
     style: {
       display: 'inline-block'
     }
-  }, "\uD83D\uDD04"), /*#__PURE__*/React.createElement("span", null, isRefreshing ? 'Syncing Live Data...' : 'Refresh Live Data')), /*#__PURE__*/React.createElement("button", {
-    className: "btn-success",
-    onClick: downloadReviewedCSV
-  }, "\uD83D\uDCE5 Export Live CSV"))), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83D\uDD04"), /*#__PURE__*/React.createElement("span", null, isRefreshing ? 'Syncing Live Data...' : 'Refresh Live Data')))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '1rem',

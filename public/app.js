@@ -1907,9 +1907,6 @@ function DashboardView({ token, user, stats, openPracticeModal, openQuizListModa
           <p style={{ color: 'var(--text-muted)' }}>Target Exam Date: {user.targetExamDate || 'October 2026 Board Exam'} | School: {user.school || 'NEUST College of Engineering'}</p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn-success" onClick={downloadReviewedCSV}>
-            📥 Export Live CSV
-          </button>
           <button className="btn-primary" onClick={openPracticeModal}>
             📖 Practice Mode
           </button>
@@ -3050,9 +3047,6 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
           >
             <span>{allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions'}</span>
           </button>
-          <button className="btn-success" onClick={downloadReviewedCSV}>
-            📥 Export Live CSV
-          </button>
         </div>
       </div>
 
@@ -3509,9 +3503,6 @@ function AdminView({
           >
             <span className={isRefreshing ? 'spin-icon' : ''} style={{ display: 'inline-block' }}>🔄</span>
             <span>{isRefreshing ? 'Syncing Live Data...' : 'Refresh Live Data'}</span>
-          </button>
-          <button className="btn-success" onClick={downloadReviewedCSV}>
-            📥 Export Live CSV
           </button>
         </div>
       </div>

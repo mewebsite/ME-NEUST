@@ -6,3 +6,4 @@ cloudflared.exe
 *.log
 scripts/
 temp_downloads/
+.firebase/

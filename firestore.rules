@@ -1,0 +1,489 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — ME BoardPrep (me-neust-website-v2)
+// ===============================================================
+//
+// This security rules file assumes and enforces the following data structures:
+//
+// 1. Collection: /users/{userId}
+//    Document ID: Firebase Auth UID (userId == request.auth.uid for self-registered users)
+//    Prohibited Fields: 'password', 'passwordHash' (strictly forbidden on create & update)
+//    Fields (max 20 keys, strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == userId, length 1..128) - unique user identifier
+//      - fullName: string (required, length 1..200) - display name of student or faculty admin
+//      - email: string (required, immutable for non-admins, length 3..254) - lowercase email address
+//      - role: string (required, immutable for non-admins, enum ['student', 'admin']) - RBAC role
+//      - status: string (required, immutable for non-admins, enum ['pending', 'active', 'deactivated', 'rejected'])
+//      - school: string (optional, length 0..250) - affiliated institution
+//      - createdDate: string (optional, immutable for non-admins, length 0..40) - ISO creation date string
+//      - targetExamDate: string (optional, length 0..40) - target board exam date string
+//      - diagnosticCompleted: bool (optional) - whether initial diagnostic assessment was completed
+//      - diagnosticScore: number (optional, range 0..500) - diagnostic assessment score
+//      - diagnosticDate: string (optional, length 0..40) - diagnostic completion date string
+//      - simulationPassed: bool (optional) - whether simulated licensure exam was passed
+//      - simulationScore: number (optional, range 0..500) - simulated licensure exam score
+//      - updatedAt: string (optional, length 0..60) - ISO last-updated timestamp string
+//
+// 2. Collection: /quizzes/{quizId}
+//    Document ID: Quiz identifier (e.g., 'qz_01', 'qz_<timestamp>')
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == quizId, length 1..128)
+//      - title: string (required, length 1..300)
+//      - status: string (required, enum ['published', 'draft'])
+//      - questionCount: int (required, range 1..500)
+//      - durationMins: int (required, range 1..600)
+//      - passingScorePct: int (required, range 1..100)
+//      - description: string (optional, length 0..2000)
+//      - module: string (optional, length 0..500)
+//      - selectionMode: string (optional, enum ['random', 'manual'])
+//      - specificQuestionIds: list (optional, size <= 500)
+//      - createdBy: string (optional, length 0..200)
+//      - createdDate: string (optional, length 0..40)
+//      - updatedAt: string (optional, length 0..60)
+//
+// 3. Collection: /deleted_quizzes/{quizId}
+//    Document ID: Deleted quiz identifier (id == quizId)
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == quizId, length 1..128)
+//      - deletedAt: string (required, length 1..60)
+//      - deletedBy: string (required, length 0..254)
+//
+// 4. Collection: /deleted_users/{userId}
+//    Document ID: Deleted user identifier (id == userId)
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == userId, length 1..128)
+//      - deletedAt: string (required, length 1..60)
+//      - deletedBy: string (required, length 0..254)
+//
+// 5. Collection: /attempts/{attemptId}
+//    Document ID: Quiz/exam attempt identifier (e.g., 'att_<timestamp>')
+//    Immutability: Strictly immutable once created (allow update: if false)
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, id == attemptId, length 1..128)
+//      - studentId: string (required, studentId == request.auth.uid, length 1..128)
+//      - quizId: string (required, length 1..128)
+//      - quizTitle: string (required, length 1..300)
+//      - score: int (required, range 0..500, score <= totalQuestions)
+//      - totalQuestions: int (required, range 1..500)
+//      - passed: bool (required)
+//      - submittedAt: string (required, length 1..60)
+//      - correctAnswers: int (optional, range 0..500)
+//      - percentage: number (optional, range 0..100)
+//      - scorePct: number (optional, range 0..100)
+//      - studentName: string (optional, length 0..200)
+//      - studentEmail: string (optional, length 0..254)
+//      - school: string (optional, length 0..250)
+//      - timeSpentSeconds: int (optional, range 0..86400)
+//      - moduleBreakdown: map (optional, keys <= 20)
+//
+// 6. Collection: /questions/{questionId}
+//    Document ID: Question bank item ID (ID == questionId)
+//    Fields (max 45 keys):
+//      - ID: string (required, immutable, ID == questionId, length 1..64)
+//      - QuestionText: string (required, length 1..10000)
+//      - CorrectAnswer: string (required, length 1..50)
+//      - Additional question metadata fields (total keys <= 45)
+//
+// 7. Collection: /deleted_questions/{questionId}
+//    Document ID: Deleted question item ID (id == questionId)
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == questionId, length 1..64)
+//      - deletedAt: string (required, length 1..60)
+//      - deletedBy: string (required, length 0..254)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Core Authentication & RBAC Helper Functions
+    // ===============================================================
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAuthenticated() {
+      return isSignedIn();
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function userDocExists() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+             userDocExists() &&
+             currentUserData().role == 'admin' &&
+             currentUserData().status == 'active';
+    }
+
+    function isActiveUser() {
+      return isSignedIn() &&
+             userDocExists() &&
+             currentUserData().status == 'active';
+    }
+
+    // ===============================================================
+    // Generic Schema & Type Validation Helpers
+    // ===============================================================
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalBool(field) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is bool);
+    }
+
+    function isValidOptionalNumber(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is number &&
+              request.resource.data[field] >= minVal &&
+              request.resource.data[field] <= maxVal);
+    }
+
+    function isValidOptionalInt(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is int &&
+              request.resource.data[field] >= minVal &&
+              request.resource.data[field] <= maxVal);
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    function validUserDoc(userId) {
+      let data = request.resource.data;
+      return !('password' in data) &&
+             !('passwordHash' in data) &&
+             data.keys().size() <= 20 &&
+             hasRequiredFields(['id', 'fullName', 'email', 'role', 'status']) &&
+             hasOnlyAllowedFields([
+               'id',
+               'fullName',
+               'email',
+               'role',
+               'status',
+               'school',
+               'createdDate',
+               'targetExamDate',
+               'diagnosticCompleted',
+               'diagnosticScore',
+               'diagnosticDate',
+               'simulationPassed',
+               'simulationScore',
+               'updatedAt'
+             ]) &&
+             data.id is string &&
+             data.id == userId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 128 &&
+             data.fullName is string &&
+             data.fullName.size() >= 1 &&
+             data.fullName.size() <= 200 &&
+             data.email is string &&
+             data.email.size() >= 3 &&
+             data.email.size() <= 254 &&
+             data.role is string &&
+             data.role in ['student', 'admin'] &&
+             data.status is string &&
+             data.status in ['pending', 'active', 'deactivated', 'rejected'] &&
+             isValidOptionalString('school', 0, 250) &&
+             isValidOptionalString('createdDate', 0, 40) &&
+             isValidOptionalString('targetExamDate', 0, 40) &&
+             isValidOptionalBool('diagnosticCompleted') &&
+             isValidOptionalNumber('diagnosticScore', 0, 500) &&
+             isValidOptionalString('diagnosticDate', 0, 40) &&
+             isValidOptionalBool('simulationPassed') &&
+             isValidOptionalNumber('simulationScore', 0, 500) &&
+             isValidOptionalString('updatedAt', 0, 60);
+    }
+
+    function validQuizDoc(quizId) {
+      let data = request.resource.data;
+      return hasRequiredFields([
+               'id',
+               'title',
+               'status',
+               'questionCount',
+               'durationMins',
+               'passingScorePct'
+             ]) &&
+             hasOnlyAllowedFields([
+               'id',
+               'title',
+               'description',
+               'module',
+               'questionCount',
+               'durationMins',
+               'passingScorePct',
+               'status',
+               'selectionMode',
+               'specificQuestionIds',
+               'createdBy',
+               'createdDate',
+               'updatedAt'
+             ]) &&
+             data.id is string &&
+             data.id == quizId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 128 &&
+             data.title is string &&
+             data.title.size() >= 1 &&
+             data.title.size() <= 300 &&
+             data.status is string &&
+             data.status in ['published', 'draft'] &&
+             data.questionCount is int &&
+             data.questionCount >= 1 &&
+             data.questionCount <= 500 &&
+             data.durationMins is int &&
+             data.durationMins >= 1 &&
+             data.durationMins <= 600 &&
+             data.passingScorePct is int &&
+             data.passingScorePct >= 1 &&
+             data.passingScorePct <= 100 &&
+             isValidOptionalString('description', 0, 2000) &&
+             isValidOptionalString('module', 0, 500) &&
+             (!('selectionMode' in data) ||
+              (data.selectionMode is string && data.selectionMode in ['random', 'manual'])) &&
+             (!('specificQuestionIds' in data) ||
+              (data.specificQuestionIds is list && data.specificQuestionIds.size() <= 500)) &&
+             isValidOptionalString('createdBy', 0, 200) &&
+             isValidOptionalString('createdDate', 0, 40) &&
+             isValidOptionalString('updatedAt', 0, 60);
+    }
+
+    function validTombstoneDoc(docId, maxIdLen) {
+      let data = request.resource.data;
+      return hasRequiredFields(['id', 'deletedAt', 'deletedBy']) &&
+             hasOnlyAllowedFields(['id', 'deletedAt', 'deletedBy']) &&
+             data.id is string &&
+             data.id == docId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= maxIdLen &&
+             data.deletedAt is string &&
+             data.deletedAt.size() >= 1 &&
+             data.deletedAt.size() <= 60 &&
+             data.deletedBy is string &&
+             data.deletedBy.size() <= 254;
+    }
+
+    function validAttemptDoc(attemptId) {
+      let data = request.resource.data;
+      return hasRequiredFields([
+               'id',
+               'studentId',
+               'quizId',
+               'quizTitle',
+               'score',
+               'totalQuestions',
+               'passed',
+               'submittedAt'
+             ]) &&
+             hasOnlyAllowedFields([
+               'id',
+               'studentId',
+               'studentName',
+               'studentEmail',
+               'school',
+               'quizId',
+               'quizTitle',
+               'totalQuestions',
+               'score',
+               'correctAnswers',
+               'percentage',
+               'scorePct',
+               'passed',
+               'timeSpentSeconds',
+               'submittedAt',
+               'moduleBreakdown'
+             ]) &&
+             data.id is string &&
+             data.id == attemptId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 128 &&
+             data.studentId is string &&
+             data.studentId == request.auth.uid &&
+             data.studentId.size() >= 1 &&
+             data.studentId.size() <= 128 &&
+             data.quizId is string &&
+             data.quizId.size() >= 1 &&
+             data.quizId.size() <= 128 &&
+             data.quizTitle is string &&
+             data.quizTitle.size() >= 1 &&
+             data.quizTitle.size() <= 300 &&
+             data.score is int &&
+             data.score >= 0 &&
+             data.score <= 500 &&
+             data.totalQuestions is int &&
+             data.totalQuestions >= 1 &&
+             data.totalQuestions <= 500 &&
+             data.score <= data.totalQuestions &&
+             data.passed is bool &&
+             data.submittedAt is string &&
+             data.submittedAt.size() >= 1 &&
+             data.submittedAt.size() <= 60 &&
+             isValidOptionalInt('correctAnswers', 0, 500) &&
+             isValidOptionalNumber('percentage', 0, 100) &&
+             isValidOptionalNumber('scorePct', 0, 100) &&
+             isValidOptionalString('studentName', 0, 200) &&
+             isValidOptionalString('studentEmail', 0, 254) &&
+             isValidOptionalString('school', 0, 250) &&
+             isValidOptionalInt('timeSpentSeconds', 0, 86400) &&
+             (!('moduleBreakdown' in data) ||
+              (data.moduleBreakdown is map && data.moduleBreakdown.keys().size() <= 20));
+    }
+
+    function validQuestionDoc(questionId) {
+      let data = request.resource.data;
+      return hasRequiredFields(['ID', 'QuestionText', 'CorrectAnswer']) &&
+             data.keys().size() <= 45 &&
+             data.ID is string &&
+             data.ID == questionId &&
+             data.ID.size() >= 1 &&
+             data.ID.size() <= 64 &&
+             data.QuestionText is string &&
+             data.QuestionText.size() >= 1 &&
+             data.QuestionText.size() <= 10000 &&
+             data.CorrectAnswer is string &&
+             data.CorrectAnswer.size() >= 1 &&
+             data.CorrectAnswer.size() <= 50;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // 1. User Profiles & RBAC (/users/{userId})
+    match /users/{userId} {
+      // Allow users (including pending/deactivated) to read ONLY their own profile status doc on login;
+      // allow active admins to read any user profile.
+      allow get: if isSignedIn() && (isOwner(userId) || isAdmin());
+
+      // Restrict user collection listing strictly to active admins to prevent PII/email enumeration.
+      allow list: if isAdmin();
+
+      // Self-registration (strictly student + pending + matching Firebase Auth email)
+      // OR active admin creating a student account.
+      allow create: if (
+        isOwner(userId) &&
+        validUserDoc(userId) &&
+        request.resource.data.role == 'student' &&
+        request.resource.data.status == 'pending' &&
+        'email' in request.auth.token &&
+        request.auth.token.email != null &&
+        request.auth.token.email is string &&
+        request.resource.data.email == request.auth.token.email.lower()
+      ) || (
+        isAdmin() &&
+        validUserDoc(userId) &&
+        request.resource.data.role == 'student' &&
+        request.resource.data.status in ['active', 'pending']
+      );
+
+      // Active user updating allowed profile/adaptive milestone fields on their own doc (immutable id/email/role/status/createdDate)
+      // OR active admin updating user details, status, or role (immutable id).
+      allow update: if (
+        isActiveUser() &&
+        isOwner(userId) &&
+        validUserDoc(userId) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.email == resource.data.email &&
+        request.resource.data.id == resource.data.id &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'fullName',
+          'school',
+          'targetExamDate',
+          'diagnosticCompleted',
+          'diagnosticScore',
+          'diagnosticDate',
+          'simulationPassed',
+          'simulationScore',
+          'updatedAt'
+        ])
+      ) || (
+        isAdmin() &&
+        validUserDoc(userId) &&
+        request.resource.data.id == resource.data.id
+      );
+
+      // Admins can delete non-admin accounts only, and never their own active account.
+      allow delete: if isAdmin() && request.auth.uid != userId && resource.data.role != 'admin';
+    }
+
+    // 2. Faculty Quizzes (/quizzes/{quizId})
+    match /quizzes/{quizId} {
+      allow read: if isAdmin() || (isActiveUser() && resource.data.status == 'published');
+      allow create: if isAdmin() && validQuizDoc(quizId);
+      allow update: if isAdmin() && validQuizDoc(quizId) && request.resource.data.id == resource.data.id;
+      allow delete: if isAdmin();
+    }
+
+    // 3. Deleted Quiz Tombstones (/deleted_quizzes/{quizId})
+    match /deleted_quizzes/{quizId} {
+      allow read: if isActiveUser();
+      allow create, update: if isAdmin() && validTombstoneDoc(quizId, 128);
+      allow delete: if isAdmin();
+    }
+
+    // 4. Deleted User Tombstones (/deleted_users/{userId})
+    match /deleted_users/{userId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin() && validTombstoneDoc(userId, 128);
+      allow delete: if isAdmin();
+    }
+
+    // 5. Quiz & Exam Attempts (/attempts/{attemptId})
+    match /attempts/{attemptId} {
+      allow read: if isAdmin() || (isActiveUser() && resource.data.studentId == request.auth.uid);
+      allow create: if isActiveUser() && validAttemptDoc(attemptId);
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // 6. Licensure Question Bank (/questions/{questionId})
+    match /questions/{questionId} {
+      allow read: if isActiveUser();
+      allow create: if isAdmin() && validQuestionDoc(questionId);
+      allow update: if isAdmin() && validQuestionDoc(questionId) && request.resource.data.ID == resource.data.ID;
+      allow delete: if isAdmin();
+    }
+
+    // 7. Deleted Question Tombstones (/deleted_questions/{questionId})
+    match /deleted_questions/{questionId} {
+      allow read: if isActiveUser();
+      allow create, update: if isAdmin() && validTombstoneDoc(questionId, 64);
+      allow delete: if isAdmin();
+    }
+
+    // Default Deny for all other paths and subcollections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -499,6 +499,9 @@ function App() {
     };
   }, [token, user ? user.role : null]);
   const logout = () => {
+    fetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST'
+    }).catch(() => {});
     setUser(null);
     setToken('');
     localStorage.removeItem('token');

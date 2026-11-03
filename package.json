@@ -1,8 +1,8 @@
 {
   "name": "me-question-bank-app",
-  "version": "2.3.4",
-  "description": "ME BoardPrep - Mechanical Engineering Licensure Platform connected to Firebase Project me-neust-website-v2",
-  "homepage": "https://mewebsite.github.io/ME-NEUST/",
+  "version": "2.8.0",
+  "description": "ME BoardPrep - Mechanical Engineering Licensure Platform hosted securely on Firebase (me-neust-website-v2)",
+  "homepage": "https://me-neust-website-v2.web.app",
   "repository": {
     "type": "git",
     "url": "https://github.com/mewebsite/ME-NEUST.git"
@@ -10,7 +10,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "node scripts/build.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

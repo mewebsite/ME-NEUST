@@ -1,26 +1,28 @@
 /**
  * ME BoardPrep Offline Service Worker
- * Enables 100% offline access to the complete application and question bank (3,105 questions)
- * regardless of whether the user or host computer is offline or online.
+ * Enables offline access to the application shell and 5,036-question licensure bank
+ * while ensuring Firebase Auth and Cloud Firestore traffic always goes directly to Google servers.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.7.0';
+const CACHE_NAME = 'me-boardprep-cache-v2.8.0';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=2.7.0',
-  './questions-data.js?v=2.7.0',
-  './paho-mqtt.min.js?v=2.7.0',
-  './static-engine.js?v=2.7.0',
-  './app.bundle.js?v=2.7.0',
+  './styles.css?v=2.8.0',
+  './questions-data.js?v=2.8.0',
+  './static-engine.js?v=2.8.0',
+  './app.bundle.js?v=2.8.0',
   './images/neust_seal.png',
   './images/neust_coe_seal.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js'
+  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
+  'https://www.gstatic.com/firebasejs/11.0.1/firebase-app-compat.js',
+  'https://www.gstatic.com/firebasejs/11.0.1/firebase-auth-compat.js',
+  'https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore-compat.js'
 ];
 
-// Hosts (besides our own origin) whose responses are safe to cache for offline use
-const CACHEABLE_HOSTS = ['unpkg.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+// Hosts (besides our own origin) whose static library/font responses are safe to cache for offline use
+const CACHEABLE_HOSTS = ['unpkg.com', 'www.gstatic.com', 'fonts.googleapis.com', 'fonts.gstatic.com'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
@@ -54,7 +56,7 @@ function safePut(request, response) {
     .catch(err => console.warn('[Service Worker] Cache put skipped:', request.url, err && err.message));
 }
 
-// Offline fallback to the cached app shell (caches.match returns a Promise, so chain instead of ||)
+// Offline fallback to the cached app shell
 function shellFallback() {
   return caches.match('./index.html').then(r => r || caches.match('./'));
 }
@@ -63,15 +65,15 @@ self.addEventListener('fetch', event => {
   const request = event.request;
 
   // Only GET requests over http(s) can be stored in the Cache API.
-  // This skips chrome-extension://, data:, blob:, etc. (fixes "Request scheme 'chrome-extension' is unsupported")
   if (request.method !== 'GET' || !request.url.startsWith('http')) return;
 
   const url = new URL(request.url);
   const isSameOrigin = url.origin === self.location.origin;
 
-  // Bypass WebSocket, API, Firestore, broker, analytics and any other third-party traffic
+  // Bypass API, Firebase Auth handlers (/__/auth/), Firestore, IdentityToolkit, and third-party APIs
   if (
     url.pathname.includes('/api/') ||
+    url.pathname.startsWith('/__/') ||
     (!isSameOrigin && !CACHEABLE_HOSTS.includes(url.hostname))
   ) {
     return;
@@ -92,15 +94,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Versioned assets (?v=...) are immutable: pure Cache-First, no background re-download
-  // (avoids re-fetching the 15 MB question bank on every page open)
+  // Versioned assets (?v=...) are immutable: pure Cache-First
   const isVersioned = url.searchParams.has('v');
 
   event.respondWith(
     caches.match(request).then(cachedResponse => {
       if (cachedResponse) {
         if (!isVersioned) {
-          // Stale-While-Revalidate for unversioned assets
           fetch(request).then(networkResponse => {
             if (networkResponse && networkResponse.status === 200) {
               safePut(request, networkResponse);

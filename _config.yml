@@ -1,0 +1,36 @@
+# GitHub Pages is decommissioned. Official platform is hosted on Firebase Hosting (https://me-neust-website-v2.web.app).
+# Exclude all repository files so legacy GitHub Pages branch builds produce an empty 404 site and never expose source/data files.
+exclude:
+  - data
+  - images
+  - node_modules
+  - public
+  - scripts
+  - temp_downloads
+  - AGENTS.md
+  - app.bundle.js
+  - app.js
+  - clean_bg.ps1
+  - Dockerfile
+  - firebase-config.js
+  - firebase.json
+  - firestore.indexes.json
+  - firestore.rules
+  - fix_async.js
+  - fix_coe_seal.ps1
+  - index.html
+  - package-lock.json
+  - package.json
+  - paho-mqtt.min.js
+  - prepare_data.js
+  - QuestionBank_Reviewed.csv
+  - questions-data.js
+  - README.md
+  - refactor_server.js
+  - remove_bg.ps1
+  - server.js
+  - serviceAccountKey.json
+  - static-engine.js
+  - styles.css
+  - sw.js
+  - time-sync.js

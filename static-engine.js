@@ -743,6 +743,44 @@
           .catch(err => console.warn('[Service Worker] Registration error:', err));
       });
     }
+
+    // Global Anti-Copy / Anti-Paste / Anti-Selection Protection
+    const blockClipboardEvent = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.clipboardData && typeof e.clipboardData.setData === 'function') {
+        try { e.clipboardData.setData('text/plain', ''); } catch (_) {}
+      }
+      return false;
+    };
+
+    ['copy', 'cut', 'paste', 'contextmenu', 'dragstart'].forEach((evtName) => {
+      document.addEventListener(evtName, blockClipboardEvent, true);
+      window.addEventListener(evtName, blockClipboardEvent, true);
+    });
+
+    document.addEventListener('selectstart', (e) => {
+      const tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : '';
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      const key = (e.key || '').toLowerCase();
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
+      if (
+        (ctrlOrCmd && ['c', 'x', 'v', 'a', 's', 'u', 'p'].includes(key)) ||
+        (e.ctrlKey && e.key === 'Insert') ||
+        (e.shiftKey && (e.key === 'Insert' || e.key === 'Delete'))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    }, true);
   }
 
   // --- INTERCEPT /api/* REQUESTS WITH FIREBASE AUTH & FIRESTORE ---

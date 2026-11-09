@@ -3801,17 +3801,6 @@ function BatchAuditView({
     setExpandedSolutions(updated);
     window.showToast?.(nextState ? 'All solutions on this page expanded' : 'All solutions collapsed', 'info');
   };
-  const handleCopySolution = (solutionText, qId) => {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(solutionText).then(() => {
-        window.showToast?.(`Solution for Question #${qId} copied to clipboard!`, 'success');
-      }).catch(() => {
-        window.showToast?.('Could not copy to clipboard', 'warning');
-      });
-    } else {
-      window.showToast?.('Clipboard access not supported in this browser', 'warning');
-    }
-  };
   const renderSolutionBreakdown = q => {
     const rawText = q.CompleteSolution || q.Explanation || '';
     if (!rawText) return null;
@@ -4201,25 +4190,7 @@ function BatchAuditView({
         fontSize: '0.78rem',
         color: 'var(--text-muted)'
       }
-    }, "Module: ", q.Module, " | Topic: ", q.Topic)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: 'flex',
-        gap: '0.4rem',
-        alignItems: 'center'
-      }
-    }, /*#__PURE__*/React.createElement("button", {
-      type: "button",
-      onClick: () => handleCopySolution(q.CompleteSolution || q.Explanation, q.ID),
-      className: "btn-secondary",
-      style: {
-        fontSize: '0.75rem',
-        padding: '0.25rem 0.6rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.35rem'
-      },
-      title: "Copy complete solution to clipboard"
-    }, "\uD83D\uDCCB Copy Solution"))), renderSolutionBreakdown(q)), q.References && /*#__PURE__*/React.createElement("div", {
+    }, "Module: ", q.Module, " | Topic: ", q.Topic))), renderSolutionBreakdown(q)), q.References && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: '0.82rem',
         color: 'var(--primary-light)',

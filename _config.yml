@@ -34,3 +34,4 @@ exclude:
   - styles.css
   - sw.js
   - time-sync.js
+

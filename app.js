@@ -2930,18 +2930,6 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
     window.showToast?.(nextState ? 'All solutions on this page expanded' : 'All solutions collapsed', 'info');
   };
 
-  const handleCopySolution = (solutionText, qId) => {
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(solutionText).then(() => {
-        window.showToast?.(`Solution for Question #${qId} copied to clipboard!`, 'success');
-      }).catch(() => {
-        window.showToast?.('Could not copy to clipboard', 'warning');
-      });
-    } else {
-      window.showToast?.('Clipboard access not supported in this browser', 'warning');
-    }
-  };
-
   const renderSolutionBreakdown = (q) => {
     const rawText = q.CompleteSolution || q.Explanation || '';
     if (!rawText) return null;
@@ -3211,17 +3199,6 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
                         </span>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                        <button
-                          type="button"
-                          onClick={() => handleCopySolution(q.CompleteSolution || q.Explanation, q.ID)}
-                          className="btn-secondary"
-                          style={{ fontSize: '0.75rem', padding: '0.25rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-                          title="Copy complete solution to clipboard"
-                        >
-                          📋 Copy Solution
-                        </button>
-                      </div>
                     </div>
 
                     {renderSolutionBreakdown(q)}

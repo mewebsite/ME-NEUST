@@ -781,6 +781,162 @@
         return false;
       }
     }, true);
+
+    // =========================================================================
+    // Global Anti-Screenshot & Anti-Screen-Recording Protection
+    // =========================================================================
+    let captureLockUntil = 0;
+    let captureCooldownTimer = null;
+
+    const wipeSystemClipboard = () => {
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          navigator.clipboard.writeText('').catch(() => {});
+        }
+      } catch (_) {}
+    };
+
+    const activateCaptureShield = (reasonText, holdMs = 0) => {
+      if (document.body) {
+        document.body.classList.add('screen-capture-blocked');
+      }
+      const reasonEl = document.getElementById('screen-protection-reason');
+      if (reasonEl && reasonText) {
+        reasonEl.textContent = reasonText;
+      }
+      if (holdMs > 0) {
+        captureLockUntil = Math.max(captureLockUntil, Date.now() + holdMs);
+        if (captureCooldownTimer) clearTimeout(captureCooldownTimer);
+        captureCooldownTimer = setTimeout(() => {
+          if (document.hasFocus() && !document.hidden && Date.now() >= captureLockUntil) {
+            if (document.body) document.body.classList.remove('screen-capture-blocked');
+          }
+        }, holdMs + 50);
+      }
+    };
+
+    const releaseCaptureShield = (force = false) => {
+      if (!force && Date.now() < captureLockUntil) return;
+      if (document.hidden) return;
+      captureLockUntil = 0;
+      if (document.body) {
+        document.body.classList.remove('screen-capture-blocked');
+      }
+    };
+
+    // 1. Disable Web Screen Capture / Screen Recording API (getDisplayMedia)
+    const blockDisplayMedia = () =>
+      Promise.reject(new DOMException('Screen recording and screen sharing are disabled on this website.', 'NotAllowedError'));
+
+    try {
+      if (navigator.mediaDevices) {
+        Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {
+          value: blockDisplayMedia,
+          configurable: false,
+          writable: false
+        });
+      }
+      if ('getDisplayMedia' in navigator) {
+        Object.defineProperty(navigator, 'getDisplayMedia', {
+          value: blockDisplayMedia,
+          configurable: false,
+          writable: false
+        });
+      }
+    } catch (_) {}
+
+    // 2. Block Canvas-based Screenshot Extensions (toDataURL / toBlob)
+    try {
+      if (typeof HTMLCanvasElement !== 'undefined') {
+        HTMLCanvasElement.prototype.toDataURL = function () {
+          return 'data:,';
+        };
+        HTMLCanvasElement.prototype.toBlob = function (cb) {
+          if (typeof cb === 'function') cb(null);
+        };
+      }
+    } catch (_) {}
+
+    // 3. Intercept Screenshot & Screen Recording Keyboard Shortcuts (Desktop & Mobile Keyboards)
+    const isScreenshotOrRecordingKey = (e) => {
+      const key = (e.key || '').toLowerCase();
+      const code = (e.code || '').toLowerCase();
+      const keyCode = e.keyCode || e.which;
+
+      // PrintScreen key (Windows / Linux / External Keyboards)
+      if (key === 'printscreen' || code === 'printscreen' || keyCode === 44) return true;
+      // F12 DevTools
+      if (key === 'f12' || keyCode === 123) return true;
+      // Windows Snipping Tool (Win+Shift+S) / Firefox Screenshot (Ctrl+Shift+S) / Xbox Game Bar Recording (Win+G, Win+Alt+R)
+      if (e.metaKey && e.shiftKey && (key === 's' || key === 'r')) return true;
+      if (e.metaKey && e.altKey && (key === 'r' || key === 'g')) return true;
+      // macOS Screenshot & Screen Recording HUD (Cmd+Shift+3, Cmd+Shift+4, Cmd+Shift+5, Cmd+Shift+6)
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && ['3', '4', '5', '6', '#', '$', '%', '^', 's', 'i', 'j', 'c', 'k'].includes(key)) {
+        return true;
+      }
+      return false;
+    };
+
+    const handleCaptureKey = (e) => {
+      if (isScreenshotOrRecordingKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        wipeSystemClipboard();
+        activateCaptureShield('Screenshot and screen recording shortcuts are disabled on ME BoardPrep.', 2500);
+        if (window.showToast) {
+          window.showToast('Screenshots and screen recording are disabled on this website.', 'warning');
+        }
+        return false;
+      }
+    };
+
+    window.addEventListener('keydown', handleCaptureKey, true);
+    window.addEventListener('keyup', handleCaptureKey, true);
+    document.addEventListener('keydown', handleCaptureKey, true);
+    document.addEventListener('keyup', handleCaptureKey, true);
+
+    // 4. Instant Blackout on Window Focus Loss / Snipping Overlay / Screen Recorder / Mobile Control Center
+    window.addEventListener('blur', () => {
+      const activeTag = document.activeElement && document.activeElement.tagName ? document.activeElement.tagName.toUpperCase() : '';
+      if (activeTag === 'SELECT') return;
+      activateCaptureShield('Content is hidden while screen capture overlays, recording tools, or background windows are active.');
+    }, true);
+
+    window.addEventListener('focus', () => {
+      releaseCaptureShield(false);
+    }, true);
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden || document.visibilityState !== 'visible') {
+        activateCaptureShield('Content is hidden while switching tabs, recording screens, or capturing the display.');
+      } else {
+        releaseCaptureShield(false);
+      }
+    }, true);
+
+    window.addEventListener('beforeprint', (e) => {
+      activateCaptureShield('Printing and PDF screen capture are disabled on ME BoardPrep.', 3000);
+    }, true);
+
+    // Allow clicking/tapping the shield to immediately resume once the user is back inside the page
+    const bindShieldResume = () => {
+      const shieldEl = document.getElementById('screen-protection-shield');
+      if (shieldEl) {
+        shieldEl.addEventListener('click', () => releaseCaptureShield(true));
+        shieldEl.addEventListener('touchstart', () => releaseCaptureShield(true), { passive: true });
+      }
+      document.addEventListener('pointerdown', () => {
+        if (!document.hidden && Date.now() >= captureLockUntil) {
+          releaseCaptureShield(false);
+        }
+      }, true);
+    };
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', bindShieldResume);
+    } else {
+      bindShieldResume();
+    }
   }
 
   // --- INTERCEPT /api/* REQUESTS WITH FIREBASE AUTH & FIRESTORE ---

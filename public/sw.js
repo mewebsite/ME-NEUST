@@ -4,14 +4,14 @@
  * while ensuring Firebase Auth and Cloud Firestore traffic always goes directly to Google servers.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.8.2';
+const CACHE_NAME = 'me-boardprep-cache-v2.8.3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './styles.css?v=2.8.2',
-  './questions-data.js?v=2.8.2',
-  './static-engine.js?v=2.8.2',
-  './app.bundle.js?v=2.8.2',
+  './styles.css?v=2.8.3',
+  './questions-data.js?v=2.8.3',
+  './static-engine.js?v=2.8.3',
+  './app.bundle.js?v=2.8.3',
   './images/neust_seal.png',
   './images/neust_coe_seal.png',
   'https://unpkg.com/react@18/umd/react.production.min.js',

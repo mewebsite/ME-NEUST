@@ -1516,6 +1516,50 @@
           );
         }
 
+        const isSolvingItem = (q) => {
+          const t = String((q && q.Type) || '').toLowerCase();
+          return t === 'problems' || t === 'problem' || t === 'solving' || t.includes('solving') || t.includes('problem');
+        };
+
+        const solvingAvailable = filtered.filter(isSolvingItem).length;
+        const elementAvailable = filtered.length - solvingAvailable;
+
+        if (params.type) {
+          const tFilter = String(params.type).toLowerCase().trim();
+          if (tFilter === 'solving' || tFilter === 'problems' || tFilter === 'problem') {
+            filtered = filtered.filter(isSolvingItem);
+          } else if (tFilter === 'element' || tFilter === 'elements') {
+            filtered = filtered.filter(q => !isSolvingItem(q));
+          }
+        }
+
+        if (params.solvingCount !== undefined || params.elementCount !== undefined) {
+          const sCount = Math.max(0, parseInt(params.solvingCount, 10) || 0);
+          const eCount = Math.max(0, parseInt(params.elementCount, 10) || 0);
+          let solvingPool = filtered.filter(isSolvingItem);
+          let elementPool = filtered.filter(q => !isSolvingItem(q));
+          if (params.random === 'true') {
+            solvingPool = [...solvingPool].sort(() => 0.5 - Math.random());
+            elementPool = [...elementPool].sort(() => 0.5 - Math.random());
+          }
+          const combined = [
+            ...solvingPool.slice(0, sCount),
+            ...elementPool.slice(0, eCount)
+          ];
+          const finalQuestions = params.random === 'true'
+            ? [...combined].sort(() => 0.5 - Math.random())
+            : combined;
+          return jsonResponse({
+            total: finalQuestions.length,
+            page: 1,
+            pageSize: finalQuestions.length,
+            totalPages: 1,
+            solvingAvailable,
+            elementAvailable,
+            questions: finalQuestions
+          });
+        }
+
         if (params.random === 'true') {
           filtered = [...filtered].sort(() => 0.5 - Math.random());
         }
@@ -1531,6 +1575,8 @@
             page: pageNum,
             pageSize,
             totalPages: Math.ceil(total / pageSize) || 1,
+            solvingAvailable,
+            elementAvailable,
             questions: paginated
           });
         }
@@ -1540,6 +1586,8 @@
           page: 1,
           pageSize: total,
           totalPages: 1,
+          solvingAvailable,
+          elementAvailable,
           questions: filtered
         });
       }
@@ -1645,18 +1693,26 @@
       }
 
       if (method === 'POST') {
-        const { title, description, module: modVal, questionCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = body;
+        const { title, description, module: modVal, questionCount, solvingCount, elementCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = body;
         if (!title || !String(title).trim()) {
           return jsonResponse({ error: 'Quiz title is required.' }, 400);
         }
         const safeIds = Array.isArray(specificQuestionIds) ? specificQuestionIds.slice(0, 500).map(String) : [];
+        const hasTypeCounts = solvingCount !== undefined || elementCount !== undefined;
+        const safeSolving = hasTypeCounts ? Math.min(500, Math.max(0, parseInt(solvingCount, 10) || 0)) : undefined;
+        const safeElement = hasTypeCounts ? Math.min(500, Math.max(0, parseInt(elementCount, 10) || 0)) : undefined;
+        const computedTotal = safeIds.length > 0
+          ? safeIds.length
+          : (hasTypeCounts && (safeSolving + safeElement) > 0 ? (safeSolving + safeElement) : (parseInt(questionCount, 10) || 50));
         const newId = `qz_${Date.now()}`;
         const newQuiz = {
           id: newId,
           title: String(title).trim().slice(0, 300),
           description: String(description || '').trim().slice(0, 2000),
           module: String(modVal || '').slice(0, 500),
-          questionCount: Math.min(500, Math.max(1, safeIds.length > 0 ? safeIds.length : (parseInt(questionCount, 10) || 50))),
+          questionCount: Math.min(500, Math.max(1, computedTotal)),
+          ...(safeSolving !== undefined ? { solvingCount: safeSolving } : {}),
+          ...(safeElement !== undefined ? { elementCount: safeElement } : {}),
           durationMins: Math.min(600, Math.max(1, parseInt(durationMins, 10) || 50)),
           passingScorePct: Math.min(100, Math.max(1, parseInt(passingScorePct, 10) || 70)),
           status: status === 'draft' ? 'draft' : 'published',
@@ -1687,12 +1743,21 @@
           ? (Array.isArray(body.specificQuestionIds) ? body.specificQuestionIds.slice(0, 500).map(String) : [])
           : (existing.specificQuestionIds || []);
 
+        const safeSolving = body.solvingCount !== undefined
+          ? Math.min(500, Math.max(0, parseInt(body.solvingCount, 10) || 0))
+          : existing.solvingCount;
+        const safeElement = body.elementCount !== undefined
+          ? Math.min(500, Math.max(0, parseInt(body.elementCount, 10) || 0))
+          : existing.elementCount;
+
         const updatedQuiz = {
           id: String(id).slice(0, 128),
           title: String(body.title !== undefined ? body.title : existing.title).trim().slice(0, 300),
           description: String(body.description !== undefined ? body.description : (existing.description || '')).trim().slice(0, 2000),
           module: String(body.module !== undefined ? body.module : (existing.module || '')).slice(0, 500),
           questionCount: Math.min(500, Math.max(1, parseInt(body.questionCount !== undefined ? body.questionCount : existing.questionCount, 10) || 50)),
+          ...(safeSolving !== undefined ? { solvingCount: safeSolving } : {}),
+          ...(safeElement !== undefined ? { elementCount: safeElement } : {}),
           durationMins: Math.min(600, Math.max(1, parseInt(body.durationMins !== undefined ? body.durationMins : existing.durationMins, 10) || 50)),
           passingScorePct: Math.min(100, Math.max(1, parseInt(body.passingScorePct !== undefined ? body.passingScorePct : existing.passingScorePct, 10) || 70)),
           status: (body.status || existing.status) === 'draft' ? 'draft' : 'published',

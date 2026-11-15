@@ -5,29 +5,70 @@ const {
 const API_BASE = '';
 const MODULE_OPTIONS = [{
   value: '',
-  label: 'All Curriculum Modules (Comprehensive Mixed)'
+  label: 'All Curriculum Modules (5,036 Qs — 1,931 Solving | 3,105 Element)'
 }, {
   value: 'Module 1 - Power Plant Elements',
-  label: 'Module 1: Power Plant Elements (1,610 Qs)'
+  label: 'Module 1: Power Plant Elements (1,610 Qs — 697 Solving | 913 Element)'
 }, {
   value: 'Module 2 - Power Plant Design',
-  label: 'Module 2: Power Plant Design (1,119 Qs)'
+  label: 'Module 2: Power Plant Design (1,119 Qs — 569 Solving | 550 Element)'
 }, {
   value: 'Module 3 - Industrial Plant Engineering',
-  label: 'Module 3: Industrial Plant Engineering (677 Qs)'
+  label: 'Module 3: Industrial Plant Engineering (677 Qs — 368 Solving | 309 Element)'
 }, {
   value: 'Module 4 - Industrial Plant Design',
-  label: 'Module 4: Industrial Plant Design (329 Qs)'
+  label: 'Module 4: Industrial Plant Design (329 Qs — 24 Solving | 305 Element)'
 }, {
   value: 'Module 5 - Refrigeration Engineering and Its Application',
-  label: 'Module 5: Refrigeration Engineering (861 Qs)'
+  label: 'Module 5: Refrigeration Engineering (861 Qs — 136 Solving | 725 Element)'
 }, {
   value: 'Module 6 - Air Conditioning',
-  label: 'Module 6: Air Conditioning (294 Qs)'
+  label: 'Module 6: Air Conditioning (294 Qs — 137 Solving | 157 Element)'
 }, {
   value: 'Unclassified',
-  label: 'Unclassified / General (146 Qs)'
+  label: 'Unclassified / General (146 Qs — 0 Solving | 146 Element)'
 }];
+
+// QUESTION TYPE CLASSIFICATION & AVAILABLE COUNT HELPERS
+function isSolvingQuestion(q) {
+  if (!q) return false;
+  const t = String(q.Type || '').toLowerCase();
+  return t === 'problems' || t === 'problem' || t === 'solving' || t.includes('solving') || t.includes('problem');
+}
+function getAvailableQuestionCounts({
+  moduleStr = '',
+  batchStr = ''
+} = {}) {
+  const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
+  let filtered = all;
+  if (moduleStr && String(moduleStr).trim() !== '') {
+    const targetModules = String(moduleStr).split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
+    if (targetModules.length > 0) {
+      filtered = filtered.filter(q => {
+        if (!q.Module) return false;
+        const qMod = q.Module.toLowerCase();
+        return targetModules.some(tm => qMod.includes(tm) || tm.includes(qMod));
+      });
+    }
+  }
+  if (batchStr && String(batchStr).trim() !== '') {
+    filtered = filtered.filter(q => String(q.BatchNumber) === String(batchStr));
+  }
+  let solvingAvailable = 0;
+  let elementAvailable = 0;
+  filtered.forEach(q => {
+    if (isSolvingQuestion(q)) {
+      solvingAvailable++;
+    } else {
+      elementAvailable++;
+    }
+  });
+  return {
+    solvingAvailable,
+    elementAvailable,
+    totalAvailable: solvingAvailable + elementAvailable
+  };
+}
 
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
 function getAttemptScore(att) {
@@ -571,6 +612,8 @@ function App() {
   const startPracticeMode = ({
     moduleVal,
     batchVal,
+    solvingCount,
+    elementCount,
     limitVal = 50
   }) => {
     setExamMode('practice');
@@ -582,13 +625,20 @@ function App() {
     setQuizListModalOpen(false);
     setTimerActive(false);
     setActiveQuiz(null);
-    const targetLimit = parseInt(limitVal) || 50;
+    const hasTypeBreakdown = solvingCount !== undefined || elementCount !== undefined;
+    const sCount = Math.max(0, parseInt(solvingCount, 10) || 0);
+    const eCount = Math.max(0, parseInt(elementCount, 10) || 0);
+    const targetLimit = hasTypeBreakdown && sCount + eCount > 0 ? sCount + eCount : parseInt(limitVal, 10) || 50;
     const queryObj = {
       limit: targetLimit,
       random: 'true'
     };
     if (moduleVal) queryObj.module = moduleVal;
     if (batchVal) queryObj.batch = batchVal;
+    if (hasTypeBreakdown && sCount + eCount > 0) {
+      queryObj.solvingCount = sCount;
+      queryObj.elementCount = eCount;
+    }
     const query = new URLSearchParams(queryObj).toString();
     fetch(`${API_BASE}/api/questions?${query}`, {
       headers: {
@@ -612,7 +662,10 @@ function App() {
     setShowExplanation(false);
     setQuizListModalOpen(false);
     let queryUrl = '';
-    const targetCount = parseInt(quiz.questionCount) || 50;
+    const hasTypeCounts = quiz.solvingCount !== undefined || quiz.elementCount !== undefined;
+    const sCount = Math.max(0, parseInt(quiz.solvingCount, 10) || 0);
+    const eCount = Math.max(0, parseInt(quiz.elementCount, 10) || 0);
+    const targetCount = hasTypeCounts && sCount + eCount > 0 ? sCount + eCount : parseInt(quiz.questionCount, 10) || 50;
     if (quiz.specificQuestionIds && quiz.specificQuestionIds.length > 0) {
       queryUrl = `${API_BASE}/api/questions?ids=${encodeURIComponent(quiz.specificQuestionIds.join(','))}`;
     } else {
@@ -621,6 +674,10 @@ function App() {
         random: 'true'
       };
       if (quiz.module) queryObj.module = quiz.module;
+      if (hasTypeCounts && sCount + eCount > 0) {
+        queryObj.solvingCount = sCount;
+        queryObj.elementCount = eCount;
+      }
       queryUrl = `${API_BASE}/api/questions?${new URLSearchParams(queryObj).toString()}`;
     }
     fetch(queryUrl, {
@@ -2549,12 +2606,64 @@ function PracticeConfigModal({
 }) {
   const [selectedModule, setSelectedModule] = useState('');
   const [selectedBatch, setSelectedBatch] = useState('');
-  const [questionLimit, setQuestionLimit] = useState(50);
+  const [solvingCount, setSolvingCount] = useState(25);
+  const [elementCount, setElementCount] = useState(25);
+  const {
+    solvingAvailable,
+    elementAvailable,
+    totalAvailable
+  } = getAvailableQuestionCounts({
+    moduleStr: selectedModule,
+    batchStr: selectedBatch
+  });
+
+  // Automatically clamp or balance counts when module or batch changes
+  const applyPoolSelection = (nextModule, nextBatch) => {
+    setSelectedModule(nextModule);
+    setSelectedBatch(nextBatch);
+    const counts = getAvailableQuestionCounts({
+      moduleStr: nextModule,
+      batchStr: nextBatch
+    });
+    let nextSolving = Math.min(solvingCount, counts.solvingAvailable);
+    let nextElement = Math.min(elementCount, counts.elementAvailable);
+    if (nextSolving + nextElement === 0) {
+      if (counts.solvingAvailable > 0 && counts.elementAvailable > 0) {
+        nextSolving = Math.min(25, counts.solvingAvailable);
+        nextElement = Math.min(25, counts.elementAvailable);
+      } else if (counts.solvingAvailable > 0) {
+        nextSolving = Math.min(50, counts.solvingAvailable);
+      } else if (counts.elementAvailable > 0) {
+        nextElement = Math.min(50, counts.elementAvailable);
+      }
+    }
+    setSolvingCount(nextSolving);
+    setElementCount(nextElement);
+  };
+  const handleSolvingChange = val => {
+    const parsed = Math.max(0, parseInt(val, 10) || 0);
+    setSolvingCount(Math.min(parsed, solvingAvailable));
+  };
+  const handleElementChange = val => {
+    const parsed = Math.max(0, parseInt(val, 10) || 0);
+    setElementCount(Math.min(parsed, elementAvailable));
+  };
+  const applyPreset = (sTarget, eTarget) => {
+    setSolvingCount(Math.min(sTarget, solvingAvailable));
+    setElementCount(Math.min(eTarget, elementAvailable));
+  };
+  const totalSelected = solvingCount + elementCount;
   const handleStart = () => {
+    if (totalSelected <= 0) {
+      window.showToast?.('Please specify at least 1 Solving Question or Element Question to start.', 'warning');
+      return;
+    }
     onStart({
       moduleVal: selectedModule,
       batchVal: selectedBatch,
-      limitVal: questionLimit
+      solvingCount,
+      elementCount,
+      limitVal: totalSelected
     });
   };
   return /*#__PURE__*/React.createElement("div", {
@@ -2562,64 +2671,283 @@ function PracticeConfigModal({
     onClick: onClose
   }, /*#__PURE__*/React.createElement("div", {
     className: "modal-content glass-card",
-    onClick: e => e.stopPropagation()
+    onClick: e => e.stopPropagation(),
+    style: {
+      maxWidth: '640px',
+      width: '94%'
+    }
   }, /*#__PURE__*/React.createElement("h2", {
     style: {
-      marginBottom: '0.5rem',
+      marginBottom: '0.4rem',
       textAlign: 'center'
     }
   }, "\uD83D\uDCD6 Practice & Study Mode"), /*#__PURE__*/React.createElement("p", {
     style: {
       textAlign: 'center',
       color: 'var(--text-muted)',
-      marginBottom: '1.5rem',
-      fontSize: '0.9rem'
+      marginBottom: '1.25rem',
+      fontSize: '0.88rem'
     }
-  }, "Self-paced practice with instant step-by-step engineering solutions and literature references."), /*#__PURE__*/React.createElement("div", {
+  }, "Configure your practice session and specify the exact number of ", /*#__PURE__*/React.createElement("strong", null, "Solving Questions"), " and ", /*#__PURE__*/React.createElement("strong", null, "Element Questions"), "."), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Select Curriculum Module to Practice"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
     value: selectedModule,
-    onChange: e => {
-      setSelectedModule(e.target.value);
-      setSelectedBatch('');
-    }
+    onChange: e => applyPoolSelection(e.target.value, '')
   }, MODULE_OPTIONS.map(opt => /*#__PURE__*/React.createElement("option", {
     key: opt.value,
     value: opt.value
   }, opt.label)))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Or Select Specific Review Batch (Batches 1 to 63)"), /*#__PURE__*/React.createElement("select", {
+  }, /*#__PURE__*/React.createElement("label", null, "Or Select Specific Review Batch"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
     value: selectedBatch,
-    onChange: e => {
-      setSelectedBatch(e.target.value);
-      setSelectedModule('');
-    }
+    onChange: e => applyPoolSelection('', e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All Batches (Randomized Practice Set)"), Array.from({
-    length: 63
+  }, "All Batches (Randomized Practice Set \u2014 5,036 Qs)"), /*#__PURE__*/React.createElement("option", {
+    value: "PIPE-PROB-01"
+  }, "Batch PIPE-PROB-01 (1,931 Solving Questions)"), Array.from({
+    length: 65
   }, (_, i) => i + 1).map(b => /*#__PURE__*/React.createElement("option", {
     key: b,
     value: b
-  }, "Batch ", b, " (50 Solved Questions)")))), /*#__PURE__*/React.createElement("div", {
-    className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Number of Questions"), /*#__PURE__*/React.createElement("select", {
+  }, "Batch ", b, " (", b === 65 ? '5' : '50', " Element Questions)")))), /*#__PURE__*/React.createElement("div", {
+    className: "form-group",
+    style: {
+      marginTop: '1rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.5rem',
+      flexWrap: 'wrap',
+      gap: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      margin: 0,
+      fontWeight: '700'
+    }
+  }, "Specify Question Breakdown (Solving vs. Element)"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.78rem',
+      color: 'var(--primary-light)',
+      fontWeight: '600'
+    }
+  }, "Pool Available: ", totalAvailable.toLocaleString(), " Total (", solvingAvailable.toLocaleString(), " Solving | ", elementAvailable.toLocaleString(), " Element)")), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
+    style: {
+      gap: '0.85rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '0.9rem',
+      background: 'rgba(56, 189, 248, 0.08)',
+      border: '1px solid rgba(56, 189, 248, 0.35)',
+      borderRadius: 'var(--radius-md)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.9rem',
+      color: 'var(--text-main)'
+    }
+  }, "\uD83E\uDDEE Solving Questions"), /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-status",
+    style: {
+      fontSize: '0.72rem'
+    }
+  }, "Max: ", solvingAvailable.toLocaleString())), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.76rem',
+      color: 'var(--text-muted)',
+      marginBottom: '0.55rem'
+    }
+  }, "Can add up to ", /*#__PURE__*/React.createElement("strong", null, solvingAvailable.toLocaleString()), " solving problem(s)"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
     className: "form-control",
-    value: questionLimit,
-    onChange: e => setQuestionLimit(parseInt(e.target.value))
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "20"
-  }, "20 Questions (Quick Review)"), /*#__PURE__*/React.createElement("option", {
-    value: "50"
-  }, "50 Questions (Full Block Practice)"), /*#__PURE__*/React.createElement("option", {
-    value: "100"
-  }, "100 Questions (Marathon Study Set)"))), /*#__PURE__*/React.createElement("div", {
+    min: "0",
+    max: solvingAvailable,
+    value: solvingCount,
+    onChange: e => handleSolvingChange(e.target.value),
+    disabled: solvingAvailable === 0,
+    style: {
+      fontWeight: '700',
+      fontSize: '1rem',
+      textAlign: 'center',
+      marginBottom: '0.5rem'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.3rem',
+      flexWrap: 'wrap',
+      justifyContent: 'center'
+    }
+  }, [0, 10, 15, 25, 50].map(n => /*#__PURE__*/React.createElement("button", {
+    key: n,
+    type: "button",
+    className: "btn-secondary",
+    disabled: solvingAvailable === 0 && n > 0,
+    onClick: () => handleSolvingChange(n),
+    style: {
+      padding: '0.18rem 0.48rem',
+      fontSize: '0.72rem'
+    }
+  }, n)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    disabled: solvingAvailable === 0,
+    onClick: () => handleSolvingChange(Math.min(100, solvingAvailable)),
+    style: {
+      padding: '0.18rem 0.48rem',
+      fontSize: '0.72rem'
+    }
+  }, "Max (", Math.min(100, solvingAvailable), ")"))), /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '0.9rem',
+      background: 'rgba(245, 158, 11, 0.08)',
+      border: '1px solid rgba(245, 158, 11, 0.35)',
+      borderRadius: 'var(--radius-md)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.9rem',
+      color: 'var(--text-main)'
+    }
+  }, "\uD83D\uDCD8 Element Questions"), /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-admin",
+    style: {
+      fontSize: '0.72rem'
+    }
+  }, "Max: ", elementAvailable.toLocaleString())), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.76rem',
+      color: 'var(--text-muted)',
+      marginBottom: '0.55rem'
+    }
+  }, "Can add up to ", /*#__PURE__*/React.createElement("strong", null, elementAvailable.toLocaleString()), " element question(s)"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    className: "form-control",
+    min: "0",
+    max: elementAvailable,
+    value: elementCount,
+    onChange: e => handleElementChange(e.target.value),
+    disabled: elementAvailable === 0,
+    style: {
+      fontWeight: '700',
+      fontSize: '1rem',
+      textAlign: 'center',
+      marginBottom: '0.5rem'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.3rem',
+      flexWrap: 'wrap',
+      justifyContent: 'center'
+    }
+  }, [0, 10, 15, 25, 50].map(n => /*#__PURE__*/React.createElement("button", {
+    key: n,
+    type: "button",
+    className: "btn-secondary",
+    disabled: elementAvailable === 0 && n > 0,
+    onClick: () => handleElementChange(n),
+    style: {
+      padding: '0.18rem 0.48rem',
+      fontSize: '0.72rem'
+    }
+  }, n)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    disabled: elementAvailable === 0,
+    onClick: () => handleElementChange(Math.min(100, elementAvailable)),
+    style: {
+      padding: '0.18rem 0.48rem',
+      fontSize: '0.72rem'
+    }
+  }, "Max (", Math.min(100, elementAvailable), ")")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: '0.75rem',
+      padding: '0.65rem 0.85rem',
+      borderRadius: '8px',
+      background: 'var(--bg-input)',
+      border: '1px solid var(--border-color)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.85rem'
+    }
+  }, /*#__PURE__*/React.createElement("strong", null, "Total Practice Questions:"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--primary-light)',
+      fontWeight: '700'
+    }
+  }, totalSelected, " Qs"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text-muted)',
+      fontSize: '0.8rem'
+    }
+  }, "(", solvingCount, " Solving + ", elementCount, " Element)")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.35rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.55rem',
+      fontSize: '0.74rem'
+    },
+    onClick: () => applyPreset(10, 10)
+  }, "20 Qs (10+10)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.55rem',
+      fontSize: '0.74rem'
+    },
+    onClick: () => applyPreset(25, 25)
+  }, "50 Qs (25+25)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.55rem',
+      fontSize: '0.74rem'
+    },
+    onClick: () => applyPreset(50, 50)
+  }, "100 Qs (50+50)")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.75rem',
-      marginTop: '1.5rem'
+      marginTop: '1.25rem'
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",
@@ -2634,8 +2962,9 @@ function PracticeConfigModal({
     style: {
       flex: 1
     },
-    onClick: handleStart
-  }, "\uD83D\uDE80 Start Practice Session"))));
+    onClick: handleStart,
+    disabled: totalSelected <= 0
+  }, "\uD83D\uDE80 Start Practice (", totalSelected, " Qs)"))));
 }
 
 // POSTED QUIZZES LIBRARY MODAL FOR STUDENTS & FACULTY
@@ -2809,7 +3138,7 @@ function QuizListModal({
       title: qz.module || 'All Modules'
     }, !qz.module ? 'Comprehensive (All Modules)' : qz.module.includes(',') ? `🎯 Combined (${qz.module.split(',').length} Modules)` : qz.module), /*#__PURE__*/React.createElement("span", {
       className: "badge badge-status"
-    }, qz.questionCount, " Questions | \u23F0 ", qz.durationMins, " Mins"), hasAttempted && /*#__PURE__*/React.createElement("span", {
+    }, qz.questionCount, " Questions", qz.solvingCount !== undefined || qz.elementCount !== undefined ? ` (${qz.solvingCount || 0} Solving | ${qz.elementCount || 0} Element)` : '', ' ', "| \u23F0 ", qz.durationMins, " Mins"), hasAttempted && /*#__PURE__*/React.createElement("span", {
       className: `badge ${userAttempt.passed ? 'badge-status' : 'badge-admin'}`
     }, "Latest Score: ", userAttempt.percentage, "% (", userAttempt.passed ? 'Passed' : 'Needs Review', ")"), isAdmin && /*#__PURE__*/React.createElement("span", {
       className: `badge ${qz.status === 'published' ? 'badge-status' : 'badge-student'}`
@@ -4980,7 +5309,12 @@ function AdminView({
     }
   }, qz.title), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
     className: "badge badge-admin"
-  }, qz.module ? qz.module.substring(0, 12) + '...' : 'Mixed')), /*#__PURE__*/React.createElement("td", null, qz.questionCount, " Qs"), /*#__PURE__*/React.createElement("td", null, qz.durationMins, " Mins"), /*#__PURE__*/React.createElement("td", null, qz.passingScorePct || 70, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+  }, qz.module ? qz.module.substring(0, 12) + '...' : 'Mixed')), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("div", null, qz.questionCount, " Qs"), (qz.solvingCount !== undefined || qz.elementCount !== undefined) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.72rem',
+      color: 'var(--text-muted)'
+    }
+  }, qz.solvingCount || 0, " Solving | ", qz.elementCount || 0, " Element")), /*#__PURE__*/React.createElement("td", null, qz.durationMins, " Mins"), /*#__PURE__*/React.createElement("td", null, qz.passingScorePct || 70, "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
     className: `badge ${qz.status === 'published' ? 'badge-status' : 'badge-student'}`
   }, qz.status)), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5195,10 +5529,14 @@ function QuizEditorModal({
     const parts = editingQuiz.module.split(',').map(m => m.trim()).filter(Boolean);
     return parts;
   };
+  const initialTotal = editingQuiz?.questionCount || 50;
+  const initialSolving = editingQuiz?.solvingCount !== undefined ? editingQuiz.solvingCount : Math.floor(initialTotal / 2);
+  const initialElement = editingQuiz?.elementCount !== undefined ? editingQuiz.elementCount : initialTotal - initialSolving;
   const [title, setTitle] = useState(editingQuiz?.title || '');
   const [description, setDescription] = useState(editingQuiz?.description || '');
   const [selectedModules, setSelectedModules] = useState(parseInitialModules);
-  const [questionCount, setQuestionCount] = useState(editingQuiz?.questionCount || 50);
+  const [solvingCount, setSolvingCount] = useState(initialSolving);
+  const [elementCount, setElementCount] = useState(initialElement);
   const [durationMins, setDurationMins] = useState(editingQuiz?.durationMins || 50);
   const [passingScorePct, setPassingScorePct] = useState(editingQuiz?.passingScorePct || 70);
   const [status, setStatus] = useState(editingQuiz?.status || 'published');
@@ -5207,13 +5545,50 @@ function QuizEditorModal({
   const [selectionMode, setSelectionMode] = useState(editingQuiz?.selectionMode || 'random');
   const [specificQuestionIds, setSpecificQuestionIds] = useState(editingQuiz?.specificQuestionIds || []);
 
-  // Manual Picker Search state
+  // Manual Picker Search & Type filter state
   const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerTypeFilter, setPickerTypeFilter] = useState('all'); // 'all', 'solving', 'element'
   const [pickerQuestions, setPickerQuestions] = useState([]);
   const [pickerLoading, setPickerLoading] = useState(false);
   const [error, setError] = useState('');
+  const combinedModuleStr = selectedModules.length === 0 ? '' : selectedModules.length === REAL_MODULES.length ? '' : selectedModules.join(', ');
+  const {
+    solvingAvailable,
+    elementAvailable,
+    totalAvailable
+  } = getAvailableQuestionCounts({
+    moduleStr: combinedModuleStr
+  });
 
-  // Load questions for manual picker when picker search or selected modules change
+  // Compute breakdown of manually picked questions
+  const pickedBreakdown = React.useMemo(() => {
+    const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS : [];
+    const idSet = new Set(specificQuestionIds.map(String));
+    let solving = 0;
+    let element = 0;
+    all.forEach(q => {
+      if (q && idSet.has(String(q.ID))) {
+        if (isSolvingQuestion(q)) solving++;else element++;
+      }
+    });
+    return {
+      solving,
+      element,
+      total: specificQuestionIds.length
+    };
+  }, [specificQuestionIds]);
+
+  // Clamp solvingCount & elementCount if selectedModules reduces available pool
+  useEffect(() => {
+    if (solvingCount > solvingAvailable) {
+      setSolvingCount(solvingAvailable);
+    }
+    if (elementCount > elementAvailable) {
+      setElementCount(elementAvailable);
+    }
+  }, [solvingAvailable, elementAvailable]);
+
+  // Load questions for manual picker when picker search, type filter, or selected modules change
   useEffect(() => {
     if (selectionMode === 'manual') {
       setPickerLoading(true);
@@ -5223,6 +5598,7 @@ function QuizEditorModal({
       };
       if (selectedModules.length > 0) queryObj.module = selectedModules.join(',');
       if (pickerSearch) queryObj.search = pickerSearch;
+      if (pickerTypeFilter !== 'all') queryObj.type = pickerTypeFilter;
       fetch(`${API_BASE}/api/questions?${new URLSearchParams(queryObj).toString()}`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -5235,7 +5611,7 @@ function QuizEditorModal({
         setPickerLoading(false);
       });
     }
-  }, [selectionMode, selectedModules, pickerSearch]);
+  }, [selectionMode, selectedModules, pickerSearch, pickerTypeFilter]);
   const toggleModule = modValue => {
     if (selectedModules.includes(modValue)) {
       setSelectedModules(selectedModules.filter(m => m !== modValue));
@@ -5257,6 +5633,38 @@ function QuizEditorModal({
       setSpecificQuestionIds([...specificQuestionIds, strId]);
     }
   };
+  const handleSolvingInput = val => {
+    const parsed = Math.max(0, parseInt(val, 10) || 0);
+    setSolvingCount(Math.min(parsed, solvingAvailable, 500));
+  };
+  const handleElementInput = val => {
+    const parsed = Math.max(0, parseInt(val, 10) || 0);
+    setElementCount(Math.min(parsed, elementAvailable, 500));
+  };
+  const applyQuizPreset = (sTarget, eTarget) => {
+    setSolvingCount(Math.min(sTarget, solvingAvailable));
+    setElementCount(Math.min(eTarget, elementAvailable));
+  };
+
+  // Auto-pick specified Solving & Element counts into Manual Question Picker
+  const handleAutoPickManualCounts = () => {
+    const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
+    let filtered = all;
+    if (combinedModuleStr) {
+      const targetMods = combinedModuleStr.split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
+      filtered = filtered.filter(q => {
+        if (!q.Module) return false;
+        const qMod = q.Module.toLowerCase();
+        return targetMods.some(tm => qMod.includes(tm) || tm.includes(qMod));
+      });
+    }
+    const solvingPool = [...filtered.filter(isSolvingQuestion)].sort(() => 0.5 - Math.random());
+    const elementPool = [...filtered.filter(q => !isSolvingQuestion(q))].sort(() => 0.5 - Math.random());
+    const pickedIds = [...solvingPool.slice(0, solvingCount).map(q => String(q.ID)), ...elementPool.slice(0, elementCount).map(q => String(q.ID))];
+    setSpecificQuestionIds(pickedIds);
+    window.showToast?.(`Auto-picked ${solvingPool.slice(0, solvingCount).length} Solving + ${elementPool.slice(0, elementCount).length} Element questions!`, 'info');
+  };
+  const totalRandomQuestions = solvingCount + elementCount;
   const handleSubmit = e => {
     e.preventDefault();
     if (!title.trim()) {
@@ -5267,17 +5675,27 @@ function QuizEditorModal({
       setError('Please pick at least 1 specific question for manual selection mode.');
       return;
     }
-
-    // Combine selected modules into a clean comma-separated string
-    const combinedModuleStr = selectedModules.length === 0 ? '' : selectedModules.length === REAL_MODULES.length ? '' : selectedModules.join(', ');
+    if (selectionMode === 'random' && totalRandomQuestions <= 0) {
+      setError('Please specify at least 1 Solving Question or Element Question.');
+      return;
+    }
+    if (selectionMode === 'random' && totalRandomQuestions > 500) {
+      setError('Total quiz question count cannot exceed 500 questions.');
+      return;
+    }
     const token = localStorage.getItem('token');
     const url = isEdit ? `${API_BASE}/api/quizzes/${editingQuiz.id}` : `${API_BASE}/api/quizzes`;
     const method = isEdit ? 'PUT' : 'POST';
+    const finalSolvingCount = selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount;
+    const finalElementCount = selectionMode === 'manual' ? pickedBreakdown.element : elementCount;
+    const finalTotalCount = selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions;
     const payload = {
       title,
       description,
       module: combinedModuleStr,
-      questionCount: selectionMode === 'manual' ? specificQuestionIds.length : questionCount,
+      questionCount: finalTotalCount,
+      solvingCount: finalSolvingCount,
+      elementCount: finalElementCount,
       durationMins,
       passingScorePct,
       status,
@@ -5312,8 +5730,8 @@ function QuizEditorModal({
     className: "modal-content glass-card",
     onClick: e => e.stopPropagation(),
     style: {
-      maxWidth: '720px',
-      width: '92%'
+      maxWidth: '760px',
+      width: '94%'
     }
   }, /*#__PURE__*/React.createElement("h2", {
     style: {
@@ -5381,7 +5799,7 @@ function QuizEditorModal({
       color: 'var(--text-dim)',
       marginTop: '0.2rem'
     }
-  }, "System draws random questions from target curriculum module(s) for each test taker.")), /*#__PURE__*/React.createElement("div", {
+  }, "Specify the exact number of Solving Questions & Element Questions to draw randomly.")), /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     onClick: () => setSelectionMode('manual'),
     style: {
@@ -5402,7 +5820,7 @@ function QuizEditorModal({
       color: 'var(--text-dim)',
       marginTop: '0.2rem'
     }
-  }, "Hand-pick specific questions from the 5,036 item bank to form a fixed exam paper.")))), /*#__PURE__*/React.createElement("div", {
+  }, "Hand-pick or auto-fill specific Solving & Element questions to form a fixed exam paper.")))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5443,7 +5861,7 @@ function QuizEditorModal({
       padding: '0.85rem',
       background: 'var(--bg-input)',
       borderRadius: 'var(--radius-md)',
-      maxHeight: '180px',
+      maxHeight: '170px',
       overflowY: 'auto',
       border: '1px solid var(--border-color)'
     }
@@ -5457,7 +5875,7 @@ function QuizEditorModal({
       borderRadius: '6px',
       border: '1px solid rgba(245, 158, 11, 0.3)'
     }
-  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " Sampling from all 5,036 items across the full curriculum repository.") : /*#__PURE__*/React.createElement("div", {
+  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs).") : /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: '0.8rem',
       color: 'var(--primary-light)',
@@ -5467,7 +5885,7 @@ function QuizEditorModal({
       borderRadius: '6px',
       border: '1px solid var(--border-glow)'
     }
-  }, "\uD83C\uDFAF ", /*#__PURE__*/React.createElement("strong", null, "Combining ", selectedModules.length, " Module(s):"), " Questions will be filtered by checked curriculum modules."), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFAF ", /*#__PURE__*/React.createElement("strong", null, "Combining ", selectedModules.length, " Module(s):"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs)."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
@@ -5505,27 +5923,296 @@ function QuizEditorModal({
         fontWeight: isChecked ? '600' : 'normal'
       }
     }, mod.label));
-  })))), selectionMode === 'manual' && /*#__PURE__*/React.createElement("div", {
+  })))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: '0.5rem'
+      marginBottom: '0.5rem',
+      flexWrap: 'wrap',
+      gap: '0.4rem'
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: {
       margin: 0,
-      fontWeight: '700',
-      color: '#fbbf24'
+      fontWeight: '700'
     }
-  }, "\uD83D\uDCCC Pick Specific Questions (", specificQuestionIds.length, " Selected)"), /*#__PURE__*/React.createElement("input", {
+  }, "Specify Number of Solving Questions & Element Questions"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.78rem',
+      color: 'var(--primary-light)',
+      fontWeight: '600'
+    }
+  }, "Available to Add: ", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs")), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
+    style: {
+      gap: '0.85rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '0.85rem',
+      background: 'rgba(56, 189, 248, 0.08)',
+      border: '1px solid rgba(56, 189, 248, 0.35)',
+      borderRadius: 'var(--radius-md)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.35rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.9rem',
+      color: 'var(--text-main)'
+    }
+  }, "\uD83E\uDDEE Solving Questions"), /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-status",
+    style: {
+      fontSize: '0.72rem'
+    }
+  }, "Can add up to ", solvingAvailable.toLocaleString())), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    className: "form-control",
+    min: "0",
+    max: Math.min(500, solvingAvailable),
+    value: solvingCount,
+    onChange: e => handleSolvingInput(e.target.value),
+    disabled: solvingAvailable === 0,
+    style: {
+      fontWeight: '700',
+      fontSize: '1rem',
+      textAlign: 'center',
+      marginBottom: '0.45rem'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.3rem',
+      flexWrap: 'wrap',
+      justifyContent: 'center'
+    }
+  }, [0, 10, 15, 25, 50].map(n => /*#__PURE__*/React.createElement("button", {
+    key: n,
+    type: "button",
+    className: "btn-secondary",
+    disabled: solvingAvailable === 0 && n > 0,
+    onClick: () => handleSolvingInput(n),
+    style: {
+      padding: '0.16rem 0.45rem',
+      fontSize: '0.72rem'
+    }
+  }, n)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    disabled: solvingAvailable === 0,
+    onClick: () => handleSolvingInput(Math.min(100, solvingAvailable)),
+    style: {
+      padding: '0.16rem 0.45rem',
+      fontSize: '0.72rem'
+    }
+  }, "Max (", Math.min(100, solvingAvailable), ")"))), /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '0.85rem',
+      background: 'rgba(245, 158, 11, 0.08)',
+      border: '1px solid rgba(245, 158, 11, 0.35)',
+      borderRadius: 'var(--radius-md)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.35rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.9rem',
+      color: 'var(--text-main)'
+    }
+  }, "\uD83D\uDCD8 Element Questions"), /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-admin",
+    style: {
+      fontSize: '0.72rem'
+    }
+  }, "Can add up to ", elementAvailable.toLocaleString())), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    className: "form-control",
+    min: "0",
+    max: Math.min(500, elementAvailable),
+    value: elementCount,
+    onChange: e => handleElementInput(e.target.value),
+    disabled: elementAvailable === 0,
+    style: {
+      fontWeight: '700',
+      fontSize: '1rem',
+      textAlign: 'center',
+      marginBottom: '0.45rem'
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.3rem',
+      flexWrap: 'wrap',
+      justifyContent: 'center'
+    }
+  }, [0, 10, 15, 25, 50].map(n => /*#__PURE__*/React.createElement("button", {
+    key: n,
+    type: "button",
+    className: "btn-secondary",
+    disabled: elementAvailable === 0 && n > 0,
+    onClick: () => handleElementInput(n),
+    style: {
+      padding: '0.16rem 0.45rem',
+      fontSize: '0.72rem'
+    }
+  }, n)), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    disabled: elementAvailable === 0,
+    onClick: () => handleElementInput(Math.min(100, elementAvailable)),
+    style: {
+      padding: '0.16rem 0.45rem',
+      fontSize: '0.72rem'
+    }
+  }, "Max (", Math.min(100, elementAvailable), ")")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: '0.65rem',
+      padding: '0.6rem 0.85rem',
+      borderRadius: '8px',
+      background: 'var(--bg-input)',
+      border: '1px solid var(--border-color)',
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.84rem'
+    }
+  }, selectionMode === 'manual' ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("strong", null, "Manual Selection Breakdown:"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: '#fbbf24',
+      fontWeight: '700'
+    }
+  }, pickedBreakdown.total, " Picked"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text-muted)',
+      fontSize: '0.8rem'
+    }
+  }, "(", pickedBreakdown.solving, " Solving + ", pickedBreakdown.element, " Element)")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("strong", null, "Total Quiz Questions:"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--primary-light)',
+      fontWeight: '700'
+    }
+  }, totalRandomQuestions, " Qs"), ' ', /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: 'var(--text-muted)',
+      fontSize: '0.8rem'
+    }
+  }, "(", solvingCount, " Solving + ", elementCount, " Element)"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.35rem',
+      flexWrap: 'wrap'
+    }
+  }, selectionMode === 'manual' ? /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-primary",
+    style: {
+      padding: '0.25rem 0.65rem',
+      fontSize: '0.75rem'
+    },
+    onClick: handleAutoPickManualCounts
+  }, "\u26A1 Auto-Pick ", solvingCount, " Solving + ", elementCount, " Element") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.5rem',
+      fontSize: '0.73rem'
+    },
+    onClick: () => applyQuizPreset(10, 10)
+  }, "20 Qs (10+10)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.5rem',
+      fontSize: '0.73rem'
+    },
+    onClick: () => applyQuizPreset(15, 15)
+  }, "30 Qs (15+15)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.5rem',
+      fontSize: '0.73rem'
+    },
+    onClick: () => applyQuizPreset(25, 25)
+  }, "50 Qs (25+25)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.2rem 0.5rem',
+      fontSize: '0.73rem'
+    },
+    onClick: () => applyQuizPreset(50, 50)
+  }, "100 Qs (50+50)"))))), selectionMode === 'manual' && /*#__PURE__*/React.createElement("div", {
+    className: "form-group"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.5rem',
+      flexWrap: 'wrap',
+      gap: '0.5rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.35rem',
+      alignItems: 'center',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: pickerTypeFilter === 'all' ? 'btn-primary' : 'btn-secondary',
+    style: {
+      padding: '0.25rem 0.6rem',
+      fontSize: '0.75rem'
+    },
+    onClick: () => setPickerTypeFilter('all')
+  }, "All (", totalAvailable.toLocaleString(), ")"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: pickerTypeFilter === 'solving' ? 'btn-primary' : 'btn-secondary',
+    style: {
+      padding: '0.25rem 0.6rem',
+      fontSize: '0.75rem'
+    },
+    onClick: () => setPickerTypeFilter('solving')
+  }, "\uD83E\uDDEE Solving (", solvingAvailable.toLocaleString(), ")"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: pickerTypeFilter === 'element' ? 'btn-primary' : 'btn-secondary',
+    style: {
+      padding: '0.25rem 0.6rem',
+      fontSize: '0.75rem'
+    },
+    onClick: () => setPickerTypeFilter('element')
+  }, "\uD83D\uDCD8 Element (", elementAvailable.toLocaleString(), ")")), /*#__PURE__*/React.createElement("input", {
     type: "text",
     placeholder: "\uD83D\uDD0D Search questions by keyword...",
     className: "form-control",
     style: {
-      width: '240px',
+      width: '230px',
       padding: '0.3rem 0.75rem',
       fontSize: '0.8rem'
     },
@@ -5537,7 +6224,7 @@ function QuizEditorModal({
       padding: '0.85rem',
       background: 'var(--bg-input)',
       borderRadius: 'var(--radius-md)',
-      maxHeight: '240px',
+      maxHeight: '220px',
       overflowY: 'auto',
       border: '1px solid rgba(245, 158, 11, 0.4)'
     }
@@ -5563,6 +6250,7 @@ function QuizEditorModal({
     }
   }, pickerQuestions.map(qItem => {
     const isPicked = specificQuestionIds.includes(String(qItem.ID));
+    const solving = isSolvingQuestion(qItem);
     return /*#__PURE__*/React.createElement("label", {
       key: qItem.ID,
       style: {
@@ -5594,40 +6282,42 @@ function QuizEditorModal({
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        color: isPicked ? '#ffffff' : 'var(--text-main)',
-        fontWeight: '600',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        gap: '0.5rem',
         marginBottom: '0.2rem'
       }
-    }, "Item #", qItem.ID, ": ", qItem.QuestionText), /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: isPicked ? '#ffffff' : 'var(--text-main)',
+        fontWeight: '600'
+      }
+    }, "Item #", qItem.ID, ": ", qItem.QuestionText), /*#__PURE__*/React.createElement("span", {
+      className: `badge ${solving ? 'badge-status' : 'badge-admin'}`,
+      style: {
+        fontSize: '0.68rem',
+        whiteSpace: 'nowrap'
+      }
+    }, solving ? '🧮 Solving' : '📘 Element')), /*#__PURE__*/React.createElement("div", {
       style: {
         color: 'var(--text-dim)',
         fontSize: '0.75rem',
         display: 'flex',
-        gap: '0.75rem'
+        gap: '0.75rem',
+        flexWrap: 'wrap'
       }
     }, /*#__PURE__*/React.createElement("span", null, "Module: ", qItem.Module || 'General'), /*#__PURE__*/React.createElement("span", null, "Topic: ", qItem.Topic || 'N/A'), /*#__PURE__*/React.createElement("span", null, "Correct: ", qItem.CorrectAnswer))));
   })))), /*#__PURE__*/React.createElement("div", {
     className: "grid-2col"
   }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
-  }, /*#__PURE__*/React.createElement("label", null, "Question Count"), selectionMode === 'manual' ? /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("label", null, "Total Question Summary"), /*#__PURE__*/React.createElement("input", {
     type: "text",
     className: "form-control",
-    value: `${specificQuestionIds.length} Picked Questions`,
+    value: selectionMode === 'manual' ? `${pickedBreakdown.total} Qs (${pickedBreakdown.solving} Solving + ${pickedBreakdown.element} Element)` : `${totalRandomQuestions} Qs (${solvingCount} Solving + ${elementCount} Element)`,
     disabled: true
-  }) : /*#__PURE__*/React.createElement("select", {
-    className: "form-control",
-    value: questionCount,
-    onChange: e => setQuestionCount(parseInt(e.target.value))
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "20"
-  }, "20 Questions"), /*#__PURE__*/React.createElement("option", {
-    value: "30"
-  }, "30 Questions"), /*#__PURE__*/React.createElement("option", {
-    value: "50"
-  }, "50 Questions (Standard Block)"), /*#__PURE__*/React.createElement("option", {
-    value: "100"
-  }, "100 Questions (Comprehensive)"))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Time Limit (Minutes)"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",

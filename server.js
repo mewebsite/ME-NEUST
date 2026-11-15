@@ -347,7 +347,7 @@ app.put('/api/auth/profile', authenticateToken, async (req, res) => {
 // GET /api/questions (Authenticated)
 app.get('/api/questions', authenticateToken, async (req, res) => {
   const questions = await fetchCollection('questions');
-  const { module: modFilter, status: statusFilter, search, batch, random, ids, limit = 50, page = 1 } = req.query;
+  const { module: modFilter, status: statusFilter, search, batch, random, ids, type, solvingCount, elementCount, limit = 50, page = 1 } = req.query;
 
   let filtered = questions.filter(q => q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '');
 
@@ -402,6 +402,50 @@ app.get('/api/questions', authenticateToken, async (req, res) => {
     );
   }
 
+  const isSolvingItem = (q) => {
+    const t = String((q && q.Type) || '').toLowerCase();
+    return t === 'problems' || t === 'problem' || t === 'solving' || t.includes('solving') || t.includes('problem');
+  };
+
+  const solvingAvailable = filtered.filter(isSolvingItem).length;
+  const elementAvailable = filtered.length - solvingAvailable;
+
+  if (type) {
+    const tFilter = String(type).toLowerCase().trim();
+    if (tFilter === 'solving' || tFilter === 'problems' || tFilter === 'problem') {
+      filtered = filtered.filter(isSolvingItem);
+    } else if (tFilter === 'element' || tFilter === 'elements') {
+      filtered = filtered.filter(q => !isSolvingItem(q));
+    }
+  }
+
+  if (solvingCount !== undefined || elementCount !== undefined) {
+    const sCount = Math.max(0, parseInt(solvingCount, 10) || 0);
+    const eCount = Math.max(0, parseInt(elementCount, 10) || 0);
+    let solvingPool = filtered.filter(isSolvingItem);
+    let elementPool = filtered.filter(q => !isSolvingItem(q));
+    if (random === 'true') {
+      solvingPool = [...solvingPool].sort(() => 0.5 - Math.random());
+      elementPool = [...elementPool].sort(() => 0.5 - Math.random());
+    }
+    const combined = [
+      ...solvingPool.slice(0, sCount),
+      ...elementPool.slice(0, eCount)
+    ];
+    const finalQuestions = random === 'true'
+      ? [...combined].sort(() => 0.5 - Math.random())
+      : combined;
+    return res.json({
+      total: finalQuestions.length,
+      page: 1,
+      pageSize: finalQuestions.length,
+      totalPages: 1,
+      solvingAvailable,
+      elementAvailable,
+      questions: finalQuestions
+    });
+  }
+
   if (random === 'true') {
     filtered = [...filtered].sort(() => 0.5 - Math.random());
   }
@@ -417,6 +461,8 @@ app.get('/api/questions', authenticateToken, async (req, res) => {
     page: pageNum,
     pageSize,
     totalPages: Math.ceil(total / pageSize) || 1,
+    solvingAvailable,
+    elementAvailable,
     questions: paginated
   });
 });
@@ -603,18 +649,27 @@ app.get('/api/quizzes', authenticateToken, async (req, res) => {
 
 // POST /api/quizzes (Admin Only - Create and Post New Quiz)
 app.post('/api/quizzes', authenticateToken, requireAdmin, async (req, res) => {
-  const { title, description, module: modVal, questionCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = req.body;
+  const { title, description, module: modVal, questionCount, solvingCount, elementCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = req.body;
   if (!title) {
     return res.status(400).json({ error: 'Quiz title is required.' });
   }
 
   const quizzes = await fetchCollection('quizzes');
+  const hasTypeCounts = solvingCount !== undefined || elementCount !== undefined;
+  const safeSolving = hasTypeCounts ? Math.min(500, Math.max(0, parseInt(solvingCount, 10) || 0)) : undefined;
+  const safeElement = hasTypeCounts ? Math.min(500, Math.max(0, parseInt(elementCount, 10) || 0)) : undefined;
+  const computedTotal = (specificQuestionIds && specificQuestionIds.length > 0)
+    ? specificQuestionIds.length
+    : (hasTypeCounts && (safeSolving + safeElement) > 0 ? (safeSolving + safeElement) : (parseInt(questionCount) || 50));
+
   const newQuiz = {
     id: `qz_${Date.now()}`,
     title,
     description: description || '',
     module: modVal || '',
-    questionCount: (specificQuestionIds && specificQuestionIds.length > 0) ? specificQuestionIds.length : (parseInt(questionCount) || 50),
+    questionCount: computedTotal,
+    ...(safeSolving !== undefined ? { solvingCount: safeSolving } : {}),
+    ...(safeElement !== undefined ? { elementCount: safeElement } : {}),
     durationMins: parseInt(durationMins) || 50,
     passingScorePct: parseInt(passingScorePct) || 70,
     status: status || 'published',
@@ -643,6 +698,8 @@ app.put('/api/quizzes/:id', authenticateToken, requireAdmin, async (req, res) =>
   if (updates.description !== undefined) quizzes[idx].description = updates.description;
   if (updates.module !== undefined) quizzes[idx].module = updates.module;
   if (updates.questionCount) quizzes[idx].questionCount = parseInt(updates.questionCount);
+  if (updates.solvingCount !== undefined) quizzes[idx].solvingCount = Math.min(500, Math.max(0, parseInt(updates.solvingCount, 10) || 0));
+  if (updates.elementCount !== undefined) quizzes[idx].elementCount = Math.min(500, Math.max(0, parseInt(updates.elementCount, 10) || 0));
   if (updates.durationMins) quizzes[idx].durationMins = parseInt(updates.durationMins);
   if (updates.passingScorePct) quizzes[idx].passingScorePct = parseInt(updates.passingScorePct);
   if (updates.status) quizzes[idx].status = updates.status;

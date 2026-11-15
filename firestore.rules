@@ -34,6 +34,8 @@ rules_version = '2';
 //      - questionCount: int (required, range 1..500)
 //      - durationMins: int (required, range 1..600)
 //      - passingScorePct: int (required, range 1..100)
+//      - solvingCount: int (optional, range 0..500)
+//      - elementCount: int (optional, range 0..500)
 //      - description: string (optional, length 0..2000)
 //      - module: string (optional, length 0..500)
 //      - selectionMode: string (optional, enum ['random', 'manual'])
@@ -239,6 +241,8 @@ service cloud.firestore {
                'description',
                'module',
                'questionCount',
+               'solvingCount',
+               'elementCount',
                'durationMins',
                'passingScorePct',
                'status',
@@ -266,6 +270,8 @@ service cloud.firestore {
              data.passingScorePct is int &&
              data.passingScorePct >= 1 &&
              data.passingScorePct <= 100 &&
+             isValidOptionalInt('solvingCount', 0, 500) &&
+             isValidOptionalInt('elementCount', 0, 500) &&
              isValidOptionalString('description', 0, 2000) &&
              isValidOptionalString('module', 0, 500) &&
              (!('selectionMode' in data) ||

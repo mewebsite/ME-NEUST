@@ -111,6 +111,10 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
 function exportQuizToWordFile(quizConfig = {}, {
   includeAnswerKey = false
 } = {}) {
+  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
+    window.showToast?.('Access restricted: Only administrators can download quiz Word files.', 'error');
+    return;
+  }
   const quizQuestions = resolveQuestionsForQuizExport(quizConfig);
   if (!quizQuestions || quizQuestions.length === 0) {
     window.showToast?.('No questions available to export for this quiz configuration.', 'warning');
@@ -554,6 +558,11 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__CURRENT_USER_ROLE = user && user.role ? user.role : null;
+    }
+  }, [user]);
 
   // Synchronize and persist device mode (auto, mobile, laptop)
   useEffect(() => {
@@ -3369,9 +3378,10 @@ function QuizListModal({
       style: {
         display: 'flex',
         gap: '0.5rem',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexWrap: 'wrap'
       }
-    }, /*#__PURE__*/React.createElement("button", {
+    }, isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "btn-secondary",
       style: {
@@ -3383,8 +3393,8 @@ function QuizListModal({
       onClick: () => exportQuizToWordFile(qz, {
         includeAnswerKey: false
       }),
-      title: "Download this quiz as a Microsoft Word (.doc) examination paper"
-    }, "\uD83D\uDCC4 Word (.doc)"), isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      title: "Admin Only: Download this quiz as a Microsoft Word (.doc) examination paper"
+    }, "\uD83D\uDCC4 Word (.doc)"), /*#__PURE__*/React.createElement("button", {
       type: "button",
       className: "btn-secondary",
       style: {
@@ -3396,7 +3406,7 @@ function QuizListModal({
       onClick: () => exportQuizToWordFile(qz, {
         includeAnswerKey: true
       }),
-      title: "Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
+      title: "Admin Only: Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
     }, "\uD83D\uDD11 Word + Key"), /*#__PURE__*/React.createElement("button", {
       className: "btn-secondary",
       style: {

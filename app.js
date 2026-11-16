@@ -113,6 +113,10 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
 }
 
 function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}) {
+  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
+    window.showToast?.('Access restricted: Only administrators can download quiz Word files.', 'error');
+    return;
+  }
   const quizQuestions = resolveQuestionsForQuizExport(quizConfig);
   if (!quizQuestions || quizQuestions.length === 0) {
     window.showToast?.('No questions available to export for this quiz configuration.', 'warning');
@@ -531,6 +535,12 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.__CURRENT_USER_ROLE = user && user.role ? user.role : null;
+    }
+  }, [user]);
 
   // Synchronize and persist device mode (auto, mobile, laptop)
   useEffect(() => {
@@ -2687,24 +2697,24 @@ function QuizListModal({
                       <strong>Posted By:</strong> {qz.createdBy || 'Faculty Admin'} | <strong>Passing Score:</strong> {qz.passingScorePct || 70}%
                     </div>
                     
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                      <button
-                        type="button"
-                        className="btn-secondary"
-                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
-                        onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: false })}
-                        title="Download this quiz as a Microsoft Word (.doc) examination paper"
-                      >
-                        📄 Word (.doc)
-                      </button>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                       {isAdmin && (
                         <>
                           <button
                             type="button"
                             className="btn-secondary"
+                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
+                            onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: false })}
+                            title="Admin Only: Download this quiz as a Microsoft Word (.doc) examination paper"
+                          >
+                            📄 Word (.doc)
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-secondary"
                             style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(16, 185, 129, 0.45)', color: '#34d399' }}
                             onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: true })}
-                            title="Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
+                            title="Admin Only: Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
                           >
                             🔑 Word + Key
                           </button>

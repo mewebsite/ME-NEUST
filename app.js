@@ -280,6 +280,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   
   // Admin Management Modals State
@@ -1340,6 +1341,8 @@ function App() {
                 setModuleFilter={setModuleFilter}
                 batchFilter={batchFilter}
                 setBatchFilter={setBatchFilter}
+                typeFilter={typeFilter}
+                setTypeFilter={setTypeFilter}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 downloadReviewedCSV={downloadReviewedCSV}
@@ -3125,20 +3128,32 @@ function ExamView({ questions, activeQuiz, activeIdx, setActiveIdx, userAnswers,
 }
 
 // QUESTION EXPLORER VIEW
-function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPagesCount, searchQuery, setSearchQuery, moduleFilter, setModuleFilter, batchFilter, setBatchFilter, statusFilter, setStatusFilter, downloadReviewedCSV }) {
+function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPagesCount, searchQuery, setSearchQuery, moduleFilter, setModuleFilter, batchFilter, setBatchFilter, typeFilter = '', setTypeFilter = () => {}, statusFilter, setStatusFilter, downloadReviewedCSV }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedSolutions, setExpandedSolutions] = useState({});
   const [searchingId, setSearchingId] = useState(null);
   const [allExpanded, setAllExpanded] = useState(false);
 
-  const fetchFilteredPage = (page = 1) => {
+  const { solvingAvailable, elementAvailable, totalAvailable } = getAvailableQuestionCounts({
+    moduleStr: moduleFilter,
+    batchStr: batchFilter
+  });
+
+  const fetchFilteredPage = (page = 1, overrides = {}) => {
     setCurrentPage(page);
-    loadQuestions({ search: searchQuery, module: moduleFilter, batch: batchFilter, page, limit: 20 });
+    const activeSearch = overrides.search !== undefined ? overrides.search : searchQuery;
+    const activeModule = overrides.module !== undefined ? overrides.module : moduleFilter;
+    const activeBatch = overrides.batch !== undefined ? overrides.batch : batchFilter;
+    const activeType = overrides.type !== undefined ? overrides.type : typeFilter;
+
+    const queryParams = { search: activeSearch, module: activeModule, batch: activeBatch, page, limit: 20 };
+    if (activeType) queryParams.type = activeType;
+    loadQuestions(queryParams);
   };
 
   useEffect(() => {
     fetchFilteredPage(1);
-  }, [moduleFilter, batchFilter]);
+  }, [moduleFilter, batchFilter, typeFilter]);
 
   const handleToggleSolution = (qId) => {
     if (expandedSolutions[qId]) {
@@ -3274,17 +3289,95 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
         </div>
       </div>
 
+      {/* QUESTION TYPE QUICK FILTER TABS (ALL vs SOLVING vs ELEMENT) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={typeFilter === '' ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setTypeFilter('')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.5rem 1rem', fontSize: '0.86rem' }}
+          >
+            <span>📋 All Questions</span>
+            <span style={{ background: 'rgba(255,255,255,0.16)', padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '700' }}>
+              {totalAvailable.toLocaleString()}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={typeFilter === 'solving' ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setTypeFilter('solving')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.5rem 1rem',
+              fontSize: '0.86rem',
+              borderColor: typeFilter === 'solving' ? 'var(--primary-light)' : 'rgba(56, 189, 248, 0.4)'
+            }}
+          >
+            <span>🧮 Solving Questions</span>
+            <span style={{ background: 'rgba(56, 189, 248, 0.22)', color: '#38bdf8', padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '700' }}>
+              {solvingAvailable.toLocaleString()}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={typeFilter === 'element' ? 'btn-primary' : 'btn-secondary'}
+            onClick={() => setTypeFilter('element')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.45rem',
+              padding: '0.5rem 1rem',
+              fontSize: '0.86rem',
+              borderColor: typeFilter === 'element' ? '#fbbf24' : 'rgba(245, 158, 11, 0.4)'
+            }}
+          >
+            <span>📘 Element Questions</span>
+            <span style={{ background: 'rgba(245, 158, 11, 0.22)', color: '#fbbf24', padding: '0.1rem 0.45rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: '700' }}>
+              {elementAvailable.toLocaleString()}
+            </span>
+          </button>
+        </div>
+
+        {(searchQuery || moduleFilter || batchFilter || typeFilter) && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => {
+              setSearchQuery('');
+              setModuleFilter('');
+              setBatchFilter('');
+              setTypeFilter('');
+              fetchFilteredPage(1, { search: '', module: '', batch: '', type: '' });
+            }}
+            style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem' }}
+          >
+            ✕ Reset Filters
+          </button>
+        )}
+      </div>
+
       {/* FILTER BAR */}
       <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '2rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
         <input 
           type="text" 
           className="form-control" 
           placeholder="Search text, topic, subtopic, ID..." 
-          style={{ flex: 2, minWidth: '220px' }}
+          style={{ flex: 2, minWidth: '200px' }}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && fetchFilteredPage(1)}
         />
+
+        <select className="form-control" style={{ flex: 1.2, minWidth: '180px' }} value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="">All Question Types ({totalAvailable.toLocaleString()} Qs)</option>
+          <option value="solving">🧮 Solving Questions ({solvingAvailable.toLocaleString()} Qs)</option>
+          <option value="element">📘 Element Questions ({elementAvailable.toLocaleString()} Qs)</option>
+        </select>
 
         <select className="form-control" style={{ flex: 1.5, minWidth: '200px' }} value={moduleFilter} onChange={(e) => setModuleFilter(e.target.value)}>
           {MODULE_OPTIONS.map(opt => (
@@ -3292,10 +3385,11 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
           ))}
         </select>
 
-        <select className="form-control" style={{ flex: 1, minWidth: '150px' }} value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}>
-          <option value="">All Batches (1-63)</option>
-          {Array.from({ length: 63 }, (_, i) => i + 1).map(b => (
-            <option key={b} value={b}>Batch {b}</option>
+        <select className="form-control" style={{ flex: 1, minWidth: '160px' }} value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)}>
+          <option value="">All Batches</option>
+          <option value="PIPE-PROB-01">Batch PIPE-PROB-01 (1,931 Solving Qs)</option>
+          {Array.from({ length: 65 }, (_, i) => i + 1).map(b => (
+            <option key={b} value={b}>Batch {b} ({b === 65 ? '5' : '50'} Element Qs)</option>
           ))}
         </select>
 
@@ -3313,9 +3407,19 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
           return (
             <div key={q.ID} className="glass-card" style={{ padding: '1.75rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <div>
-                  <span className="badge badge-student" style={{ marginRight: '0.5rem' }}>ID: #{q.ID}</span>
-                  <span className="badge badge-admin" style={{ marginRight: '0.5rem' }}>{q.Module}</span>
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.45rem' }}>
+                  <span className="badge badge-student">ID: #{q.ID}</span>
+                  <span
+                    className={`badge ${isSolvingQuestion(q) ? 'badge-status' : 'badge-admin'}`}
+                    style={{
+                      background: isSolvingQuestion(q) ? 'rgba(56, 189, 248, 0.16)' : 'rgba(245, 158, 11, 0.16)',
+                      color: isSolvingQuestion(q) ? '#38bdf8' : '#fbbf24',
+                      border: isSolvingQuestion(q) ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)'
+                    }}
+                  >
+                    {isSolvingQuestion(q) ? '🧮 Solving Question' : '📘 Element Question'}
+                  </span>
+                  <span className="badge badge-admin">{q.Module}</span>
                   <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Batch: {q.BatchNumber || 'N/A'} | Subtopic: {q.Subtopic || 'General'}</span>
                 </div>
                 <span className="badge badge-status">Status: {q.AIReviewStatus || 'Verified'}</span>
@@ -3497,6 +3601,7 @@ function AdminView({
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'quizzes', 'results', 'questions'
   const [currentPage, setCurrentPage] = useState(1);
   const [adminSearch, setAdminSearch] = useState('');
+  const [adminTypeFilter, setAdminTypeFilter] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filters for User Data Board
@@ -3504,9 +3609,12 @@ function AdminView({
   const [userRoleFilter, setUserRoleFilter] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState('');
 
-  const fetchAdminQuestions = (page = 1) => {
+  const fetchAdminQuestions = (page = 1, typeOverride = undefined) => {
     setCurrentPage(page);
-    loadQuestions({ search: adminSearch, page, limit: 20 });
+    const activeType = typeOverride !== undefined ? typeOverride : adminTypeFilter;
+    const qParams = { search: adminSearch, page, limit: 20 };
+    if (activeType) qParams.type = activeType;
+    loadQuestions(qParams);
   };
 
   const toggleUserStatus = (u) => {
@@ -4199,7 +4307,20 @@ function AdminView({
           <div className="glass-card" style={{ padding: '1.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
             <h3>Question Bank Database</h3>
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <select
+                className="form-control"
+                style={{ width: '210px' }}
+                value={adminTypeFilter}
+                onChange={e => {
+                  setAdminTypeFilter(e.target.value);
+                  fetchAdminQuestions(1, e.target.value);
+                }}
+              >
+                <option value="">All Question Types (5,036)</option>
+                <option value="solving">🧮 Solving Questions (1,931)</option>
+                <option value="element">📘 Element Questions (3,105)</option>
+              </select>
               <input 
                 type="text" 
                 className="form-control" 
@@ -4219,6 +4340,7 @@ function AdminView({
               <thead>
                 <tr>
                   <th>ID</th>
+                  <th>Type</th>
                   <th>Module</th>
                   <th>Question Text</th>
                   <th>Correct Ans</th>
@@ -4230,6 +4352,11 @@ function AdminView({
                 {questions.map(q => (
                   <tr key={q.ID}>
                     <td>#{q.ID}</td>
+                    <td>
+                      <span className={`badge ${isSolvingQuestion(q) ? 'badge-status' : 'badge-admin'}`}>
+                        {isSolvingQuestion(q) ? '🧮 Solving' : '📘 Element'}
+                      </span>
+                    </td>
                     <td>{q.Module}</td>
                     <td style={{ maxWidth: '380px' }}>{q.QuestionText ? q.QuestionText.substring(0, 80) : ''}...</td>
                     <td style={{ fontWeight: '700', color: 'var(--success)' }}>{q.CorrectAnswer}</td>

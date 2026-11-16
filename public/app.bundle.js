@@ -339,6 +339,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [moduleFilter, setModuleFilter] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
   // Admin Management Modals State
@@ -1405,6 +1406,8 @@ function App() {
     setModuleFilter: setModuleFilter,
     batchFilter: batchFilter,
     setBatchFilter: setBatchFilter,
+    typeFilter: typeFilter,
+    setTypeFilter: setTypeFilter,
     statusFilter: statusFilter,
     setStatusFilter: setStatusFilter,
     downloadReviewedCSV: downloadReviewedCSV
@@ -4081,6 +4084,8 @@ function BatchAuditView({
   setModuleFilter,
   batchFilter,
   setBatchFilter,
+  typeFilter = '',
+  setTypeFilter = () => {},
   statusFilter,
   setStatusFilter,
   downloadReviewedCSV
@@ -4089,19 +4094,33 @@ function BatchAuditView({
   const [expandedSolutions, setExpandedSolutions] = useState({});
   const [searchingId, setSearchingId] = useState(null);
   const [allExpanded, setAllExpanded] = useState(false);
-  const fetchFilteredPage = (page = 1) => {
+  const {
+    solvingAvailable,
+    elementAvailable,
+    totalAvailable
+  } = getAvailableQuestionCounts({
+    moduleStr: moduleFilter,
+    batchStr: batchFilter
+  });
+  const fetchFilteredPage = (page = 1, overrides = {}) => {
     setCurrentPage(page);
-    loadQuestions({
-      search: searchQuery,
-      module: moduleFilter,
-      batch: batchFilter,
+    const activeSearch = overrides.search !== undefined ? overrides.search : searchQuery;
+    const activeModule = overrides.module !== undefined ? overrides.module : moduleFilter;
+    const activeBatch = overrides.batch !== undefined ? overrides.batch : batchFilter;
+    const activeType = overrides.type !== undefined ? overrides.type : typeFilter;
+    const queryParams = {
+      search: activeSearch,
+      module: activeModule,
+      batch: activeBatch,
       page,
       limit: 20
-    });
+    };
+    if (activeType) queryParams.type = activeType;
+    loadQuestions(queryParams);
   };
   useEffect(() => {
     fetchFilteredPage(1);
-  }, [moduleFilter, batchFilter]);
+  }, [moduleFilter, batchFilter, typeFilter]);
   const handleToggleSolution = qId => {
     if (expandedSolutions[qId]) {
       setExpandedSolutions(prev => ({
@@ -4250,6 +4269,101 @@ function BatchAuditView({
       fontSize: '0.9rem'
     }
   }, /*#__PURE__*/React.createElement("span", null, allExpanded ? '✕ Collapse All Solutions' : '📐 Expand All Formulas & Solutions')))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: '0.75rem',
+      marginBottom: '1rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.6rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: typeFilter === '' ? 'btn-primary' : 'btn-secondary',
+    onClick: () => setTypeFilter(''),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.45rem',
+      padding: '0.5rem 1rem',
+      fontSize: '0.86rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCCB All Questions"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: 'rgba(255,255,255,0.16)',
+      padding: '0.1rem 0.45rem',
+      borderRadius: '999px',
+      fontSize: '0.75rem',
+      fontWeight: '700'
+    }
+  }, totalAvailable.toLocaleString())), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: typeFilter === 'solving' ? 'btn-primary' : 'btn-secondary',
+    onClick: () => setTypeFilter('solving'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.45rem',
+      padding: '0.5rem 1rem',
+      fontSize: '0.86rem',
+      borderColor: typeFilter === 'solving' ? 'var(--primary-light)' : 'rgba(56, 189, 248, 0.4)'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83E\uDDEE Solving Questions"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: 'rgba(56, 189, 248, 0.22)',
+      color: '#38bdf8',
+      padding: '0.1rem 0.45rem',
+      borderRadius: '999px',
+      fontSize: '0.75rem',
+      fontWeight: '700'
+    }
+  }, solvingAvailable.toLocaleString())), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: typeFilter === 'element' ? 'btn-primary' : 'btn-secondary',
+    onClick: () => setTypeFilter('element'),
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.45rem',
+      padding: '0.5rem 1rem',
+      fontSize: '0.86rem',
+      borderColor: typeFilter === 'element' ? '#fbbf24' : 'rgba(245, 158, 11, 0.4)'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCD8 Element Questions"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: 'rgba(245, 158, 11, 0.22)',
+      color: '#fbbf24',
+      padding: '0.1rem 0.45rem',
+      borderRadius: '999px',
+      fontSize: '0.75rem',
+      fontWeight: '700'
+    }
+  }, elementAvailable.toLocaleString()))), (searchQuery || moduleFilter || batchFilter || typeFilter) && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    onClick: () => {
+      setSearchQuery('');
+      setModuleFilter('');
+      setBatchFilter('');
+      setTypeFilter('');
+      fetchFilteredPage(1, {
+        search: '',
+        module: '',
+        batch: '',
+        type: ''
+      });
+    },
+    style: {
+      padding: '0.45rem 0.85rem',
+      fontSize: '0.8rem'
+    }
+  }, "\u2715 Reset Filters")), /*#__PURE__*/React.createElement("div", {
     className: "glass-card",
     style: {
       padding: '1.5rem',
@@ -4264,12 +4378,26 @@ function BatchAuditView({
     placeholder: "Search text, topic, subtopic, ID...",
     style: {
       flex: 2,
-      minWidth: '220px'
+      minWidth: '200px'
     },
     value: searchQuery,
     onChange: e => setSearchQuery(e.target.value),
     onKeyDown: e => e.key === 'Enter' && fetchFilteredPage(1)
   }), /*#__PURE__*/React.createElement("select", {
+    className: "form-control",
+    style: {
+      flex: 1.2,
+      minWidth: '180px'
+    },
+    value: typeFilter,
+    onChange: e => setTypeFilter(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All Question Types (", totalAvailable.toLocaleString(), " Qs)"), /*#__PURE__*/React.createElement("option", {
+    value: "solving"
+  }, "\uD83E\uDDEE Solving Questions (", solvingAvailable.toLocaleString(), " Qs)"), /*#__PURE__*/React.createElement("option", {
+    value: "element"
+  }, "\uD83D\uDCD8 Element Questions (", elementAvailable.toLocaleString(), " Qs)")), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
     style: {
       flex: 1.5,
@@ -4284,18 +4412,20 @@ function BatchAuditView({
     className: "form-control",
     style: {
       flex: 1,
-      minWidth: '150px'
+      minWidth: '160px'
     },
     value: batchFilter,
     onChange: e => setBatchFilter(e.target.value)
   }, /*#__PURE__*/React.createElement("option", {
     value: ""
-  }, "All Batches (1-63)"), Array.from({
-    length: 63
+  }, "All Batches"), /*#__PURE__*/React.createElement("option", {
+    value: "PIPE-PROB-01"
+  }, "Batch PIPE-PROB-01 (1,931 Solving Qs)"), Array.from({
+    length: 65
   }, (_, i) => i + 1).map(b => /*#__PURE__*/React.createElement("option", {
     key: b,
     value: b
-  }, "Batch ", b))), /*#__PURE__*/React.createElement("button", {
+  }, "Batch ", b, " (", b === 65 ? '5' : '50', " Element Qs)"))), /*#__PURE__*/React.createElement("button", {
     className: "btn-primary",
     onClick: () => fetchFilteredPage(1)
   }, "Filter Bank")), /*#__PURE__*/React.createElement("div", {
@@ -4322,16 +4452,24 @@ function BatchAuditView({
         flexWrap: 'wrap',
         gap: '0.5rem'
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      className: "badge badge-student",
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        marginRight: '0.5rem'
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.45rem'
       }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-student"
     }, "ID: #", q.ID), /*#__PURE__*/React.createElement("span", {
-      className: "badge badge-admin",
+      className: `badge ${isSolvingQuestion(q) ? 'badge-status' : 'badge-admin'}`,
       style: {
-        marginRight: '0.5rem'
+        background: isSolvingQuestion(q) ? 'rgba(56, 189, 248, 0.16)' : 'rgba(245, 158, 11, 0.16)',
+        color: isSolvingQuestion(q) ? '#38bdf8' : '#fbbf24',
+        border: isSolvingQuestion(q) ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(245, 158, 11, 0.4)'
       }
+    }, isSolvingQuestion(q) ? '🧮 Solving Question' : '📘 Element Question'), /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-admin"
     }, q.Module), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: '0.85rem',
@@ -4573,19 +4711,23 @@ function AdminView({
   const [activeTab, setActiveTab] = useState('users'); // 'users', 'quizzes', 'results', 'questions'
   const [currentPage, setCurrentPage] = useState(1);
   const [adminSearch, setAdminSearch] = useState('');
+  const [adminTypeFilter, setAdminTypeFilter] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filters for User Data Board
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [userRoleFilter, setUserRoleFilter] = useState('');
   const [userStatusFilter, setUserStatusFilter] = useState('');
-  const fetchAdminQuestions = (page = 1) => {
+  const fetchAdminQuestions = (page = 1, typeOverride = undefined) => {
     setCurrentPage(page);
-    loadQuestions({
+    const activeType = typeOverride !== undefined ? typeOverride : adminTypeFilter;
+    const qParams = {
       search: adminSearch,
       page,
       limit: 20
-    });
+    };
+    if (activeType) qParams.type = activeType;
+    loadQuestions(qParams);
   };
   const toggleUserStatus = u => {
     const newStatus = u.status === 'active' ? 'deactivated' : 'active';
@@ -5441,9 +5583,26 @@ function AdminView({
   }, /*#__PURE__*/React.createElement("h3", null, "Question Bank Database"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      gap: '0.75rem'
+      gap: '0.75rem',
+      flexWrap: 'wrap'
     }
-  }, /*#__PURE__*/React.createElement("input", {
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "form-control",
+    style: {
+      width: '210px'
+    },
+    value: adminTypeFilter,
+    onChange: e => {
+      setAdminTypeFilter(e.target.value);
+      fetchAdminQuestions(1, e.target.value);
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All Question Types (5,036)"), /*#__PURE__*/React.createElement("option", {
+    value: "solving"
+  }, "\uD83E\uDDEE Solving Questions (1,931)"), /*#__PURE__*/React.createElement("option", {
+    value: "element"
+  }, "\uD83D\uDCD8 Element Questions (3,105)")), /*#__PURE__*/React.createElement("input", {
     type: "text",
     className: "form-control",
     placeholder: "Search questions...",
@@ -5463,9 +5622,11 @@ function AdminView({
     className: "table-responsive"
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "ID"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", null, "Question Text"), /*#__PURE__*/React.createElement("th", null, "Correct Ans"), /*#__PURE__*/React.createElement("th", null, "AI Review Status"), /*#__PURE__*/React.createElement("th", null, "Actions"))), /*#__PURE__*/React.createElement("tbody", null, questions.map(q => /*#__PURE__*/React.createElement("tr", {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "ID"), /*#__PURE__*/React.createElement("th", null, "Type"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", null, "Question Text"), /*#__PURE__*/React.createElement("th", null, "Correct Ans"), /*#__PURE__*/React.createElement("th", null, "AI Review Status"), /*#__PURE__*/React.createElement("th", null, "Actions"))), /*#__PURE__*/React.createElement("tbody", null, questions.map(q => /*#__PURE__*/React.createElement("tr", {
     key: q.ID
-  }, /*#__PURE__*/React.createElement("td", null, "#", q.ID), /*#__PURE__*/React.createElement("td", null, q.Module), /*#__PURE__*/React.createElement("td", {
+  }, /*#__PURE__*/React.createElement("td", null, "#", q.ID), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: `badge ${isSolvingQuestion(q) ? 'badge-status' : 'badge-admin'}`
+  }, isSolvingQuestion(q) ? '🧮 Solving' : '📘 Element')), /*#__PURE__*/React.createElement("td", null, q.Module), /*#__PURE__*/React.createElement("td", {
     style: {
       maxWidth: '380px'
     }

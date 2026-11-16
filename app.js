@@ -57,7 +57,9 @@ function getAvailableQuestionCounts({ moduleStr = '', batchStr = '' } = {}) {
   };
 }
 
-// MICROSOFT WORD (.DOC) QUIZ DOCUMENT GENERATOR & DOWNLOADER
+// MICROSOFT WORD (.DOC) QUIZ DOCUMENT GENERATOR & DOWNLOADER (SEPARATE QUESTION & ANSWER KEY FILES)
+const QUIZ_WORD_EXPORT_CACHE = new Map();
+
 function escapeHtmlForWord(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -65,6 +67,17 @@ function escapeHtmlForWord(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function getQuizExportCacheKey(quizConfig = {}) {
+  const idPart = quizConfig.id ? String(quizConfig.id) : 'draft';
+  const modPart = String(quizConfig.module || '');
+  const sPart = String(quizConfig.solvingCount !== undefined ? quizConfig.solvingCount : '');
+  const ePart = String(quizConfig.elementCount !== undefined ? quizConfig.elementCount : '');
+  const qPart = String(quizConfig.questionCount || 50);
+  const modePart = String(quizConfig.selectionMode || 'random');
+  const idsPart = Array.isArray(quizConfig.specificQuestionIds) ? quizConfig.specificQuestionIds.join(',') : '';
+  return [idPart, modPart, sPart, ePart, qPart, modePart, idsPart].join('|');
 }
 
 function resolveQuestionsForQuizExport(quizConfig = {}) {
@@ -80,6 +93,12 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
     const idMap = new Map(all.map(q => [String(q.ID), q]));
     const picked = quizConfig.specificQuestionIds.map(id => idMap.get(String(id))).filter(Boolean);
     if (picked.length > 0) return picked;
+  }
+
+  // Use cached draw so the separate Question Word file and Answer Key Word file always match 100% item-for-item
+  const cacheKey = getQuizExportCacheKey(quizConfig);
+  if (!quizConfig.forceReshuffle && QUIZ_WORD_EXPORT_CACHE.has(cacheKey)) {
+    return QUIZ_WORD_EXPORT_CACHE.get(cacheKey);
   }
 
   let filtered = all;
@@ -99,20 +118,24 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
   const sCount = Math.max(0, parseInt(quizConfig.solvingCount, 10) || 0);
   const eCount = Math.max(0, parseInt(quizConfig.elementCount, 10) || 0);
 
+  let selectedList = [];
   if (hasTypeCounts && (sCount + eCount) > 0) {
     const solvingPool = [...filtered.filter(isSolvingQuestion)].sort(() => 0.5 - Math.random());
     const elementPool = [...filtered.filter(q => !isSolvingQuestion(q))].sort(() => 0.5 - Math.random());
-    return [
+    selectedList = [
       ...solvingPool.slice(0, sCount),
       ...elementPool.slice(0, eCount)
     ];
+  } else {
+    const targetTotal = Math.max(1, parseInt(quizConfig.questionCount, 10) || 50);
+    selectedList = [...filtered].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
   }
 
-  const targetTotal = Math.max(1, parseInt(quizConfig.questionCount, 10) || 50);
-  return [...filtered].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
+  QUIZ_WORD_EXPORT_CACHE.set(cacheKey, selectedList);
+  return selectedList;
 }
 
-function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}) {
+function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
   if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
     window.showToast?.('Access restricted: Only administrators can download quiz Word files.', 'error');
     return;
@@ -142,31 +165,64 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
     else actualElement++;
   });
 
-  const questionsHtml = quizQuestions.map((q, idx) => {
-    const num = idx + 1;
-    const typeTag = isSolvingQuestion(q) ? 'Solving Question' : 'Element Question';
-    return `
-      <div style="margin-bottom: 14pt; page-break-inside: avoid;">
-        <p style="margin: 0 0 5pt 0; font-size: 11pt; line-height: 1.35;">
-          <b>${num}.</b> ${escapeHtmlForWord(q.QuestionText)}
-          <span style="font-size: 8.5pt; color: #475569;"> [${typeTag}]</span>
-        </p>
-        <table style="width: 100%; border-collapse: collapse; margin-left: 14pt; font-size: 10.5pt;">
-          <tr>
-            <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>A.</b> ${escapeHtmlForWord(q.OptionA)}</td>
-            <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>B.</b> ${escapeHtmlForWord(q.OptionB)}</td>
-          </tr>
-          <tr>
-            <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>C.</b> ${escapeHtmlForWord(q.OptionC)}</td>
-            <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>D.</b> ${escapeHtmlForWord(q.OptionD)}</td>
-          </tr>
-        </table>
-      </div>
-    `;
-  }).join('');
+  let bodyInnerHtml = '';
 
-  let answerKeyHtml = '';
-  if (includeAnswerKey) {
+  if (!answerKeyOnly) {
+    // SEPARATE FILE 1: QUESTION WORD FILE ONLY (Questionnaire & Choices A-D, NO Answers)
+    const questionsHtml = quizQuestions.map((q, idx) => {
+      const num = idx + 1;
+      const typeTag = isSolvingQuestion(q) ? 'Solving Question' : 'Element Question';
+      return `
+        <div style="margin-bottom: 14pt; page-break-inside: avoid;">
+          <p style="margin: 0 0 5pt 0; font-size: 11pt; line-height: 1.35;">
+            <b>${num}.</b> ${escapeHtmlForWord(q.QuestionText)}
+            <span style="font-size: 8.5pt; color: #475569;"> [${typeTag}]</span>
+          </p>
+          <table style="width: 100%; border-collapse: collapse; margin-left: 14pt; font-size: 10.5pt;">
+            <tr>
+              <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>A.</b> ${escapeHtmlForWord(q.OptionA)}</td>
+              <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>B.</b> ${escapeHtmlForWord(q.OptionB)}</td>
+            </tr>
+            <tr>
+              <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>C.</b> ${escapeHtmlForWord(q.OptionC)}</td>
+              <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>D.</b> ${escapeHtmlForWord(q.OptionD)}</td>
+            </tr>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    bodyInnerHtml = `
+      <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 10pt;">
+        <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+        <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+        <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+        <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — QUESTIONNAIRE</h1>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
+        <tr>
+          <td style="padding: 3pt 4pt; width: 55%;"><b>Student Name:</b> _____________________________________</td>
+          <td style="padding: 3pt 4pt; width: 45%;"><b>Date:</b> ___________________________</td>
+        </tr>
+        <tr>
+          <td style="padding: 3pt 4pt;"><b>Year &amp; Section:</b> ____________________________________</td>
+          <td style="padding: 3pt 4pt;"><b>Score:</b> _________ / ${quizQuestions.length} (Passing: ${passingScorePct}%)</td>
+        </tr>
+        <tr>
+          <td style="padding: 3pt 4pt;"><b>Module Coverage:</b> ${escapeHtmlForWord(moduleLabel)}</td>
+          <td style="padding: 3pt 4pt;"><b>Time Limit:</b> ${durationMins} Minutes (${actualSolving} Solving | ${actualElement} Element)</td>
+        </tr>
+      </table>
+
+      <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 6pt 8pt; margin-bottom: 14pt; font-size: 9.5pt;">
+        <b>DIRECTIONS:</b> ${escapeHtmlForWord(quizDesc)}
+      </div>
+
+      ${questionsHtml}
+    `;
+  } else {
+    // SEPARATE FILE 2: ANSWER KEY WORD FILE ONLY (Quick Key Grid + Correct Answers & Complete Solutions)
     const quickKeyCells = quizQuestions.map((q, idx) => {
       const ans = escapeHtmlForWord(q.CorrectAnswer || 'A');
       return `<td style="border: 1px solid #cbd5e1; padding: 4pt 6pt; text-align: center; font-size: 9.5pt;"><b>${idx + 1}.</b> ${ans}</td>`;
@@ -180,12 +236,15 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
       const num = idx + 1;
       const ansLetter = q.CorrectAnswer || 'A';
       const ansText = q['Option' + ansLetter] || '';
+      const typeTag = isSolvingQuestion(q) ? 'Solving Question' : 'Element Question';
       const rawSol = (q.CompleteSolution || q.Explanation || 'Verified board key.').replace(/\n/g, '<br/>');
       return `
         <div style="margin-bottom: 12pt; padding-bottom: 8pt; border-bottom: 1px dashed #cbd5e1; page-break-inside: avoid;">
           <p style="margin: 0 0 3pt 0; font-size: 10.5pt;">
-            <b>Item #${num} (Bank ID #${escapeHtmlForWord(q.ID)}):</b>
-            <span style="color: #047857; font-weight: bold;"> Correct Answer: ${escapeHtmlForWord(ansLetter)} (${escapeHtmlForWord(ansText)})</span>
+            <b>${num}. [Bank ID #${escapeHtmlForWord(q.ID)} — ${typeTag}]</b> ${escapeHtmlForWord(q.QuestionText)}
+          </p>
+          <p style="margin: 0 0 4pt 10pt; font-size: 10pt; color: #047857; font-weight: bold;">
+            ✓ Correct Answer: ${escapeHtmlForWord(ansLetter)}. ${escapeHtmlForWord(ansText)}
           </p>
           <div style="font-size: 9.5pt; color: #1e293b; line-height: 1.4; margin-left: 10pt;">
             ${rawSol}
@@ -195,17 +254,23 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
       `;
     }).join('');
 
-    answerKeyHtml = `
-      <br clear="all" style="page-break-before: always;" />
+    bodyInnerHtml = `
       <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 12pt;">
-        <h2 style="margin: 0; font-size: 14pt; text-transform: uppercase;">Official Answer Key &amp; Complete Solutions</h2>
-        <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #334155;">${escapeHtmlForWord(quizTitle)} (${quizQuestions.length} Items)</p>
+        <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+        <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+        <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+        <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — OFFICIAL ANSWER KEY</h1>
+        <p style="margin: 3pt 0 0 0; font-size: 9.5pt; color: #334155;">
+          Total Items: ${quizQuestions.length} (${actualSolving} Solving Questions | ${actualElement} Element Questions) | Module: ${escapeHtmlForWord(moduleLabel)}
+        </p>
       </div>
-      <h3 style="font-size: 11pt; margin: 0 0 6pt 0;">Quick Answer Key Grid</h3>
+
+      <h3 style="font-size: 11pt; margin: 0 0 6pt 0;">I. Quick Answer Key Summary Grid</h3>
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16pt;">
         ${quickKeyRows.join('')}
       </table>
-      <h3 style="font-size: 11pt; margin: 0 0 8pt 0;">Step-by-Step Engineering Solutions &amp; Concept Explanations</h3>
+
+      <h3 style="font-size: 11pt; margin: 0 0 8pt 0;">II. Item-by-Item Answer Key &amp; Complete Step-by-Step Solutions</h3>
       ${detailedSolutions}
     `;
   }
@@ -216,7 +281,7 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtmlForWord(quizTitle)}</title>
+  <title>${escapeHtmlForWord(quizTitle)} - ${answerKeyOnly ? 'Answer Key' : 'Questions'}</title>
   <!--[if gte mso 9]>
   <xml>
     <w:WordDocument>
@@ -243,41 +308,14 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
 </head>
 <body>
   <div class="WordSection1">
-    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 10pt;">
-      <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
-      <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
-      <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
-      <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)}</h1>
-    </div>
-
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
-      <tr>
-        <td style="padding: 3pt 4pt; width: 55%;"><b>Student Name:</b> _____________________________________</td>
-        <td style="padding: 3pt 4pt; width: 45%;"><b>Date:</b> ___________________________</td>
-      </tr>
-      <tr>
-        <td style="padding: 3pt 4pt;"><b>Year &amp; Section:</b> ____________________________________</td>
-        <td style="padding: 3pt 4pt;"><b>Score:</b> _________ / ${quizQuestions.length} (Passing: ${passingScorePct}%)</td>
-      </tr>
-      <tr>
-        <td style="padding: 3pt 4pt;"><b>Module Coverage:</b> ${escapeHtmlForWord(moduleLabel)}</td>
-        <td style="padding: 3pt 4pt;"><b>Time Limit:</b> ${durationMins} Minutes (${actualSolving} Solving | ${actualElement} Element)</td>
-      </tr>
-    </table>
-
-    <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 6pt 8pt; margin-bottom: 14pt; font-size: 9.5pt;">
-      <b>DIRECTIONS:</b> ${escapeHtmlForWord(quizDesc)}
-    </div>
-
-    ${questionsHtml}
-    ${answerKeyHtml}
+    ${bodyInnerHtml}
   </div>
 </body>
 </html>`;
 
   const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
   const safeBaseName = quizTitle.replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Board_Quiz';
-  const suffix = includeAnswerKey ? '_With_Answer_Key' : '_Questionnaire';
+  const suffix = answerKeyOnly ? '_Answer_Key' : '_Questions';
   const fileName = `${safeBaseName}${suffix}.doc`;
 
   const url = URL.createObjectURL(blob);
@@ -290,9 +328,9 @@ function exportQuizToWordFile(quizConfig = {}, { includeAnswerKey = false } = {}
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 
   window.showToast?.(
-    includeAnswerKey
-      ? `Downloaded "${fileName}" (${quizQuestions.length} Qs with Answer Key & Solutions)!`
-      : `Downloaded "${fileName}" (${quizQuestions.length} Qs Word Questionnaire)!`,
+    answerKeyOnly
+      ? `Downloaded Answer Key Word file: "${fileName}" (${quizQuestions.length} Items)!`
+      : `Downloaded Question Word file: "${fileName}" (${quizQuestions.length} Items)!`,
     'success'
   );
 }
@@ -2704,19 +2742,19 @@ function QuizListModal({
                             type="button"
                             className="btn-secondary"
                             style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
-                            onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: false })}
+                            onClick={() => exportQuizToWordFile(qz, { answerKeyOnly: false })}
                             title="Admin Only: Download this quiz as a Microsoft Word (.doc) examination paper"
                           >
-                            📄 Word (.doc)
+                            📄 Questions (.doc)
                           </button>
                           <button
                             type="button"
                             className="btn-secondary"
                             style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(16, 185, 129, 0.45)', color: '#34d399' }}
-                            onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: true })}
+                            onClick={() => exportQuizToWordFile(qz, { answerKeyOnly: true })}
                             title="Admin Only: Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
                           >
-                            🔑 Word + Key
+                            🔑 Answer Key (.doc)
                           </button>
                           <button className="btn-secondary" style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }} onClick={() => openQuizResultsModal(qz.id)}>
                             📊 Results
@@ -4478,19 +4516,19 @@ function AdminView({
                           type="button"
                           className="btn-secondary"
                           style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'rgba(56, 189, 248, 0.45)', color: '#38bdf8' }}
-                          onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: false })}
+                          onClick={() => exportQuizToWordFile(qz, { answerKeyOnly: false })}
                           title="Download Quiz Questionnaire as Microsoft Word (.doc)"
                         >
-                          📄 Word (.doc)
+                          📄 Questions (.doc)
                         </button>
                         <button
                           type="button"
                           className="btn-secondary"
                           style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'rgba(16, 185, 129, 0.45)', color: '#34d399' }}
-                          onClick={() => exportQuizToWordFile(qz, { includeAnswerKey: true })}
+                          onClick={() => exportQuizToWordFile(qz, { answerKeyOnly: true })}
                           title="Download Quiz with Answer Key & Solutions as Microsoft Word (.doc)"
                         >
-                          🔑 Word + Key
+                          🔑 Answer Key (.doc)
                         </button>
                         <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={() => openQuizResultsModal(qz.id)}>
                           📊 Results
@@ -5335,9 +5373,9 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                     passingScorePct,
                     selectionMode,
                     specificQuestionIds: selectionMode === 'manual' ? specificQuestionIds : []
-                  }, { includeAnswerKey: false })}
+                  }, { answerKeyOnly: false })}
                 >
-                  📥 Download Word Questionnaire (.doc)
+                  📄 Download Question Word File (.doc)
                 </button>
                 <button
                   type="button"
@@ -5354,9 +5392,9 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                     passingScorePct,
                     selectionMode,
                     specificQuestionIds: selectionMode === 'manual' ? specificQuestionIds : []
-                  }, { includeAnswerKey: true })}
+                  }, { answerKeyOnly: true })}
                 >
-                  🔑 Download Word + Answer Key (.doc)
+                  🔑 Download Answer Key Word File (.doc)
                 </button>
               </div>
             </div>

@@ -70,6 +70,207 @@ function getAvailableQuestionCounts({
   };
 }
 
+// MICROSOFT WORD (.DOC) QUIZ DOCUMENT GENERATOR & DOWNLOADER
+function escapeHtmlForWord(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function resolveQuestionsForQuizExport(quizConfig = {}) {
+  const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
+  if (Array.isArray(quizConfig.questionsList) && quizConfig.questionsList.length > 0) {
+    return quizConfig.questionsList;
+  }
+  if (Array.isArray(quizConfig.specificQuestionIds) && quizConfig.specificQuestionIds.length > 0) {
+    const idMap = new Map(all.map(q => [String(q.ID), q]));
+    const picked = quizConfig.specificQuestionIds.map(id => idMap.get(String(id))).filter(Boolean);
+    if (picked.length > 0) return picked;
+  }
+  let filtered = all;
+  const modStr = quizConfig.module || '';
+  if (modStr && String(modStr).trim() !== '') {
+    const targetModules = String(modStr).split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
+    if (targetModules.length > 0) {
+      filtered = filtered.filter(q => {
+        if (!q.Module) return false;
+        const qMod = q.Module.toLowerCase();
+        return targetModules.some(tm => qMod.includes(tm) || tm.includes(qMod));
+      });
+    }
+  }
+  const hasTypeCounts = quizConfig.solvingCount !== undefined || quizConfig.elementCount !== undefined;
+  const sCount = Math.max(0, parseInt(quizConfig.solvingCount, 10) || 0);
+  const eCount = Math.max(0, parseInt(quizConfig.elementCount, 10) || 0);
+  if (hasTypeCounts && sCount + eCount > 0) {
+    const solvingPool = [...filtered.filter(isSolvingQuestion)].sort(() => 0.5 - Math.random());
+    const elementPool = [...filtered.filter(q => !isSolvingQuestion(q))].sort(() => 0.5 - Math.random());
+    return [...solvingPool.slice(0, sCount), ...elementPool.slice(0, eCount)];
+  }
+  const targetTotal = Math.max(1, parseInt(quizConfig.questionCount, 10) || 50);
+  return [...filtered].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
+}
+function exportQuizToWordFile(quizConfig = {}, {
+  includeAnswerKey = false
+} = {}) {
+  const quizQuestions = resolveQuestionsForQuizExport(quizConfig);
+  if (!quizQuestions || quizQuestions.length === 0) {
+    window.showToast?.('No questions available to export for this quiz configuration.', 'warning');
+    return;
+  }
+  const quizTitle = quizConfig.title && String(quizConfig.title).trim() ? String(quizConfig.title).trim() : 'ME Licensure Board Evaluation Quiz';
+  const quizDesc = quizConfig.description && String(quizConfig.description).trim() ? String(quizConfig.description).trim() : 'Read each item carefully and select the letter corresponding to the best answer.';
+  const moduleLabel = quizConfig.module && String(quizConfig.module).trim() ? String(quizConfig.module).trim() : 'All Curriculum Modules (Comprehensive)';
+  const durationMins = parseInt(quizConfig.durationMins, 10) || 50;
+  const passingScorePct = parseInt(quizConfig.passingScorePct, 10) || 70;
+  let actualSolving = 0;
+  let actualElement = 0;
+  quizQuestions.forEach(q => {
+    if (isSolvingQuestion(q)) actualSolving++;else actualElement++;
+  });
+  const questionsHtml = quizQuestions.map((q, idx) => {
+    const num = idx + 1;
+    const typeTag = isSolvingQuestion(q) ? 'Solving Question' : 'Element Question';
+    return `
+      <div style="margin-bottom: 14pt; page-break-inside: avoid;">
+        <p style="margin: 0 0 5pt 0; font-size: 11pt; line-height: 1.35;">
+          <b>${num}.</b> ${escapeHtmlForWord(q.QuestionText)}
+          <span style="font-size: 8.5pt; color: #475569;"> [${typeTag}]</span>
+        </p>
+        <table style="width: 100%; border-collapse: collapse; margin-left: 14pt; font-size: 10.5pt;">
+          <tr>
+            <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>A.</b> ${escapeHtmlForWord(q.OptionA)}</td>
+            <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>B.</b> ${escapeHtmlForWord(q.OptionB)}</td>
+          </tr>
+          <tr>
+            <td style="width: 50%; padding: 2pt 8pt 2pt 0; vertical-align: top;"><b>C.</b> ${escapeHtmlForWord(q.OptionC)}</td>
+            <td style="width: 50%; padding: 2pt 0 2pt 8pt; vertical-align: top;"><b>D.</b> ${escapeHtmlForWord(q.OptionD)}</td>
+          </tr>
+        </table>
+      </div>
+    `;
+  }).join('');
+  let answerKeyHtml = '';
+  if (includeAnswerKey) {
+    const quickKeyCells = quizQuestions.map((q, idx) => {
+      const ans = escapeHtmlForWord(q.CorrectAnswer || 'A');
+      return `<td style="border: 1px solid #cbd5e1; padding: 4pt 6pt; text-align: center; font-size: 9.5pt;"><b>${idx + 1}.</b> ${ans}</td>`;
+    });
+    const quickKeyRows = [];
+    for (let i = 0; i < quickKeyCells.length; i += 5) {
+      quickKeyRows.push(`<tr>${quickKeyCells.slice(i, i + 5).join('')}</tr>`);
+    }
+    const detailedSolutions = quizQuestions.map((q, idx) => {
+      const num = idx + 1;
+      const ansLetter = q.CorrectAnswer || 'A';
+      const ansText = q['Option' + ansLetter] || '';
+      const rawSol = (q.CompleteSolution || q.Explanation || 'Verified board key.').replace(/\n/g, '<br/>');
+      return `
+        <div style="margin-bottom: 12pt; padding-bottom: 8pt; border-bottom: 1px dashed #cbd5e1; page-break-inside: avoid;">
+          <p style="margin: 0 0 3pt 0; font-size: 10.5pt;">
+            <b>Item #${num} (Bank ID #${escapeHtmlForWord(q.ID)}):</b>
+            <span style="color: #047857; font-weight: bold;"> Correct Answer: ${escapeHtmlForWord(ansLetter)} (${escapeHtmlForWord(ansText)})</span>
+          </p>
+          <div style="font-size: 9.5pt; color: #1e293b; line-height: 1.4; margin-left: 10pt;">
+            ${rawSol}
+          </div>
+          ${q.References ? `<p style="margin: 3pt 0 0 10pt; font-size: 8.5pt; color: #475569;"><i>Reference: ${escapeHtmlForWord(q.References)}</i></p>` : ''}
+        </div>
+      `;
+    }).join('');
+    answerKeyHtml = `
+      <br clear="all" style="page-break-before: always;" />
+      <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 12pt;">
+        <h2 style="margin: 0; font-size: 14pt; text-transform: uppercase;">Official Answer Key &amp; Complete Solutions</h2>
+        <p style="margin: 3pt 0 0 0; font-size: 10pt; color: #334155;">${escapeHtmlForWord(quizTitle)} (${quizQuestions.length} Items)</p>
+      </div>
+      <h3 style="font-size: 11pt; margin: 0 0 6pt 0;">Quick Answer Key Grid</h3>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 16pt;">
+        ${quickKeyRows.join('')}
+      </table>
+      <h3 style="font-size: 11pt; margin: 0 0 8pt 0;">Step-by-Step Engineering Solutions &amp; Concept Explanations</h3>
+      ${detailedSolutions}
+    `;
+  }
+  const wordDocHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtmlForWord(quizTitle)}</title>
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
+  <style>
+    @page WordSection1 {
+      size: 8.5in 11.0in;
+      margin: 0.85in 0.85in 0.85in 0.85in;
+    }
+    div.WordSection1 {
+      page: WordSection1;
+    }
+    body {
+      font-family: 'Calibri', 'Times New Roman', Arial, sans-serif;
+      color: #0f172a;
+      font-size: 11pt;
+    }
+  </style>
+</head>
+<body>
+  <div class="WordSection1">
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 10pt;">
+      <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+      <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+      <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+      <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)}</h1>
+    </div>
+
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
+      <tr>
+        <td style="padding: 3pt 4pt; width: 55%;"><b>Student Name:</b> _____________________________________</td>
+        <td style="padding: 3pt 4pt; width: 45%;"><b>Date:</b> ___________________________</td>
+      </tr>
+      <tr>
+        <td style="padding: 3pt 4pt;"><b>Year &amp; Section:</b> ____________________________________</td>
+        <td style="padding: 3pt 4pt;"><b>Score:</b> _________ / ${quizQuestions.length} (Passing: ${passingScorePct}%)</td>
+      </tr>
+      <tr>
+        <td style="padding: 3pt 4pt;"><b>Module Coverage:</b> ${escapeHtmlForWord(moduleLabel)}</td>
+        <td style="padding: 3pt 4pt;"><b>Time Limit:</b> ${durationMins} Minutes (${actualSolving} Solving | ${actualElement} Element)</td>
+      </tr>
+    </table>
+
+    <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 6pt 8pt; margin-bottom: 14pt; font-size: 9.5pt;">
+      <b>DIRECTIONS:</b> ${escapeHtmlForWord(quizDesc)}
+    </div>
+
+    ${questionsHtml}
+    ${answerKeyHtml}
+  </div>
+</body>
+</html>`;
+  const blob = new Blob(['\ufeff', wordDocHtml], {
+    type: 'application/msword;charset=utf-8'
+  });
+  const safeBaseName = quizTitle.replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Board_Quiz';
+  const suffix = includeAnswerKey ? '_With_Answer_Key' : '_Questionnaire';
+  const fileName = `${safeBaseName}${suffix}.doc`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  window.showToast?.(includeAnswerKey ? `Downloaded "${fileName}" (${quizQuestions.length} Qs with Answer Key & Solutions)!` : `Downloaded "${fileName}" (${quizQuestions.length} Qs Word Questionnaire)!`, 'success');
+}
+
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
 function getAttemptScore(att) {
   if (!att) return 0;
@@ -3170,7 +3371,33 @@ function QuizListModal({
         gap: '0.5rem',
         alignItems: 'center'
       }
-    }, isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.35rem 0.75rem',
+        fontSize: '0.8rem',
+        borderColor: 'rgba(56, 189, 248, 0.45)',
+        color: '#38bdf8'
+      },
+      onClick: () => exportQuizToWordFile(qz, {
+        includeAnswerKey: false
+      }),
+      title: "Download this quiz as a Microsoft Word (.doc) examination paper"
+    }, "\uD83D\uDCC4 Word (.doc)"), isAdmin && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.35rem 0.75rem',
+        fontSize: '0.8rem',
+        borderColor: 'rgba(16, 185, 129, 0.45)',
+        color: '#34d399'
+      },
+      onClick: () => exportQuizToWordFile(qz, {
+        includeAnswerKey: true
+      }),
+      title: "Download Microsoft Word (.doc) file with Answer Key and Step-by-Step Solutions"
+    }, "\uD83D\uDD11 Word + Key"), /*#__PURE__*/React.createElement("button", {
       className: "btn-secondary",
       style: {
         padding: '0.35rem 0.75rem',
@@ -5465,6 +5692,32 @@ function AdminView({
       flexWrap: 'wrap'
     }
   }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.3rem 0.6rem',
+      fontSize: '0.8rem',
+      borderColor: 'rgba(56, 189, 248, 0.45)',
+      color: '#38bdf8'
+    },
+    onClick: () => exportQuizToWordFile(qz, {
+      includeAnswerKey: false
+    }),
+    title: "Download Quiz Questionnaire as Microsoft Word (.doc)"
+  }, "\uD83D\uDCC4 Word (.doc)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.3rem 0.6rem',
+      fontSize: '0.8rem',
+      borderColor: 'rgba(16, 185, 129, 0.45)',
+      color: '#34d399'
+    },
+    onClick: () => exportQuizToWordFile(qz, {
+      includeAnswerKey: true
+    }),
+    title: "Download Quiz with Answer Key & Solutions as Microsoft Word (.doc)"
+  }, "\uD83D\uDD11 Word + Key"), /*#__PURE__*/React.createElement("button", {
     className: "btn-secondary",
     style: {
       padding: '0.3rem 0.6rem',
@@ -6521,10 +6774,96 @@ function QuizEditorModal({
   }, "Published (Visible to Students)"), /*#__PURE__*/React.createElement("option", {
     value: "draft"
   }, "Draft (Admin Only)")))), /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      marginTop: '1rem',
+      padding: '0.9rem 1rem',
+      background: 'rgba(56, 189, 248, 0.07)',
+      border: '1px solid rgba(56, 189, 248, 0.35)',
+      borderRadius: 'var(--radius-md)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '0.65rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.9rem',
+      color: 'var(--text-main)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83D\uDCC4"), " Move / Export Creating Quiz to Microsoft Word File (.doc)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.77rem',
+      color: 'var(--text-muted)',
+      marginTop: '0.15rem'
+    }
+  }, "Generate a formatted printable Word document from your current quiz setup (", selectionMode === 'manual' ? `${pickedBreakdown.total} picked questions` : `${solvingCount} Solving + ${elementCount} Element questions`, ").")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.5rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.45rem 0.85rem',
+      fontSize: '0.8rem',
+      borderColor: 'var(--primary-light)',
+      color: '#38bdf8',
+      fontWeight: '600'
+    },
+    onClick: () => exportQuizToWordFile({
+      title: title || 'ME Board Evaluation Quiz',
+      description,
+      module: combinedModuleStr,
+      questionCount: selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions,
+      solvingCount: selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount,
+      elementCount: selectionMode === 'manual' ? pickedBreakdown.element : elementCount,
+      durationMins,
+      passingScorePct,
+      selectionMode,
+      specificQuestionIds: selectionMode === 'manual' ? specificQuestionIds : []
+    }, {
+      includeAnswerKey: false
+    })
+  }, "\uD83D\uDCE5 Download Word Questionnaire (.doc)"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.45rem 0.85rem',
+      fontSize: '0.8rem',
+      borderColor: 'rgba(16, 185, 129, 0.5)',
+      color: '#34d399',
+      fontWeight: '600'
+    },
+    onClick: () => exportQuizToWordFile({
+      title: title || 'ME Board Evaluation Quiz',
+      description,
+      module: combinedModuleStr,
+      questionCount: selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions,
+      solvingCount: selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount,
+      elementCount: selectionMode === 'manual' ? pickedBreakdown.element : elementCount,
+      durationMins,
+      passingScorePct,
+      selectionMode,
+      specificQuestionIds: selectionMode === 'manual' ? specificQuestionIds : []
+    }, {
+      includeAnswerKey: true
+    })
+  }, "\uD83D\uDD11 Download Word + Answer Key (.doc)")))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.75rem',
-      marginTop: '1.5rem'
+      marginTop: '1.25rem'
     }
   }, /*#__PURE__*/React.createElement("button", {
     type: "button",

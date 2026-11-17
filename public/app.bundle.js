@@ -35,9 +35,103 @@ function isSolvingQuestion(q) {
   const t = String(q.Type || '').toLowerCase();
   return t === 'problems' || t === 'problem' || t === 'solving' || t.includes('solving') || t.includes('problem');
 }
+function getCanonicalTopic(q) {
+  if (!q) return 'General';
+  const mod = String(q.Module || '');
+  const cmap = String(q.CurriculumMapID || '').toLowerCase();
+  const top = String(q.Topic || '').toLowerCase();
+  if (mod.includes('Module 1')) {
+    if (cmap.includes('ppe-01-fuels') || top.includes('fuel') || top.includes('combustion')) return 'Fuels and Combustion';
+    if (cmap.includes('ppe-02-variable') || top.includes('variable load')) return 'Variable Load Problems';
+    if (cmap.includes('ppe-04') || top.includes('internal combustion') || top.includes('nternal combustion')) return 'Internal Combustion Engines';
+    if (cmap.includes('ppe-05') || top.includes('heat transfer')) return 'Heat Transfer & Equipment';
+    if (top.includes('fluid') || top.includes('nozzle') || top.includes('propeller') || top.includes('machinery') || top.includes('units') || top.includes('electrical') || top.includes('physics')) return 'Fluid Mechanics, Machinery & Units';
+    return 'Engineering Thermodynamics';
+  }
+  if (mod.includes('Module 2')) {
+    if (cmap.includes('ppe-09') || top.includes('steam power')) return 'Steam Power Plant';
+    if (cmap.includes('ppe-06') || top.includes('diesel') || top.includes('internal combustion')) return 'Internal Combustion & Diesel Power Plant';
+    if (cmap.includes('ppe-07') || top.includes('gas turbine')) return 'Gas Turbine Power Plant';
+    if (cmap.includes('ppe-10') || top.includes('hydro')) return 'Hydro-Electric Power Plant';
+    if (cmap.includes('ppe-11') || top.includes('geothermal')) return 'Geothermal Power Plant';
+    if (cmap.includes('ppe-12') || top.includes('nuclear')) return 'Nuclear Power Plant';
+    if (cmap.includes('ppe-13') || top.includes('non-conventional')) return 'Non-Conventional Sources of Energy';
+    if (cmap.includes('ppe-08') || top.includes('combined cycle')) return 'Combined Cycle Power Plant';
+    if (top.includes('chimney') || top.includes('smokestack') || top.includes('draft')) return 'Chimney, Smokestack & Draft System';
+    if (top.includes('variable load')) return 'Variable Load Problems';
+    if (cmap.includes('ppe-14') || cmap.includes('ppe-15') || top.includes('piping') || top.includes('instrumentation')) return 'Piping System, Instrumentation & Control';
+    return 'Power Plant Design & General';
+  }
+  if (mod.includes('Module 3')) {
+    if (top.includes('pump')) return 'Pumps';
+    if (top.includes('compressor')) return 'Gas Compressors';
+    if (top.includes('fan') || top.includes('blower')) return 'Fans and Blowers';
+    if (cmap.includes('ppe-21') || top.includes('environmental') || top.includes('pollution')) return 'Environmental Engineering & Pollution Control';
+    if (cmap.includes('ppe-17') || top.includes('safety')) return 'Industrial Safety & Accident Prevention';
+    if (cmap.includes('ppe-20') || top.includes('lubrication') || top.includes('piping') || top.includes('process')) return 'Industrial Lubrication, Piping & Processes';
+    return 'Fluid Machineries Principles & Operation';
+  }
+  if (mod.includes('Module 4')) {
+    if (cmap.includes('ppe-24') || top.includes('pump')) return 'Pumps';
+    if (cmap.includes('ppe-26') || top.includes('compressor')) return 'Gas Compressors';
+    if (cmap.includes('ppe-31') || top.includes('foundation')) return 'Machinery Foundation';
+    if (cmap.includes('ppe-27') || top.includes('chimney') || top.includes('draft')) return 'Chimney, Smokestack & Draft System';
+    if (cmap.includes('ppe-30') || cmap.includes('ppe-15') || top.includes('instrumentation')) return 'Industrial Instrumentation & Control';
+    if (cmap.includes('ppe-32') || top.includes('machinery performance') || top.includes('d.c')) return 'A.C. and D.C. Machinery Performance';
+    if (cmap.includes('ppe-25') || top.includes('cooling tower')) return 'Cooling Towers & Water Cooling Equipment';
+    if (cmap.includes('ppe-28') || top.includes('heat transfer')) return 'Heat Transfer Equipment';
+    if (cmap.includes('ppe-22') || cmap.includes('ppe-23') || top.includes('dryer') || top.includes('fan')) return 'Dryers, Fans & Blowers';
+    return 'Industrial Processes & Plant Design';
+  }
+  if (mod.includes('Module 5')) {
+    if (cmap.includes('ppe-34') || top.includes('principles of')) return 'Principles of Different Refrigeration Systems';
+    if (cmap.includes('ppe-36') || top.includes('ice plant') || top.includes('cold storage')) return 'Basic Design of Ice Plants & Cold Storage';
+    if (cmap.includes('ppe-35') || top.includes('cooling load')) return 'Determination of Cooling Loads';
+    if (top.includes('compressor') || top.includes('piping') || top.includes('instrumentation') || top.includes('safety')) return 'Refrigeration Compressors, Piping & Controls';
+    return 'Design, Selection & Specification of Refrigeration Plants';
+  }
+  if (mod.includes('Module 6')) {
+    if (cmap.includes('ppe-39') || cmap.includes('ppe-38') || top.includes('psychrometr')) return 'Psychrometric Properties of Air';
+    if (cmap.includes('ppe-44') || top.includes('cooling load')) return 'Cooling Load Calculations & Determination';
+    if (cmap.includes('ppe-42') || top.includes('air distribution') || top.includes('duct')) return 'Air Distribution & Duct Design';
+    if (cmap.includes('ppe-43') || top.includes('drying') || top.includes('dryer') || top.includes('ventilation')) return 'Drying, Heating, Ventilation & Dryers';
+    if (cmap.includes('ppe-40') || top.includes('various air')) return 'Various Air Conditioning Processes';
+    if (cmap.includes('ppe-41') || top.includes('human comfort')) return 'Factors Affecting Human Comfort';
+    if (top.includes('cooling tower')) return 'Cooling Towers & Water Cooling Equipment';
+    return 'Selection & Specification of Air-Conditioning Plants';
+  }
+  if (top.includes('refrigeration') || top.includes('psychrometr')) return 'Refrigeration & Instrumentation Controls';
+  if (top.includes('chemistry') || top.includes('physics') || top.includes('science') || top.includes('units')) return 'General Engineering, Physics & Chemistry';
+  return 'Power Plant & Thermodynamics General';
+}
+function getTopicsForModule(moduleValue = '') {
+  const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
+  const modLower = String(moduleValue || '').toLowerCase().trim();
+  const filtered = modLower ? all.filter(q => {
+    const qMod = String(q.Module || 'Unclassified').toLowerCase();
+    return qMod.includes(modLower) || modLower.includes(qMod);
+  }) : all;
+  const map = new Map();
+  filtered.forEach(q => {
+    const tName = getCanonicalTopic(q);
+    if (!map.has(tName)) {
+      map.set(tName, {
+        name: tName,
+        total: 0,
+        solving: 0,
+        element: 0
+      });
+    }
+    const entry = map.get(tName);
+    entry.total++;
+    if (isSolvingQuestion(q)) entry.solving++;else entry.element++;
+  });
+  return Array.from(map.values()).sort((a, b) => b.total - a.total);
+}
 function getAvailableQuestionCounts({
   moduleStr = '',
-  batchStr = ''
+  batchStr = '',
+  topicsStr = ''
 } = {}) {
   const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
   let filtered = all;
@@ -45,14 +139,24 @@ function getAvailableQuestionCounts({
     const targetModules = String(moduleStr).split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
     if (targetModules.length > 0) {
       filtered = filtered.filter(q => {
-        if (!q.Module) return false;
-        const qMod = q.Module.toLowerCase();
+        const qMod = String(q.Module || 'Unclassified').toLowerCase();
         return targetModules.some(tm => qMod.includes(tm) || tm.includes(qMod));
       });
     }
   }
   if (batchStr && String(batchStr).trim() !== '') {
     filtered = filtered.filter(q => String(q.BatchNumber) === String(batchStr));
+  }
+  if (topicsStr && String(topicsStr).trim() !== '') {
+    const targetTopics = String(topicsStr).split('||').map(t => t.toLowerCase().trim()).filter(Boolean);
+    if (targetTopics.length > 0) {
+      filtered = filtered.filter(q => {
+        const canon = getCanonicalTopic(q).toLowerCase();
+        const rawT = String(q.Topic || '').toLowerCase();
+        const rawS = String(q.Subtopic || '').toLowerCase();
+        return targetTopics.some(tt => canon === tt || canon.includes(tt) || rawT === tt || rawS === tt);
+      });
+    }
   }
   let solvingAvailable = 0;
   let elementAvailable = 0;
@@ -79,12 +183,13 @@ function escapeHtmlForWord(str) {
 function getQuizExportCacheKey(quizConfig = {}) {
   const idPart = quizConfig.id ? String(quizConfig.id) : 'draft';
   const modPart = String(quizConfig.module || '');
+  const topPart = String(quizConfig.topics || '');
   const sPart = String(quizConfig.solvingCount !== undefined ? quizConfig.solvingCount : '');
   const ePart = String(quizConfig.elementCount !== undefined ? quizConfig.elementCount : '');
   const qPart = String(quizConfig.questionCount || 50);
   const modePart = String(quizConfig.selectionMode || 'random');
   const idsPart = Array.isArray(quizConfig.specificQuestionIds) ? quizConfig.specificQuestionIds.join(',') : '';
-  return [idPart, modPart, sPart, ePart, qPart, modePart, idsPart].join('|');
+  return [idPart, modPart, topPart, sPart, ePart, qPart, modePart, idsPart].join('|');
 }
 function resolveQuestionsForQuizExport(quizConfig = {}) {
   const all = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '') : [];
@@ -108,9 +213,20 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
     const targetModules = String(modStr).split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
     if (targetModules.length > 0) {
       filtered = filtered.filter(q => {
-        if (!q.Module) return false;
-        const qMod = q.Module.toLowerCase();
+        const qMod = String(q.Module || 'Unclassified').toLowerCase();
         return targetModules.some(tm => qMod.includes(tm) || tm.includes(qMod));
+      });
+    }
+  }
+  const topStr = quizConfig.topics || '';
+  if (topStr && String(topStr).trim() !== '') {
+    const targetTopics = String(topStr).split('||').map(t => t.toLowerCase().trim()).filter(Boolean);
+    if (targetTopics.length > 0) {
+      filtered = filtered.filter(q => {
+        const canon = getCanonicalTopic(q).toLowerCase();
+        const rawT = String(q.Topic || '').toLowerCase();
+        const rawS = String(q.Subtopic || '').toLowerCase();
+        return targetTopics.some(tt => canon === tt || canon.includes(tt) || rawT === tt || rawS === tt);
       });
     }
   }
@@ -857,6 +973,7 @@ function App() {
   };
   const startPracticeMode = ({
     moduleVal,
+    topicsVal,
     batchVal,
     solvingCount,
     elementCount,
@@ -880,6 +997,7 @@ function App() {
       random: 'true'
     };
     if (moduleVal) queryObj.module = moduleVal;
+    if (topicsVal) queryObj.topics = topicsVal;
     if (batchVal) queryObj.batch = batchVal;
     if (hasTypeBreakdown && sCount + eCount > 0) {
       queryObj.solvingCount = sCount;
@@ -920,6 +1038,7 @@ function App() {
         random: 'true'
       };
       if (quiz.module) queryObj.module = quiz.module;
+      if (quiz.topics) queryObj.topics = quiz.topics;
       if (hasTypeCounts && sCount + eCount > 0) {
         queryObj.solvingCount = sCount;
         queryObj.elementCount = eCount;
@@ -2853,26 +2972,25 @@ function PracticeConfigModal({
   onStart
 }) {
   const [selectedModule, setSelectedModule] = useState('');
+  const [selectedTopics, setSelectedTopics] = useState([]);
   const [selectedBatch, setSelectedBatch] = useState('');
   const [solvingCount, setSolvingCount] = useState(25);
   const [elementCount, setElementCount] = useState(25);
+  const moduleTopicsList = React.useMemo(() => {
+    if (!selectedModule) return [];
+    return getTopicsForModule(selectedModule);
+  }, [selectedModule]);
+  const topicsStr = selectedTopics.join('||');
   const {
     solvingAvailable,
     elementAvailable,
     totalAvailable
   } = getAvailableQuestionCounts({
     moduleStr: selectedModule,
-    batchStr: selectedBatch
+    batchStr: selectedBatch,
+    topicsStr
   });
-
-  // Automatically clamp or balance counts when module or batch changes
-  const applyPoolSelection = (nextModule, nextBatch) => {
-    setSelectedModule(nextModule);
-    setSelectedBatch(nextBatch);
-    const counts = getAvailableQuestionCounts({
-      moduleStr: nextModule,
-      batchStr: nextBatch
-    });
+  const rebalanceCounts = counts => {
     let nextSolving = Math.min(solvingCount, counts.solvingAvailable);
     let nextElement = Math.min(elementCount, counts.elementAvailable);
     if (nextSolving + nextElement === 0) {
@@ -2887,6 +3005,48 @@ function PracticeConfigModal({
     }
     setSolvingCount(nextSolving);
     setElementCount(nextElement);
+  };
+
+  // Automatically clamp or balance counts when module or batch changes
+  const applyPoolSelection = (nextModule, nextBatch) => {
+    setSelectedModule(nextModule);
+    setSelectedTopics([]);
+    setSelectedBatch(nextBatch);
+    const counts = getAvailableQuestionCounts({
+      moduleStr: nextModule,
+      batchStr: nextBatch,
+      topicsStr: ''
+    });
+    rebalanceCounts(counts);
+  };
+  const togglePracticeTopic = topicName => {
+    const nextTopics = selectedTopics.includes(topicName) ? selectedTopics.filter(t => t !== topicName) : [...selectedTopics, topicName];
+    setSelectedTopics(nextTopics);
+    const counts = getAvailableQuestionCounts({
+      moduleStr: selectedModule,
+      batchStr: selectedBatch,
+      topicsStr: nextTopics.join('||')
+    });
+    rebalanceCounts(counts);
+  };
+  const selectAllPracticeTopics = () => {
+    const allNames = moduleTopicsList.map(t => t.name);
+    setSelectedTopics(allNames);
+    const counts = getAvailableQuestionCounts({
+      moduleStr: selectedModule,
+      batchStr: selectedBatch,
+      topicsStr: allNames.join('||')
+    });
+    rebalanceCounts(counts);
+  };
+  const clearPracticeTopics = () => {
+    setSelectedTopics([]);
+    const counts = getAvailableQuestionCounts({
+      moduleStr: selectedModule,
+      batchStr: selectedBatch,
+      topicsStr: ''
+    });
+    rebalanceCounts(counts);
   };
   const handleSolvingChange = val => {
     const parsed = Math.max(0, parseInt(val, 10) || 0);
@@ -2908,6 +3068,7 @@ function PracticeConfigModal({
     }
     onStart({
       moduleVal: selectedModule,
+      topicsVal: topicsStr,
       batchVal: selectedBatch,
       solvingCount,
       elementCount,
@@ -2921,7 +3082,7 @@ function PracticeConfigModal({
     className: "modal-content glass-card",
     onClick: e => e.stopPropagation(),
     style: {
-      maxWidth: '640px',
+      maxWidth: '680px',
       width: '94%'
     }
   }, /*#__PURE__*/React.createElement("h2", {
@@ -2936,7 +3097,7 @@ function PracticeConfigModal({
       marginBottom: '1.25rem',
       fontSize: '0.88rem'
     }
-  }, "Configure your practice session and specify the exact number of ", /*#__PURE__*/React.createElement("strong", null, "Solving Questions"), " and ", /*#__PURE__*/React.createElement("strong", null, "Element Questions"), "."), /*#__PURE__*/React.createElement("div", {
+  }, "Select a ", /*#__PURE__*/React.createElement("strong", null, "Curriculum Module"), ", choose your preferred ", /*#__PURE__*/React.createElement("strong", null, "Topics"), " in that module, and specify ", /*#__PURE__*/React.createElement("strong", null, "Solving"), " & ", /*#__PURE__*/React.createElement("strong", null, "Element"), " question counts."), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Select Curriculum Module to Practice"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
@@ -2945,7 +3106,106 @@ function PracticeConfigModal({
   }, MODULE_OPTIONS.map(opt => /*#__PURE__*/React.createElement("option", {
     key: opt.value,
     value: opt.value
-  }, opt.label)))), /*#__PURE__*/React.createElement("div", {
+  }, opt.label)))), selectedModule && moduleTopicsList.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "form-group"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.45rem',
+      flexWrap: 'wrap',
+      gap: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      margin: 0,
+      fontWeight: '700',
+      color: 'var(--primary-light)'
+    }
+  }, "\uD83D\uDCC2 Choose Topics in ", selectedModule, " (", selectedTopics.length === 0 ? `All ${moduleTopicsList.length} Topics Included` : `${selectedTopics.length} Topic(s) Selected`, ")"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.18rem 0.55rem',
+      fontSize: '0.74rem'
+    },
+    onClick: selectAllPracticeTopics
+  }, "\u2713 Select All Topics"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.18rem 0.55rem',
+      fontSize: '0.74rem'
+    },
+    onClick: clearPracticeTopics
+  }, "\u2715 Clear (All Topics)"))), /*#__PURE__*/React.createElement("div", {
+    className: "glass-card",
+    style: {
+      padding: '0.75rem',
+      background: 'var(--bg-input)',
+      borderRadius: 'var(--radius-md)',
+      maxHeight: '185px',
+      overflowY: 'auto',
+      border: '1px solid rgba(56, 189, 248, 0.35)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.35rem'
+    }
+  }, moduleTopicsList.map(topItem => {
+    const isChecked = selectedTopics.includes(topItem.name);
+    return /*#__PURE__*/React.createElement("label", {
+      key: topItem.name,
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        gap: '0.6rem',
+        padding: '0.42rem 0.65rem',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        background: isChecked ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255,255,255,0.02)',
+        border: isChecked ? '1px solid var(--primary-light)' : '1px solid rgba(255,255,255,0.06)',
+        transition: 'all 0.15s ease'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.6rem'
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: isChecked,
+      onChange: () => togglePracticeTopic(topItem.name),
+      style: {
+        width: '15px',
+        height: '15px',
+        accentColor: 'var(--primary-light)',
+        cursor: 'pointer'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.84rem',
+        color: isChecked ? '#ffffff' : 'var(--text-main)',
+        fontWeight: isChecked ? '600' : '500'
+      }
+    }, topItem.name)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.74rem',
+        color: 'var(--text-muted)',
+        whiteSpace: 'nowrap'
+      }
+    }, /*#__PURE__*/React.createElement("strong", null, topItem.total, " Qs"), " (", topItem.solving, " Solving | ", topItem.element, " Element)"));
+  })))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Or Select Specific Review Batch"), /*#__PURE__*/React.createElement("select", {
     className: "form-control",
@@ -5991,9 +6251,15 @@ function QuizEditorModal({
   const initialTotal = editingQuiz?.questionCount || 50;
   const initialSolving = editingQuiz?.solvingCount !== undefined ? editingQuiz.solvingCount : Math.floor(initialTotal / 2);
   const initialElement = editingQuiz?.elementCount !== undefined ? editingQuiz.elementCount : initialTotal - initialSolving;
+  const parseInitialTopics = () => {
+    if (!editingQuiz || !editingQuiz.topics) return [];
+    return String(editingQuiz.topics).split('||').map(t => t.trim()).filter(Boolean);
+  };
   const [title, setTitle] = useState(editingQuiz?.title || '');
   const [description, setDescription] = useState(editingQuiz?.description || '');
   const [selectedModules, setSelectedModules] = useState(parseInitialModules);
+  const [selectedTopics, setSelectedTopics] = useState(parseInitialTopics);
+  const [expandedModulesForTopics, setExpandedModulesForTopics] = useState(parseInitialModules);
   const [solvingCount, setSolvingCount] = useState(initialSolving);
   const [elementCount, setElementCount] = useState(initialElement);
   const [durationMins, setDurationMins] = useState(editingQuiz?.durationMins || 50);
@@ -6011,12 +6277,14 @@ function QuizEditorModal({
   const [pickerLoading, setPickerLoading] = useState(false);
   const [error, setError] = useState('');
   const combinedModuleStr = selectedModules.length === 0 ? '' : selectedModules.length === REAL_MODULES.length ? '' : selectedModules.join(', ');
+  const combinedTopicsStr = selectedTopics.join('||');
   const {
     solvingAvailable,
     elementAvailable,
     totalAvailable
   } = getAvailableQuestionCounts({
-    moduleStr: combinedModuleStr
+    moduleStr: combinedModuleStr,
+    topicsStr: combinedTopicsStr
   });
 
   // Compute breakdown of manually picked questions
@@ -6056,6 +6324,7 @@ function QuizEditorModal({
         limit: 100
       };
       if (selectedModules.length > 0) queryObj.module = selectedModules.join(',');
+      if (selectedTopics.length > 0) queryObj.topics = selectedTopics.join('||');
       if (pickerSearch) queryObj.search = pickerSearch;
       if (pickerTypeFilter !== 'all') queryObj.type = pickerTypeFilter;
       fetch(`${API_BASE}/api/questions?${new URLSearchParams(queryObj).toString()}`, {
@@ -6070,19 +6339,72 @@ function QuizEditorModal({
         setPickerLoading(false);
       });
     }
-  }, [selectionMode, selectedModules, pickerSearch, pickerTypeFilter]);
+  }, [selectionMode, selectedModules, selectedTopics, pickerSearch, pickerTypeFilter]);
   const toggleModule = modValue => {
     if (selectedModules.includes(modValue)) {
-      setSelectedModules(selectedModules.filter(m => m !== modValue));
+      const nextMods = selectedModules.filter(m => m !== modValue);
+      setSelectedModules(nextMods);
+      // Remove topics belonging exclusively to the unchecked module
+      const modTopicNames = new Set(getTopicsForModule(modValue).map(t => t.name));
+      setSelectedTopics(prev => prev.filter(t => !modTopicNames.has(t)));
+      setExpandedModulesForTopics(prev => prev.filter(m => m !== modValue));
     } else {
       setSelectedModules([...selectedModules, modValue]);
+      if (!expandedModulesForTopics.includes(modValue)) {
+        setExpandedModulesForTopics([...expandedModulesForTopics, modValue]);
+      }
     }
+  };
+  const toggleExpandModuleTopics = (modValue, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (expandedModulesForTopics.includes(modValue)) {
+      setExpandedModulesForTopics(expandedModulesForTopics.filter(m => m !== modValue));
+    } else {
+      setExpandedModulesForTopics([...expandedModulesForTopics, modValue]);
+      if (!selectedModules.includes(modValue)) {
+        setSelectedModules([...selectedModules, modValue]);
+      }
+    }
+  };
+  const toggleQuizTopic = (modValue, topicName) => {
+    if (!selectedModules.includes(modValue)) {
+      setSelectedModules([...selectedModules, modValue]);
+    }
+    if (selectedTopics.includes(topicName)) {
+      setSelectedTopics(selectedTopics.filter(t => t !== topicName));
+    } else {
+      setSelectedTopics([...selectedTopics, topicName]);
+    }
+  };
+  const selectAllTopicsInModule = (modValue, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    if (!selectedModules.includes(modValue)) {
+      setSelectedModules([...selectedModules, modValue]);
+    }
+    const modTopics = getTopicsForModule(modValue).map(t => t.name);
+    setSelectedTopics(Array.from(new Set([...selectedTopics, ...modTopics])));
+  };
+  const clearTopicsInModule = (modValue, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const modTopics = new Set(getTopicsForModule(modValue).map(t => t.name));
+    setSelectedTopics(selectedTopics.filter(t => !modTopics.has(t)));
   };
   const selectAllModules = () => {
     setSelectedModules(REAL_MODULES.map(m => m.value));
   };
   const clearAllModules = () => {
     setSelectedModules([]);
+    setSelectedTopics([]);
+    setExpandedModulesForTopics([]);
   };
   const toggleSpecificQuestion = qId => {
     const strId = String(qId);
@@ -6112,9 +6434,16 @@ function QuizEditorModal({
     if (combinedModuleStr) {
       const targetMods = combinedModuleStr.split(',').map(m => m.toLowerCase().trim()).filter(Boolean);
       filtered = filtered.filter(q => {
-        if (!q.Module) return false;
-        const qMod = q.Module.toLowerCase();
+        const qMod = String(q.Module || 'Unclassified').toLowerCase();
         return targetMods.some(tm => qMod.includes(tm) || tm.includes(qMod));
+      });
+    }
+    if (combinedTopicsStr) {
+      const targetTops = combinedTopicsStr.split('||').map(t => t.toLowerCase().trim()).filter(Boolean);
+      filtered = filtered.filter(q => {
+        const canon = getCanonicalTopic(q).toLowerCase();
+        const rawT = String(q.Topic || '').toLowerCase();
+        return targetTops.some(tt => canon === tt || canon.includes(tt) || rawT === tt);
       });
     }
     const solvingPool = [...filtered.filter(isSolvingQuestion)].sort(() => 0.5 - Math.random());
@@ -6152,6 +6481,7 @@ function QuizEditorModal({
       title,
       description,
       module: combinedModuleStr,
+      topics: combinedTopicsStr,
       questionCount: finalTotalCount,
       solvingCount: finalSolvingCount,
       elementCount: finalElementCount,
@@ -6286,14 +6616,16 @@ function QuizEditorModal({
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: '0.5rem'
+      marginBottom: '0.5rem',
+      flexWrap: 'wrap',
+      gap: '0.4rem'
     }
   }, /*#__PURE__*/React.createElement("label", {
     style: {
       margin: 0,
       fontWeight: '700'
     }
-  }, "Target Curriculum Modules (Check to Combine)"), /*#__PURE__*/React.createElement("div", {
+  }, "Target Curriculum Modules & Topics per Module"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.5rem'
@@ -6306,7 +6638,7 @@ function QuizEditorModal({
       fontSize: '0.78rem'
     },
     onClick: selectAllModules
-  }, "\u2713 Select All"), /*#__PURE__*/React.createElement("button", {
+  }, "\u2713 Select All Modules"), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-secondary",
     style: {
@@ -6320,7 +6652,7 @@ function QuizEditorModal({
       padding: '0.85rem',
       background: 'var(--bg-input)',
       borderRadius: 'var(--radius-md)',
-      maxHeight: '170px',
+      maxHeight: '260px',
       overflowY: 'auto',
       border: '1px solid var(--border-color)'
     }
@@ -6334,7 +6666,7 @@ function QuizEditorModal({
       borderRadius: '6px',
       border: '1px solid rgba(245, 158, 11, 0.3)'
     }
-  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs).") : /*#__PURE__*/React.createElement("div", {
+  }, "\u26A1 ", /*#__PURE__*/React.createElement("strong", null, "All Modules Selected (Comprehensive):"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs). Check a module or click ", /*#__PURE__*/React.createElement("strong", null, "\"\uD83D\uDCC2 Topics\""), " to choose specific topics.") : /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: '0.8rem',
       color: 'var(--primary-light)',
@@ -6344,26 +6676,41 @@ function QuizEditorModal({
       borderRadius: '6px',
       border: '1px solid var(--border-glow)'
     }
-  }, "\uD83C\uDFAF ", /*#__PURE__*/React.createElement("strong", null, "Combining ", selectedModules.length, " Module(s):"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs)."), /*#__PURE__*/React.createElement("div", {
+  }, "\uD83C\uDFAF ", /*#__PURE__*/React.createElement("strong", null, selectedModules.length, " Module(s)", selectedTopics.length > 0 ? ` & ${selectedTopics.length} Specific Topic(s)` : ' (All Module Topics)', ":"), " ", totalAvailable.toLocaleString(), " Total Available (", solvingAvailable.toLocaleString(), " Solving Qs | ", elementAvailable.toLocaleString(), " Element Qs)."), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: '0.4rem'
+      gap: '0.45rem'
     }
   }, REAL_MODULES.map(mod => {
     const isChecked = selectedModules.includes(mod.value);
-    return /*#__PURE__*/React.createElement("label", {
+    const isExpanded = expandedModulesForTopics.includes(mod.value);
+    const modTopics = getTopicsForModule(mod.value);
+    const selectedInModCount = modTopics.filter(t => selectedTopics.includes(t.name)).length;
+    return /*#__PURE__*/React.createElement("div", {
       key: mod.value,
+      style: {
+        borderRadius: '6px',
+        border: isChecked ? '1px solid var(--primary-light)' : '1px solid rgba(255,255,255,0.06)',
+        background: isChecked ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.02)',
+        overflow: 'hidden'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '0.42rem 0.7rem',
+        gap: '0.5rem',
+        flexWrap: 'wrap'
+      }
+    }, /*#__PURE__*/React.createElement("label", {
       style: {
         display: 'flex',
         alignItems: 'center',
-        gap: '0.75rem',
-        padding: '0.4rem 0.75rem',
-        borderRadius: '6px',
+        gap: '0.65rem',
         cursor: 'pointer',
-        background: isChecked ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255,255,255,0.02)',
-        border: isChecked ? '1px solid var(--primary-light)' : '1px solid rgba(255,255,255,0.05)',
-        transition: 'all 0.15s ease'
+        flex: 1
       }
     }, /*#__PURE__*/React.createElement("input", {
       type: "checkbox",
@@ -6377,11 +6724,112 @@ function QuizEditorModal({
       }
     }), /*#__PURE__*/React.createElement("span", {
       style: {
-        fontSize: '0.85rem',
+        fontSize: '0.84rem',
         color: isChecked ? '#ffffff' : 'var(--text-muted)',
         fontWeight: isChecked ? '600' : 'normal'
       }
-    }, mod.label));
+    }, mod.label)), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      onClick: e => toggleExpandModuleTopics(mod.value, e),
+      style: {
+        padding: '0.2rem 0.55rem',
+        fontSize: '0.73rem',
+        borderColor: selectedInModCount > 0 ? '#fbbf24' : 'var(--border-color)',
+        color: selectedInModCount > 0 ? '#fbbf24' : 'var(--primary-light)',
+        whiteSpace: 'nowrap'
+      }
+    }, isExpanded ? '▾ Hide Topics' : `▸ Choose Topics (${selectedInModCount > 0 ? `${selectedInModCount}/${modTopics.length}` : modTopics.length})`)), isExpanded && modTopics.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.55rem 0.75rem 0.65rem 1.85rem',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        background: 'rgba(15, 23, 42, 0.55)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '0.4rem',
+        flexWrap: 'wrap',
+        gap: '0.4rem'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: '0.75rem',
+        color: 'var(--text-muted)'
+      }
+    }, selectedInModCount === 0 ? 'All topics in this module included (check specific topics to narrow):' : `${selectedInModCount} specific topic(s) selected in this module:`), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: '0.35rem'
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.12rem 0.45rem',
+        fontSize: '0.7rem'
+      },
+      onClick: e => selectAllTopicsInModule(mod.value, e)
+    }, "\u2713 All Topics"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.12rem 0.45rem',
+        fontSize: '0.7rem'
+      },
+      onClick: e => clearTopicsInModule(mod.value, e)
+    }, "\u2715 Clear Topics"))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.3rem'
+      }
+    }, modTopics.map(tItem => {
+      const tChecked = selectedTopics.includes(tItem.name);
+      return /*#__PURE__*/React.createElement("label", {
+        key: tItem.name,
+        style: {
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0.3rem 0.55rem',
+          borderRadius: '5px',
+          cursor: 'pointer',
+          background: tChecked ? 'rgba(245, 158, 11, 0.16)' : 'rgba(255,255,255,0.02)',
+          border: tChecked ? '1px solid #fbbf24' : '1px solid rgba(255,255,255,0.05)'
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem'
+        }
+      }, /*#__PURE__*/React.createElement("input", {
+        type: "checkbox",
+        checked: tChecked,
+        onChange: () => toggleQuizTopic(mod.value, tItem.name),
+        style: {
+          width: '14px',
+          height: '14px',
+          accentColor: '#fbbf24',
+          cursor: 'pointer'
+        }
+      }), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: '0.8rem',
+          color: tChecked ? '#ffffff' : 'var(--text-main)',
+          fontWeight: tChecked ? '600' : 'normal'
+        }
+      }, tItem.name)), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: '0.72rem',
+          color: 'var(--text-muted)',
+          whiteSpace: 'nowrap'
+        }
+      }, tItem.total, " Qs (", tItem.solving, " Solving | ", tItem.element, " Element)"));
+    }))));
   })))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("div", {
@@ -6870,6 +7318,7 @@ function QuizEditorModal({
       title: title || 'ME Board Evaluation Quiz',
       description,
       module: combinedModuleStr,
+      topics: combinedTopicsStr,
       questionCount: selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions,
       solvingCount: selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount,
       elementCount: selectionMode === 'manual' ? pickedBreakdown.element : elementCount,
@@ -6894,6 +7343,7 @@ function QuizEditorModal({
       title: title || 'ME Board Evaluation Quiz',
       description,
       module: combinedModuleStr,
+      topics: combinedTopicsStr,
       questionCount: selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions,
       solvingCount: selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount,
       elementCount: selectionMode === 'manual' ? pickedBreakdown.element : elementCount,

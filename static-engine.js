@@ -1488,6 +1488,89 @@
           }
         }
 
+        const getCanonicalTopicForEngine = (q) => {
+          if (!q) return 'General';
+          const mod = String(q.Module || '');
+          const cmap = String(q.CurriculumMapID || '').toLowerCase();
+          const top = String(q.Topic || '').toLowerCase();
+
+          if (mod.includes('Module 1')) {
+            if (cmap.includes('ppe-01-fuels') || top.includes('fuel') || top.includes('combustion')) return 'Fuels and Combustion';
+            if (cmap.includes('ppe-02-variable') || top.includes('variable load')) return 'Variable Load Problems';
+            if (cmap.includes('ppe-04') || top.includes('internal combustion') || top.includes('nternal combustion')) return 'Internal Combustion Engines';
+            if (cmap.includes('ppe-05') || top.includes('heat transfer')) return 'Heat Transfer & Equipment';
+            if (top.includes('fluid') || top.includes('nozzle') || top.includes('propeller') || top.includes('machinery') || top.includes('units') || top.includes('electrical') || top.includes('physics')) return 'Fluid Mechanics, Machinery & Units';
+            return 'Engineering Thermodynamics';
+          }
+          if (mod.includes('Module 2')) {
+            if (cmap.includes('ppe-09') || top.includes('steam power')) return 'Steam Power Plant';
+            if (cmap.includes('ppe-06') || top.includes('diesel') || top.includes('internal combustion')) return 'Internal Combustion & Diesel Power Plant';
+            if (cmap.includes('ppe-07') || top.includes('gas turbine')) return 'Gas Turbine Power Plant';
+            if (cmap.includes('ppe-10') || top.includes('hydro')) return 'Hydro-Electric Power Plant';
+            if (cmap.includes('ppe-11') || top.includes('geothermal')) return 'Geothermal Power Plant';
+            if (cmap.includes('ppe-12') || top.includes('nuclear')) return 'Nuclear Power Plant';
+            if (cmap.includes('ppe-13') || top.includes('non-conventional')) return 'Non-Conventional Sources of Energy';
+            if (cmap.includes('ppe-08') || top.includes('combined cycle')) return 'Combined Cycle Power Plant';
+            if (top.includes('chimney') || top.includes('smokestack') || top.includes('draft')) return 'Chimney, Smokestack & Draft System';
+            if (top.includes('variable load')) return 'Variable Load Problems';
+            if (cmap.includes('ppe-14') || cmap.includes('ppe-15') || top.includes('piping') || top.includes('instrumentation')) return 'Piping System, Instrumentation & Control';
+            return 'Power Plant Design & General';
+          }
+          if (mod.includes('Module 3')) {
+            if (top.includes('pump')) return 'Pumps';
+            if (top.includes('compressor')) return 'Gas Compressors';
+            if (top.includes('fan') || top.includes('blower')) return 'Fans and Blowers';
+            if (cmap.includes('ppe-21') || top.includes('environmental') || top.includes('pollution')) return 'Environmental Engineering & Pollution Control';
+            if (cmap.includes('ppe-17') || top.includes('safety')) return 'Industrial Safety & Accident Prevention';
+            if (cmap.includes('ppe-20') || top.includes('lubrication') || top.includes('piping') || top.includes('process')) return 'Industrial Lubrication, Piping & Processes';
+            return 'Fluid Machineries Principles & Operation';
+          }
+          if (mod.includes('Module 4')) {
+            if (cmap.includes('ppe-24') || top.includes('pump')) return 'Pumps';
+            if (cmap.includes('ppe-26') || top.includes('compressor')) return 'Gas Compressors';
+            if (cmap.includes('ppe-31') || top.includes('foundation')) return 'Machinery Foundation';
+            if (cmap.includes('ppe-27') || top.includes('chimney') || top.includes('draft')) return 'Chimney, Smokestack & Draft System';
+            if (cmap.includes('ppe-30') || cmap.includes('ppe-15') || top.includes('instrumentation')) return 'Industrial Instrumentation & Control';
+            if (cmap.includes('ppe-32') || top.includes('machinery performance') || top.includes('d.c')) return 'A.C. and D.C. Machinery Performance';
+            if (cmap.includes('ppe-25') || top.includes('cooling tower')) return 'Cooling Towers & Water Cooling Equipment';
+            if (cmap.includes('ppe-28') || top.includes('heat transfer')) return 'Heat Transfer Equipment';
+            if (cmap.includes('ppe-22') || cmap.includes('ppe-23') || top.includes('dryer') || top.includes('fan')) return 'Dryers, Fans & Blowers';
+            return 'Industrial Processes & Plant Design';
+          }
+          if (mod.includes('Module 5')) {
+            if (cmap.includes('ppe-34') || top.includes('principles of')) return 'Principles of Different Refrigeration Systems';
+            if (cmap.includes('ppe-36') || top.includes('ice plant') || top.includes('cold storage')) return 'Basic Design of Ice Plants & Cold Storage';
+            if (cmap.includes('ppe-35') || top.includes('cooling load')) return 'Determination of Cooling Loads';
+            if (top.includes('compressor') || top.includes('piping') || top.includes('instrumentation') || top.includes('safety')) return 'Refrigeration Compressors, Piping & Controls';
+            return 'Design, Selection & Specification of Refrigeration Plants';
+          }
+          if (mod.includes('Module 6')) {
+            if (cmap.includes('ppe-39') || cmap.includes('ppe-38') || top.includes('psychrometr')) return 'Psychrometric Properties of Air';
+            if (cmap.includes('ppe-44') || top.includes('cooling load')) return 'Cooling Load Calculations & Determination';
+            if (cmap.includes('ppe-42') || top.includes('air distribution') || top.includes('duct')) return 'Air Distribution & Duct Design';
+            if (cmap.includes('ppe-43') || top.includes('drying') || top.includes('dryer') || top.includes('ventilation')) return 'Drying, Heating, Ventilation & Dryers';
+            if (cmap.includes('ppe-40') || top.includes('various air')) return 'Various Air Conditioning Processes';
+            if (cmap.includes('ppe-41') || top.includes('human comfort')) return 'Factors Affecting Human Comfort';
+            if (top.includes('cooling tower')) return 'Cooling Towers & Water Cooling Equipment';
+            return 'Selection & Specification of Air-Conditioning Plants';
+          }
+          if (top.includes('refrigeration') || top.includes('psychrometr')) return 'Refrigeration & Instrumentation Controls';
+          if (top.includes('chemistry') || top.includes('physics') || top.includes('science') || top.includes('units')) return 'General Engineering, Physics & Chemistry';
+          return 'Power Plant & Thermodynamics General';
+        };
+
+        if (params.topics) {
+          const targetTopics = params.topics.split('||').map(t => t.toLowerCase().trim()).filter(Boolean);
+          if (targetTopics.length > 0) {
+            filtered = filtered.filter(q => {
+              const canon = getCanonicalTopicForEngine(q).toLowerCase();
+              const rawT = String(q.Topic || '').toLowerCase();
+              const rawS = String(q.Subtopic || '').toLowerCase();
+              return targetTopics.some(tt => canon === tt || canon.includes(tt) || rawT === tt || rawS === tt);
+            });
+          }
+        }
+
         if (params.status) {
           if (params.status === 'reviewed') {
             filtered = filtered.filter(q => q.AIReviewStatus && q.AIReviewStatus !== '');
@@ -1693,7 +1776,7 @@
       }
 
       if (method === 'POST') {
-        const { title, description, module: modVal, questionCount, solvingCount, elementCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = body;
+        const { title, description, module: modVal, topics: topicsVal, questionCount, solvingCount, elementCount, durationMins, passingScorePct, status, selectionMode, specificQuestionIds } = body;
         if (!title || !String(title).trim()) {
           return jsonResponse({ error: 'Quiz title is required.' }, 400);
         }
@@ -1710,6 +1793,7 @@
           title: String(title).trim().slice(0, 300),
           description: String(description || '').trim().slice(0, 2000),
           module: String(modVal || '').slice(0, 500),
+          ...(topicsVal !== undefined ? { topics: String(topicsVal || '').slice(0, 1000) } : {}),
           questionCount: Math.min(500, Math.max(1, computedTotal)),
           ...(safeSolving !== undefined ? { solvingCount: safeSolving } : {}),
           ...(safeElement !== undefined ? { elementCount: safeElement } : {}),
@@ -1749,12 +1833,16 @@
         const safeElement = body.elementCount !== undefined
           ? Math.min(500, Math.max(0, parseInt(body.elementCount, 10) || 0))
           : existing.elementCount;
+        const safeTopics = body.topics !== undefined
+          ? String(body.topics || '').slice(0, 1000)
+          : existing.topics;
 
         const updatedQuiz = {
           id: String(id).slice(0, 128),
           title: String(body.title !== undefined ? body.title : existing.title).trim().slice(0, 300),
           description: String(body.description !== undefined ? body.description : (existing.description || '')).trim().slice(0, 2000),
           module: String(body.module !== undefined ? body.module : (existing.module || '')).slice(0, 500),
+          ...(safeTopics !== undefined ? { topics: safeTopics } : {}),
           questionCount: Math.min(500, Math.max(1, parseInt(body.questionCount !== undefined ? body.questionCount : existing.questionCount, 10) || 50)),
           ...(safeSolving !== undefined ? { solvingCount: safeSolving } : {}),
           ...(safeElement !== undefined ? { elementCount: safeElement } : {}),

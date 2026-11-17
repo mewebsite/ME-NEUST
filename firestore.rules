@@ -38,6 +38,7 @@ rules_version = '2';
 //      - elementCount: int (optional, range 0..500)
 //      - description: string (optional, length 0..2000)
 //      - module: string (optional, length 0..500)
+//      - topics: string (optional, length 0..1000)
 //      - selectionMode: string (optional, enum ['random', 'manual'])
 //      - specificQuestionIds: list (optional, size <= 500)
 //      - createdBy: string (optional, length 0..200)
@@ -240,6 +241,7 @@ service cloud.firestore {
                'title',
                'description',
                'module',
+               'topics',
                'questionCount',
                'solvingCount',
                'elementCount',
@@ -274,6 +276,7 @@ service cloud.firestore {
              isValidOptionalInt('elementCount', 0, 500) &&
              isValidOptionalString('description', 0, 2000) &&
              isValidOptionalString('module', 0, 500) &&
+             isValidOptionalString('topics', 0, 1000) &&
              (!('selectionMode' in data) ||
               (data.selectionMode is string && data.selectionMode in ['random', 'manual'])) &&
              (!('specificQuestionIds' in data) ||

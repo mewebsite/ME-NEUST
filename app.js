@@ -457,13 +457,54 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
 
 // ============================================================================
 // ADMIN-ONLY OMR ANSWER SHEET GENERATOR & CAMERA/PHOTO SCANNER ENGINE
+// (WITH SCANNABLE 10-DIGIT STUDENT NUMBER SHADING GRID + ANSWER BUBBLES)
 // ============================================================================
 function getOmrSheetLayout(itemCount = 50) {
   const N = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+
+  // --- ZONE 1 (TOP): 10-DIGIT STUDENT NUMBER SHADING GRID (Columns 0..9, Rows 0..9) ---
+  const idDigitsCount = 10;
+  const idStartU = 0.068;
+  const idEndU = 0.588;
+  const idStepU = (idEndU - idStartU) / idDigitsCount;
+  const idBoxTopV = 0.044;
+  const idBoxBottomV = 0.078;
+  const idGridTopV = 0.095;
+  const idGridBottomV = 0.295;
+  const idRowStepV = (idGridBottomV - idGridTopV) / 10;
+  const idRadiusU = 0.0138;
+  const idRadiusV = 0.0086;
+
+  const studentIdCols = [];
+  for (let c = 0; c < idDigitsCount; c++) {
+    // Slight gap after 4th digit for YYYY-NNNNNN visual dash separator
+    const dashOffset = c >= 4 ? 0.012 : 0;
+    const u = idStartU + (c + 0.5) * idStepU + dashOffset;
+    const digits = [];
+    for (let d = 0; d < 10; d++) {
+      digits.push({
+        digit: String(d),
+        u,
+        v: idGridTopV + (d + 0.5) * idRowStepV,
+        ru: idRadiusU,
+        rv: idRadiusV
+      });
+    }
+    studentIdCols.push({
+      colIndex: c,
+      u,
+      boxU: u,
+      boxTopV: idBoxTopV,
+      boxBottomV: idBoxBottomV,
+      digits
+    });
+  }
+
+  // --- ZONE 2 (BOTTOM): EXAMINATION ANSWER BUBBLE GRID (Items 1..N, Options A..D) ---
   const cols = N <= 50 ? 2 : 4;
   const rowsPerCol = Math.ceil(N / cols);
-  const padTop = 0.085;
-  const padBottom = 0.055;
+  const padTop = 0.362;
+  const padBottom = 0.036;
   const padLeft = 0.055;
   const padRight = 0.045;
   const usableW = 1 - padLeft - padRight;
@@ -483,13 +524,13 @@ function getOmrSheetLayout(itemCount = 50) {
       xStart: colX,
       numCenterU: colX + numW * 0.45,
       optUs: opts.map((_, oi) => colX + numW + (oi + 0.5) * stepX),
-      headerV: padTop * 0.55
+      headerV: 0.344
     });
   }
 
   const bubbles = [];
-  const radiusU = Math.min((colW * 0.70) / 10.2, 0.022);
-  const radiusV = Math.min(rowH * 0.34, 0.0175);
+  const radiusU = Math.min((colW * 0.70) / 10.2, 0.020);
+  const radiusV = Math.min(rowH * 0.36, 0.0138);
 
   for (let i = 0; i < N; i++) {
     const c = Math.floor(i / rowsPerCol);
@@ -516,7 +557,7 @@ function getOmrSheetLayout(itemCount = 50) {
     });
   }
 
-  return { N, cols, rowsPerCol, colHeaders, bubbles, radiusU, radiusV };
+  return { N, cols, rowsPerCol, colHeaders, bubbles, radiusU, radiusV, studentIdCols, idRadiusU, idRadiusV };
 }
 
 function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
@@ -525,48 +566,115 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
   const svgH = 1056;
   // Fiducial square centers define the exact [0,1]x[0,1] scanning box
   const fx0 = 58;
-  const fy0 = 205;
+  const fy0 = 192;
   const fw = 700;
-  const fh = 795;
+  const fh = 810;
   const mSize = 26;
 
   const mapX = (u) => fx0 + u * fw;
   const mapY = (v) => fy0 + v * fh;
 
-  let gridSvg = '';
+  // --- ZONE 1 SVG: STUDENT NUMBER SHADING GRID ---
+  const idR = Math.max(6.2, Math.min(8.4, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
+  let studentIdSvg = '';
+
+  // Enclosing border for Student Number Section
+  studentIdSvg += `
+    <rect x="${mapX(0.036).toFixed(1)}" y="${mapY(0.012).toFixed(1)}" width="${(0.585 * fw).toFixed(1)}" height="${(0.296 * fh).toFixed(1)}" fill="#ffffff" stroke="#334155" stroke-width="1.3" rx="5" />
+    <text x="${mapX(0.328).toFixed(1)}" y="${mapY(0.033).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">STUDENT NUMBER (WRITE &amp; SHADE 0–9 BELOW)</text>
+  `;
+
+  // Row digit labels 0..9 on the left edge of the Student Number box
+  for (let d = 0; d < 10; d++) {
+    const dy = mapY(layout.studentIdCols[0].digits[d].v);
+    studentIdSvg += `<text x="${mapX(0.052).toFixed(1)}" y="${(dy + 3).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#475569">${d}</text>`;
+  }
+
+  // Dash visual separator between digit 4 and digit 5 (YYYY - NNNNNN)
+  const dashX = (mapX(layout.studentIdCols[3].u) + mapX(layout.studentIdCols[4].u)) / 2;
+  const dashY = mapY((layout.studentIdCols[0].boxTopV + layout.studentIdCols[0].boxBottomV) / 2);
+  studentIdSvg += `<text x="${dashX.toFixed(1)}" y="${(dashY + 4).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f172a">-</text>`;
+
+  layout.studentIdCols.forEach(col => {
+    const bx = mapX(col.boxU);
+    const bw = 26;
+    const by = mapY(col.boxTopV);
+    const bh = mapY(col.boxBottomV) - by;
+    // Write-in digit box at top of column
+    studentIdSvg += `<rect x="${(bx - bw / 2).toFixed(1)}" y="${by.toFixed(1)}" width="${bw}" height="${bh.toFixed(1)}" fill="#f8fafc" stroke="#0f172a" stroke-width="1.3" rx="2" />`;
+    // 0..9 bubbles in column
+    col.digits.forEach(dig => {
+      const cx = mapX(dig.u);
+      const cy = mapY(dig.v);
+      studentIdSvg += `
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${idR.toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.3" />
+        <text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" text-anchor="middle" font-size="7.8" font-weight="600" fill="#64748b">${dig.digit}</text>
+      `;
+    });
+  });
+
+  // Right Info / Shading Guide Box inside Top Zone
+  const guideX = mapX(0.635);
+  const guideY = mapY(0.012);
+  const guideW = 0.328 * fw;
+  const guideH = 0.296 * fh;
+  studentIdSvg += `
+    <rect x="${guideX.toFixed(1)}" y="${guideY.toFixed(1)}" width="${guideW.toFixed(1)}" height="${guideH.toFixed(1)}" fill="#f8fafc" stroke="#334155" stroke-width="1.3" rx="5" />
+    <text x="${(guideX + guideW / 2).toFixed(1)}" y="${(guideY + 18).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">SHADING INSTRUCTIONS</text>
+    <line x1="${(guideX + 10).toFixed(1)}" y1="${(guideY + 25).toFixed(1)}" x2="${(guideX + guideW - 10).toFixed(1)}" y2="${(guideY + 25).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" />
+    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 46).toFixed(1)}" r="8" fill="#0f172a" stroke="#0f172a" stroke-width="1.5" />
+    <text x="${(guideX + 42).toFixed(1)}" y="${(guideY + 50).toFixed(1)}" font-size="9.5" font-weight="700" fill="#047857">CORRECT (Full dark shade)</text>
+    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 70).toFixed(1)}" r="8" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+    <line x1="${(guideX + 21).toFixed(1)}" y1="${(guideY + 65).toFixed(1)}" x2="${(guideX + 31).toFixed(1)}" y2="${(guideY + 75).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
+    <line x1="${(guideX + 31).toFixed(1)}" y1="${(guideY + 65).toFixed(1)}" x2="${(guideX + 21).toFixed(1)}" y2="${(guideY + 75).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
+    <text x="${(guideX + 42).toFixed(1)}" y="${(guideY + 74).toFixed(1)}" font-size="9.5" font-weight="700" fill="#dc2626">WRONG (Check / X / Partial)</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 102).toFixed(1)}" font-size="8.6" fill="#334155">• Shade your Student Number digits</text>
+    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 115).toFixed(1)}" font-size="8.6" fill="#334155">(skip dashes: 2022-001234 →</text>
+    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 128).toFixed(1)}" font-size="8.6" font-weight="700" fill="#0f172a">shade 2 0 2 2 0 0 1 2 3 4).</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 148).toFixed(1)}" font-size="8.6" fill="#334155">• Use dark pencil or black/blue pen.</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 163).toFixed(1)}" font-size="8.6" fill="#334155">• Do NOT mark the 4 corner squares.</text>
+    <line x1="${(guideX + 10).toFixed(1)}" y1="${(guideY + 180).toFixed(1)}" x2="${(guideX + guideW - 10).toFixed(1)}" y2="${(guideY + 180).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" />
+    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 202).toFixed(1)}" font-size="10" font-weight="800" fill="#0f172a">TOTAL SCORE: _______ / ${layout.N}</text>
+    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 224).toFixed(1)}" font-size="9" font-weight="600" fill="#475569">Proctor / Admin: _______________</text>
+  `;
+
+  // Divider between Student Number Zone and Answer Grid Zone
+  let gridSvg = `
+    <line x1="${mapX(0.035).toFixed(1)}" y1="${mapY(0.320).toFixed(1)}" x2="${mapX(0.965).toFixed(1)}" y2="${mapY(0.320).toFixed(1)}" stroke="#0f172a" stroke-width="1.5" />
+  `;
 
   // Subtle column divider lines
   for (let c = 1; c < layout.cols; c++) {
     const xLine = mapX(0.055 + c * ((1 - 0.10) / layout.cols) - 0.008);
-    gridSvg += `<line x1="${xLine.toFixed(1)}" y1="${(fy0 + 26).toFixed(1)}" x2="${xLine.toFixed(1)}" y2="${(fy0 + fh - 26).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
+    gridSvg += `<line x1="${xLine.toFixed(1)}" y1="${mapY(0.330).toFixed(1)}" x2="${xLine.toFixed(1)}" y2="${mapY(0.975).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
   }
 
   // Column A B C D Headers
   layout.colHeaders.forEach(ch => {
     const hy = mapY(ch.headerV);
-    gridSvg += `<text x="${mapX(ch.numCenterU).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">#</text>`;
+    gridSvg += `<text x="${mapX(ch.numCenterU).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#334155">#</text>`;
     ['A', 'B', 'C', 'D'].forEach((ltr, idx) => {
-      gridSvg += `<text x="${mapX(ch.optUs[idx]).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">${ltr}</text>`;
+      gridSvg += `<text x="${mapX(ch.optUs[idx]).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#0f172a">${ltr}</text>`;
     });
   });
 
-  // Rows & Bubbles
-  const rPx = Math.max(7.5, Math.min(12.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+  // Rows & Answer Bubbles
+  const rPx = Math.max(6.8, Math.min(10.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
   layout.bubbles.forEach(item => {
     const cy = mapY(item.v);
     if (item.row % 2 === 1) {
       const colW = (1 - 0.10) / layout.cols;
       const rx = mapX(0.055 + item.col * colW);
       const rw = colW * fw - 8;
-      const rh = ((1 - 0.14) / layout.rowsPerCol) * fh;
+      const rh = ((1 - 0.362 - 0.036) / layout.rowsPerCol) * fh;
       gridSvg += `<rect x="${rx.toFixed(1)}" y="${(cy - rh / 2).toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="#f8fafc" rx="3" />`;
     }
-    gridSvg += `<text x="${mapX(item.numU).toFixed(1)}" y="${(cy + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#0f172a">${item.itemNum}.</text>`;
+    gridSvg += `<text x="${mapX(item.numU).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#0f172a">${item.itemNum}.</text>`;
     item.options.forEach(opt => {
       const cx = mapX(opt.u);
       gridSvg += `
-        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${rPx.toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.6" />
-        <text x="${cx.toFixed(1)}" y="${(cy + 3.5).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b">${opt.letter}</text>
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${rPx.toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+        <text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" text-anchor="middle" font-size="8.2" font-weight="600" fill="#64748b">${opt.letter}</text>
       `;
     });
   });
@@ -586,36 +694,34 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="100%" style="background:#ffffff; display:block; font-family: Arial, Helvetica, sans-serif;">
     <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="#ffffff" />
     <!-- OFFICIAL HEADER -->
-    <text x="${svgW / 2}" y="34" text-anchor="middle" font-size="10.5" letter-spacing="1" fill="#334155">REPUBLIC OF THE PHILIPPINES</text>
-    <text x="${svgW / 2}" y="53" text-anchor="middle" font-size="15" font-weight="800" fill="#0f172a">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</text>
-    <text x="${svgW / 2}" y="70" text-anchor="middle" font-size="11.5" font-weight="600" fill="#334155">College of Engineering — Mechanical Engineering Department</text>
-    <text x="${svgW / 2}" y="94" text-anchor="middle" font-size="14" font-weight="800" fill="#0f172a">${escapeHtmlForWord(title).toUpperCase()} — OMR ANSWER SHEET (${layout.N} ITEMS)</text>
-    ${subtitle ? `<text x="${svgW / 2}" y="110" text-anchor="middle" font-size="10" fill="#475569">${escapeHtmlForWord(subtitle)}</text>` : ''}
-    <line x1="42" y1="118" x2="${svgW - 42}" y2="118" stroke="#0f172a" stroke-width="2" />
+    <text x="${svgW / 2}" y="30" text-anchor="middle" font-size="10" letter-spacing="1" fill="#334155">REPUBLIC OF THE PHILIPPINES</text>
+    <text x="${svgW / 2}" y="48" text-anchor="middle" font-size="14.5" font-weight="800" fill="#0f172a">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</text>
+    <text x="${svgW / 2}" y="64" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">College of Engineering — Mechanical Engineering Department</text>
+    <text x="${svgW / 2}" y="86" text-anchor="middle" font-size="13.5" font-weight="800" fill="#0f172a">${escapeHtmlForWord(title).toUpperCase()} — OMR ANSWER SHEET (${layout.N} ITEMS)</text>
+    ${subtitle ? `<text x="${svgW / 2}" y="101" text-anchor="middle" font-size="9.5" fill="#475569">${escapeHtmlForWord(subtitle)}</text>` : ''}
+    <line x1="42" y1="109" x2="${svgW - 42}" y2="109" stroke="#0f172a" stroke-width="2" />
 
     <!-- STUDENT INFO FIELDS -->
-    <text x="48" y="142" font-size="11.5" font-weight="700" fill="#0f172a">Student Name:</text>
-    <line x1="138" y1="144" x2="495" y2="144" stroke="#334155" stroke-width="1.2" />
-    <text x="515" y="142" font-size="11.5" font-weight="700" fill="#0f172a">Date:</text>
-    <line x1="552" y1="144" x2="768" y2="144" stroke="#334155" stroke-width="1.2" />
+    <text x="48" y="133" font-size="11" font-weight="700" fill="#0f172a">Student Name:</text>
+    <line x1="134" y1="135" x2="495" y2="135" stroke="#334155" stroke-width="1.2" />
+    <text x="515" y="133" font-size="11" font-weight="700" fill="#0f172a">Date:</text>
+    <line x1="550" y1="135" x2="768" y2="135" stroke="#334155" stroke-width="1.2" />
 
-    <text x="48" y="168" font-size="11.5" font-weight="700" fill="#0f172a">Year &amp; Section:</text>
-    <line x1="145" y1="170" x2="495" y2="170" stroke="#334155" stroke-width="1.2" />
-    <text x="515" y="168" font-size="11.5" font-weight="700" fill="#0f172a">Score:</text>
-    <line x1="560" y1="170" x2="675" y2="170" stroke="#334155" stroke-width="1.2" />
-    <text x="684" y="168" font-size="11.5" font-weight="700" fill="#0f172a">/ ${layout.N}</text>
+    <text x="48" y="158" font-size="11" font-weight="700" fill="#0f172a">Year &amp; Section:</text>
+    <line x1="142" y1="160" x2="495" y2="160" stroke="#334155" stroke-width="1.2" />
+    <text x="515" y="158" font-size="11" font-weight="700" fill="#0f172a">Student No.:</text>
+    <line x1="590" y1="160" x2="768" y2="160" stroke="#334155" stroke-width="1.2" />
 
-    <!-- SHADING INSTRUCTIONS -->
-    <rect x="44" y="178" width="${svgW - 88}" height="18" fill="#f1f5f9" rx="3" />
-    <text x="${svgW / 2}" y="191" text-anchor="middle" font-size="9.5" font-weight="600" fill="#334155">INSTRUCTIONS: Completely shade the circle of your chosen answer using dark pencil or black/blue pen. Do NOT mark over the 4 black corner squares.</text>
+    <!-- ZONE 1: STUDENT NUMBER SHADING GRID -->
+    ${studentIdSvg}
 
-    <!-- ANSWER BUBBLE GRID -->
+    <!-- ZONE 2: ANSWER BUBBLE GRID -->
     ${gridSvg}
 
     <!-- 4 BLACK CORNER ALIGNMENT FIDUCIAL SQUARES -->
     ${fiducialsSvg}
 
-    <text x="${svgW / 2}" y="${svgH - 18}" text-anchor="middle" font-size="9" fill="#64748b">ME BoardPrep Official OMR Scannable Answer Sheet • Align 4 Black Corner Squares inside Camera Frame</text>
+    <text x="${svgW / 2}" y="${svgH - 14}" text-anchor="middle" font-size="8.8" fill="#64748b">ME BoardPrep Official OMR Scannable Answer Sheet (Student Number + Answers) • Align 4 Black Corner Squares inside Camera Frame</text>
   </svg>`;
 }
 
@@ -646,7 +752,7 @@ function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCoun
 <body>
   <div class="toolbar">
     <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF (100% Scale)</button>
-    <span style="font-size: 13px; color: #334155;">Tip: Print at 100% scale so the 4 black corner squares scan cleanly.</span>
+    <span style="font-size: 13px; color: #334155;">Includes 10-Digit Student Number Shading + ${itemCount} Answer Bubbles. Print at 100% scale.</span>
   </div>
   <div class="sheet-page">${svgMarkup}</div>
 </body>
@@ -663,7 +769,7 @@ function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCoun
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  window.showToast?.(`Downloaded Printable OMR Answer Sheet "${fileName}"! Open and print at 100% scale.`, 'success');
+  window.showToast?.(`Downloaded Printable OMR Answer Sheet "${fileName}" with Student Number Shading!`, 'success');
 }
 
 function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
@@ -675,6 +781,19 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
   const cols = N <= 50 ? 2 : 4;
   const rowsPerCol = Math.ceil(N / cols);
 
+  // Student Number Shading Table (10 columns x 0..9 circled digits)
+  const circledDigits = ['⓪', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
+  const writeBoxesRow = Array.from({ length: 10 }, (_, idx) =>
+    `<td style="border: 1.5px solid #0f172a; height: 18pt; width: 22pt; text-align: center; background: #f8fafc;">&nbsp;</td>${idx === 3 ? '<td style="text-align:center; font-weight:bold; width:10pt;">-</td>' : ''}`
+  ).join('');
+  let studentNumRows = `<tr><td style="font-size:8pt; font-weight:bold; padding-right:4pt;">ID:</td>${writeBoxesRow}</tr>`;
+  for (let d = 0; d < 10; d++) {
+    const cells = Array.from({ length: 10 }, (_, idx) =>
+      `<td style="text-align: center; font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 9.5pt; padding: 1pt 0;">${circledDigits[d]}</td>${idx === 3 ? '<td></td>' : ''}`
+    ).join('');
+    studentNumRows += `<tr><td style="font-size:8pt; color:#475569; font-weight:bold; text-align:right; padding-right:4pt;">${d}</td>${cells}</tr>`;
+  }
+
   let tableRows = '';
   for (let r = 0; r < rowsPerCol; r++) {
     let rowCells = '';
@@ -682,11 +801,11 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
       const num = c * rowsPerCol + r + 1;
       if (num <= N) {
         rowCells += `
-          <td style="padding: 3pt 4pt; font-weight: bold; text-align: right; border-bottom: 1px solid #e2e8f0; width: 22pt;">${num}.</td>
-          <td style="padding: 3pt 6pt; text-align: center; border-bottom: 1px solid #e2e8f0; font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 11pt; letter-spacing: 3pt;">Ⓐ Ⓑ Ⓒ Ⓓ</td>
+          <td style="padding: 2.5pt 4pt; font-weight: bold; text-align: right; border-bottom: 1px solid #e2e8f0; width: 22pt;">${num}.</td>
+          <td style="padding: 2.5pt 6pt; text-align: center; border-bottom: 1px solid #e2e8f0; font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 10.5pt; letter-spacing: 3pt;">Ⓐ Ⓑ Ⓒ Ⓓ</td>
         `;
       } else {
-        rowCells += '<td colspan="2" style="padding: 3pt;"></td>';
+        rowCells += '<td colspan="2" style="padding: 2.5pt;"></td>';
       }
     }
     tableRows += `<tr>${rowCells}</tr>`;
@@ -701,33 +820,46 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
   <title>${escapeHtmlForWord(title)} - Answer Sheet</title>
   <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
   <style>
-    @page WordSection1 { size: 8.5in 11.0in; margin: 0.65in; }
+    @page WordSection1 { size: 8.5in 11.0in; margin: 0.55in; }
     div.WordSection1 { page: WordSection1; }
-    body { font-family: Calibri, Arial, sans-serif; color: #0f172a; font-size: 10.5pt; }
+    body { font-family: Calibri, Arial, sans-serif; color: #0f172a; font-size: 10pt; }
   </style>
 </head>
 <body>
   <div class="WordSection1">
-    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 6pt; margin-bottom: 10pt;">
-      <p style="margin: 0; font-size: 9pt;">REPUBLIC OF THE PHILIPPINES</p>
-      <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
-      <p style="margin: 1pt 0 4pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
-      <h1 style="margin: 2pt 0 0 0; font-size: 13pt; text-transform: uppercase;">${escapeHtmlForWord(title)} — OFFICIAL ANSWER SHEET (${N} ITEMS)</h1>
-      ${subtitle ? `<p style="margin: 2pt 0 0 0; font-size: 9pt; color: #475569;">${escapeHtmlForWord(subtitle)}</p>` : ''}
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 5pt; margin-bottom: 8pt;">
+      <p style="margin: 0; font-size: 8.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+      <p style="margin: 1pt 0; font-size: 11.5pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+      <p style="margin: 1pt 0 3pt 0; font-size: 9.5pt;">College of Engineering — Mechanical Engineering Department</p>
+      <h1 style="margin: 2pt 0 0 0; font-size: 12.5pt; text-transform: uppercase;">${escapeHtmlForWord(title)} — OFFICIAL ANSWER SHEET (${N} ITEMS)</h1>
+      ${subtitle ? `<p style="margin: 2pt 0 0 0; font-size: 8.5pt; color: #475569;">${escapeHtmlForWord(subtitle)}</p>` : ''}
     </div>
-    <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt;">
       <tr>
-        <td style="padding: 3pt 0; width: 58%;"><b>Student Name:</b> ____________________________________</td>
-        <td style="padding: 3pt 0; width: 42%;"><b>Date:</b> _______________________</td>
+        <td style="padding: 2pt 0; width: 58%;"><b>Student Name:</b> ____________________________________</td>
+        <td style="padding: 2pt 0; width: 42%;"><b>Date:</b> _______________________</td>
       </tr>
       <tr>
-        <td style="padding: 3pt 0;"><b>Year &amp; Section:</b> ___________________________________</td>
-        <td style="padding: 3pt 0;"><b>Score:</b> _________ / ${N}</td>
+        <td style="padding: 2pt 0;"><b>Year &amp; Section:</b> ___________________________________</td>
+        <td style="padding: 2pt 0;"><b>Score:</b> _________ / ${N}</td>
       </tr>
     </table>
-    <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 5pt 8pt; margin-bottom: 10pt; font-size: 9pt;">
-      <b>DIRECTIONS:</b> Completely shade the bubble corresponding to your chosen answer (A, B, C, or D) using a dark pencil or pen.
-    </div>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt;">
+      <tr>
+        <td style="width: 60%; border: 1.5px solid #0f172a; padding: 6pt; vertical-align: top;">
+          <div style="font-size: 9pt; font-weight: bold; text-align: center; margin-bottom: 4pt;">STUDENT NUMBER (WRITE &amp; SHADE 0–9)</div>
+          <table style="border-collapse: collapse; margin: 0 auto;">
+            ${studentNumRows}
+          </table>
+        </td>
+        <td style="width: 40%; border: 1.5px solid #0f172a; padding: 6pt 8pt; vertical-align: top; background: #f8fafc; font-size: 8.5pt;">
+          <div style="font-weight: bold; margin-bottom: 4pt; font-size: 9pt;">SHADING DIRECTIONS:</div>
+          <p style="margin: 0 0 4pt 0;">1. Write your Student Number in the boxes and completely shade the matching digit (0–9) below each box (skip dashes).</p>
+          <p style="margin: 0 0 4pt 0;">2. Completely shade your chosen answer bubble (A, B, C, or D) using a dark pencil or black/blue pen.</p>
+          <p style="margin: 0;">3. Avoid stray marks or incomplete erasures.</p>
+        </td>
+      </tr>
+    </table>
     <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a;">
       ${tableRows}
     </table>
@@ -746,12 +878,11 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  window.showToast?.(`Downloaded Word Answer Sheet "${fileName}"!`, 'success');
+  window.showToast?.(`Downloaded Word Answer Sheet "${fileName}" with Student Number Shading!`, 'success');
 }
 
 // --- PROJECTIVE 3x3 HOMOGRAPHY SOLVER (Maps normalized [0,1]x[0,1] -> 4 scanned corner points) ---
 function computeOmrHomography(dstPts) {
-  // dstPts = [TL, TR, BR, BL] corresponding to (0,0), (1,0), (1,1), (0,1)
   const src = [[0, 0], [1, 0], [1, 1], [0, 1]];
   const A = [];
   const b = [];
@@ -763,7 +894,6 @@ function computeOmrHomography(dstPts) {
     A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
     b.push(y);
   }
-  // Gaussian elimination with partial pivoting
   const n = 8;
   for (let i = 0; i < n; i++) {
     let maxRow = i;
@@ -798,7 +928,6 @@ function applyOmrHomography(H, u, v) {
 // --- FAST INTEGRAL-IMAGE FIDUCIAL SQUARE DETECTOR ---
 function detectOmrFiducialCorners(imgData) {
   const { width: w, height: h, data } = imgData;
-  // Build grayscale summed-area table (SAT)
   const sat = new Float64Array((w + 1) * (h + 1));
   const stride = w + 1;
   for (let y = 0; y < h; y++) {
@@ -823,7 +952,6 @@ function detectOmrFiducialCorners(imgData) {
     return sum / area;
   };
 
-  // Fiducial square expected side length ~ 2.4% to 4.5% of image width
   const scales = [
     Math.max(8, Math.round(w * 0.025)),
     Math.max(10, Math.round(w * 0.032)),
@@ -845,14 +973,13 @@ function detectOmrFiducialCorners(imgData) {
       for (let y = yStart; y <= yEnd; y += step) {
         for (let x = xStart; x <= xEnd; x += step) {
           const innerMean = boxMean(x - half, y - half, x + half, y + half);
-          if (innerMean > 135) continue; // must be dark solid square
+          if (innerMean > 135) continue;
           const outerBoxMean = boxMean(x - outer, y - outer, x + outer, y + outer);
           const innerArea = (2 * half) * (2 * half);
           const outerArea = (2 * outer) * (2 * outer);
           const ringMean = (outerBoxMean * outerArea - innerMean * innerArea) / Math.max(1, outerArea - innerArea);
-          if (ringMean < 130) continue; // must have bright quiet border around square
+          if (ringMean < 130) continue;
           const contrast = ringMean - innerMean;
-          // Verify all 4 inner sub-quadrants are similarly dark (true solid square, not a thin line)
           const q1 = boxMean(x - half, y - half, x, y);
           const q2 = boxMean(x, y - half, x + half, y);
           const q3 = boxMean(x - half, y, x, y + half);
@@ -871,16 +998,15 @@ function detectOmrFiducialCorners(imgData) {
     return bestPt;
   };
 
-  // Expected default normalized positions of fiducials on the printed SVG sheet
-  const tl = searchRegion(0, h * 0.08, w * 0.36, h * 0.44, { x: w * (58 / 816), y: h * (205 / 1056), detected: false });
-  const tr = searchRegion(w * 0.64, h * 0.08, w, h * 0.44, { x: w * (758 / 816), y: h * (205 / 1056), detected: false });
-  const br = searchRegion(w * 0.64, h * 0.60, w, h * 0.99, { x: w * (758 / 816), y: h * (1000 / 1056), detected: false });
-  const bl = searchRegion(0, h * 0.60, w * 0.36, h * 0.99, { x: w * (58 / 816), y: h * (1000 / 1056), detected: false });
+  const tl = searchRegion(0, h * 0.08, w * 0.36, h * 0.44, { x: w * (58 / 816), y: h * (192 / 1056), detected: false });
+  const tr = searchRegion(w * 0.64, h * 0.08, w, h * 0.44, { x: w * (758 / 816), y: h * (192 / 1056), detected: false });
+  const br = searchRegion(w * 0.64, h * 0.60, w, h * 0.99, { x: w * (758 / 816), y: h * (1002 / 1056), detected: false });
+  const bl = searchRegion(0, h * 0.60, w * 0.36, h * 0.99, { x: w * (58 / 816), y: h * (1002 / 1056), detected: false });
 
-  return [tl, tr, br, bl]; // order: TL, TR, BR, BL
+  return [tl, tr, br, bl];
 }
 
-// --- OMR BUBBLE SAMPLER & AUTO-GRADER ---
+// --- OMR BUBBLE SAMPLER FOR BOTH STUDENT NUMBER (0-9 x 10) AND ANSWERS (A-D x 1..N) ---
 function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 0.22) {
   const { width: w, height: h, data } = imgData;
   const layout = getOmrSheetLayout(itemCount);
@@ -909,19 +1035,50 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
     return count > 0 ? (sum / count) : 1;
   };
 
-  // Estimate pixel scale from top/left edge lengths
   const topW = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
   const leftH = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
 
-  const results = layout.bubbles.map(item => {
+  // 1. SCAN 10-DIGIT STUDENT NUMBER SHADING GRID
+  const studentIdColsStats = layout.studentIdCols.map(col => {
+    const digitStats = col.digits.map(dig => {
+      const pt = applyOmrHomography(H, dig.u, dig.v);
+      const rPx = Math.max(2.5, Math.min(dig.ru * topW, dig.rv * leftH));
+      const coreBrightness = sampleDiskBrightness(pt.x, pt.y, rPx * 0.60);
+      const refL = sampleDiskBrightness(pt.x - rPx * 1.45, pt.y, Math.max(1.5, rPx * 0.25));
+      const refR = sampleDiskBrightness(pt.x + rPx * 1.45, pt.y, Math.max(1.5, rPx * 0.25));
+      const localPaper = Math.max(0.45, Math.max(refL, refR));
+      const fillRatio = Math.max(0, (localPaper - coreBrightness) / localPaper);
+      return { digit: dig.digit, x: pt.x, y: pt.y, rPx, fillRatio };
+    });
+
+    const sorted = [...digitStats].sort((a, b) => b.fillRatio - a.fillRatio);
+    const darkest = sorted[0];
+    const second = sorted[1];
+    // Average of the 8 lightest bubbles in the 0-9 column as unshaded baseline
+    const unshadedAvg = sorted.slice(2).reduce((acc, s) => acc + s.fillRatio, 0) / 8;
+    const contrast = darkest.fillRatio - unshadedAvg;
+    const isShaded = contrast >= sensitivity * 0.85 && darkest.fillRatio >= sensitivity * 0.85 && (darkest.fillRatio - second.fillRatio >= 0.08 || contrast >= sensitivity);
+
+    return {
+      colIndex: col.colIndex,
+      detectedDigit: isShaded ? darkest.digit : '',
+      digitStats
+    };
+  });
+
+  const rawIdDigits = studentIdColsStats.map(c => c.detectedDigit).join('');
+  const formattedStudentNumber = rawIdDigits.length === 10
+    ? `${rawIdDigits.slice(0, 4)}-${rawIdDigits.slice(4)}`
+    : rawIdDigits;
+
+  // 2. SCAN EXAMINATION ANSWER BUBBLE GRID (1..N, A..D)
+  const answerResults = layout.bubbles.map(item => {
     const optionStats = item.options.map(opt => {
       const pt = applyOmrHomography(H, opt.u, opt.v);
-      const rPx = Math.max(3, Math.min(opt.ru * topW, opt.rv * leftH));
-      // Sample inner 62% of bubble (avoids printed circle border!)
+      const rPx = Math.max(2.8, Math.min(opt.ru * topW, opt.rv * leftH));
       const coreBrightness = sampleDiskBrightness(pt.x, pt.y, rPx * 0.62);
-      // Local paper reference brightness just above/below bubble
-      const ref1 = sampleDiskBrightness(pt.x, pt.y - rPx * 1.45, Math.max(2, rPx * 0.25));
-      const ref2 = sampleDiskBrightness(pt.x, pt.y + rPx * 1.45, Math.max(2, rPx * 0.25));
+      const ref1 = sampleDiskBrightness(pt.x, pt.y - rPx * 1.45, Math.max(1.8, rPx * 0.25));
+      const ref2 = sampleDiskBrightness(pt.x, pt.y + rPx * 1.45, Math.max(1.8, rPx * 0.25));
       const localPaper = Math.max(0.45, Math.max(ref1, ref2));
       const fillRatio = Math.max(0, (localPaper - coreBrightness) / localPaper);
       return {
@@ -933,11 +1090,9 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
       };
     });
 
-    // Sort by fillRatio descending
     const sorted = [...optionStats].sort((a, b) => b.fillRatio - a.fillRatio);
     const darkest = sorted[0];
     const second = sorted[1];
-    // Baseline unshaded average of the 3 lightest bubbles
     const unshadedBaseline = (sorted[1].fillRatio + sorted[2].fillRatio + sorted[3].fillRatio) / 3;
     const relativeContrast = darkest.fillRatio - unshadedBaseline;
 
@@ -949,7 +1104,6 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
       detected = marked[0].letter;
       status = 'single';
     } else if (marked.length > 1) {
-      // If top choice is overwhelmingly darker than second (e.g. light erasure), accept top choice
       if (darkest.fillRatio - second.fillRatio >= 0.18) {
         detected = darkest.letter;
         status = 'single';
@@ -970,7 +1124,12 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
     };
   });
 
-  return results;
+  return {
+    studentIdColsStats,
+    rawStudentNumberDigits: rawIdDigits,
+    scannedStudentNumber: formattedStudentNumber,
+    answerResults
+  };
 }
 
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
@@ -4658,6 +4817,8 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
   const [draggingCornerIdx, setDraggingCornerIdx] = useState(null);
   const [sensitivity, setSensitivity] = useState(0.22);
   const [scanResults, setScanResults] = useState([]);
+  const [scannedStudentNumber, setScannedStudentNumber] = useState('');
+  const [matchedStudentInfo, setMatchedStudentInfo] = useState(null);
   const [manualOverrides, setManualOverrides] = useState({});
 
   // Student Recording State
@@ -4767,8 +4928,28 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     const dispCtx = dispCanvas.getContext('2d');
     const imgData = srcCtx.getImageData(0, 0, w, h);
 
-    const rawResults = scanOmrBubblesFromImageData(imgData, activeCorners, itemCount, activeSensitivity);
+    const scanOutput = scanOmrBubblesFromImageData(imgData, activeCorners, itemCount, activeSensitivity);
+    const rawResults = scanOutput.answerResults || [];
     setScanResults(rawResults);
+
+    // Auto-detect & match Student Number against registered student accounts
+    const detectedNumStr = scanOutput.scannedStudentNumber || '';
+    const detectedDigitsOnly = scanOutput.rawStudentNumberDigits || '';
+    setScannedStudentNumber(detectedNumStr);
+    if (detectedDigitsOnly.length >= 4) {
+      const matched = studentsOnly.find(st => {
+        const stDigits = String(st.studentNumber || '').replace(/\D/g, '');
+        return stDigits && (stDigits === detectedDigitsOnly || stDigits.endsWith(detectedDigitsOnly) || detectedDigitsOnly.endsWith(stDigits));
+      });
+      if (matched) {
+        setMatchedStudentInfo(matched);
+        setSelectedStudentId(matched.id);
+      } else {
+        setMatchedStudentInfo(null);
+      }
+    } else {
+      setMatchedStudentInfo(null);
+    }
 
     // Draw original image
     dispCtx.clearRect(0, 0, w, h);
@@ -4787,6 +4968,21 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     dispCtx.closePath();
     dispCtx.stroke();
     dispCtx.setLineDash([]);
+
+    // Draw purple/cyan rings on detected Student Number shaded bubbles
+    (scanOutput.studentIdColsStats || []).forEach(col => {
+      if (!col.detectedDigit) return;
+      const digObj = col.digitStats.find(d => d.digit === col.detectedDigit);
+      if (digObj) {
+        dispCtx.beginPath();
+        dispCtx.arc(digObj.x, digObj.y, digObj.rPx * 1.25, 0, Math.PI * 2);
+        dispCtx.lineWidth = Math.max(2.2, w / 360);
+        dispCtx.strokeStyle = '#a855f7';
+        dispCtx.fillStyle = 'rgba(168, 85, 247, 0.28)';
+        dispCtx.fill();
+        dispCtx.stroke();
+      }
+    });
 
     // Draw graded bubble overlays
     rawResults.forEach((res, idx) => {
@@ -4900,22 +5096,42 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     e.target.value = '';
   };
 
-  // Generate a realistic Demo Completed Answer Sheet to test the OMR Scanner instantaneously
+  // Generate a realistic Demo Completed Answer Sheet (with Shaded Student Number + Answers)
   const loadDemoCompletedPaper = () => {
+    const sampleStudent = studentsOnly.find(s => s.studentNumber && String(s.studentNumber).replace(/\D/g, '').length >= 4);
+    const demoDigits = (sampleStudent ? String(sampleStudent.studentNumber).replace(/\D/g, '') : '2022001234').slice(0, 10);
+
     const svgStr = buildOmrAnswerSheetSvg({
       title: activeExamTitle,
       itemCount,
-      subtitle: 'DEMO COMPLETED STUDENT PAPER (~82% ACCURACY)'
+      subtitle: `DEMO PAPER • STUDENT NO: ${demoDigits.length === 10 ? demoDigits.slice(0, 4) + '-' + demoDigits.slice(4) : demoDigits}`
     });
     const layout = getOmrSheetLayout(itemCount);
-    const fx0 = 58, fy0 = 205, fw = 700, fh = 795;
-    const rPx = Math.max(7.5, Math.min(12.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+    const fx0 = 58, fy0 = 192, fw = 700, fh = 810;
+    const idR = Math.max(6.2, Math.min(8.4, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
+    const rPx = Math.max(6.8, Math.min(10.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
     let shadedCircles = '';
+
+    // Shade demo Student Number digits & print written digits in top boxes
+    for (let c = 0; c < Math.min(demoDigits.length, layout.studentIdCols.length); c++) {
+      const col = layout.studentIdCols[c];
+      const digChar = demoDigits[c];
+      const boxX = fx0 + col.boxU * fw;
+      const boxMidY = fy0 + ((col.boxTopV + col.boxBottomV) / 2) * fh + 4;
+      shadedCircles += `<text x="${boxX.toFixed(1)}" y="${boxMidY.toFixed(1)}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f172a">${digChar}</text>`;
+      const digObj = col.digits.find(d => d.digit === digChar);
+      if (digObj) {
+        const cx = fx0 + digObj.u * fw;
+        const cy = fy0 + digObj.v * fh;
+        shadedCircles += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(idR * 0.94).toFixed(1)}" fill="#0f172a" />`;
+      }
+    }
+
+    // Shade demo Answer bubbles (~82% correct)
     layout.bubbles.forEach((item, idx) => {
       const correctLtr = answerKey[idx] || 'A';
-      // 82% correct, 14% wrong, 4% blank
       let chosen = correctLtr;
-      if (idx % 17 === 4) chosen = ''; // blank
+      if (idx % 17 === 4) chosen = '';
       else if (idx % 7 === 2) {
         const others = ['A', 'B', 'C', 'D'].filter(l => l !== correctLtr);
         chosen = others[idx % others.length];
@@ -5026,7 +5242,9 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       return;
     }
     const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId);
-    const finalName = chosenStudent ? chosenStudent.fullName : manualStudentName.trim();
+    const finalName = chosenStudent
+      ? chosenStudent.fullName
+      : (manualStudentName.trim() || (scannedStudentNumber ? `Student #${scannedStudentNumber}` : ''));
     if (!finalName) {
       showToast?.('Please select a registered student or enter the student name.', 'warning');
       return;
@@ -5034,8 +5252,10 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
 
     setIsSavingScore(true);
     const payload = {
-      studentId: chosenStudent ? chosenStudent.id : `scanned_${Date.now()}`,
-      studentName: finalName,
+      studentId: chosenStudent ? chosenStudent.id : (scannedStudentNumber ? `stud_${scannedStudentNumber.replace(/\D/g, '')}` : `scanned_${Date.now()}`),
+      studentName: chosenStudent
+        ? (chosenStudent.studentNumber ? `${chosenStudent.fullName} (${chosenStudent.studentNumber})` : chosenStudent.fullName)
+        : (scannedStudentNumber && !finalName.includes(scannedStudentNumber) ? `${finalName} (${scannedStudentNumber})` : finalName),
       studentEmail: chosenStudent ? (chosenStudent.email || '') : '',
       school: chosenStudent ? (chosenStudent.school || 'NEUST') : (manualStudentSection || 'NEUST'),
       quizId: selectedQuiz ? selectedQuiz.id : `omr_paper_${Date.now()}`,
@@ -5412,6 +5632,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
                 <span>🟢 Correct Answer</span>
                 <span>🔴 Wrong Answer (Green ring = Key)</span>
                 <span>🟡 Multiple Marks</span>
+                <span>🟣 Scanned Student No.</span>
                 <span>🔵 Drag TL/TR/BR/BL to align</span>
               </div>
             )}
@@ -5455,8 +5676,40 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             {/* ASSIGN TO STUDENT & SAVE SCORE */}
             <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', background: 'var(--bg-input)' }}>
               <div style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '0.6rem' }}>
-                💾 Save Checked Score to Student Record
+                💾 Scanned Student Number &amp; Save Score
               </div>
+              {hasScannedImage && (
+                <div style={{
+                  padding: '0.6rem 0.75rem',
+                  marginBottom: '0.7rem',
+                  borderRadius: '8px',
+                  background: matchedStudentInfo ? 'rgba(16, 185, 129, 0.14)' : 'rgba(168, 85, 247, 0.14)',
+                  border: matchedStudentInfo ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(168, 85, 247, 0.45)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '0.4rem'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Scanned Student Number (From Shading)
+                    </div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: '800', fontFamily: 'monospace', color: matchedStudentInfo ? '#34d399' : '#c084fc' }}>
+                      {scannedStudentNumber || 'Not Shaded / Blank'}
+                    </div>
+                  </div>
+                  {matchedStudentInfo ? (
+                    <span className="badge badge-status" style={{ fontSize: '0.72rem' }}>
+                      ✅ Auto-Matched: {matchedStudentInfo.fullName}
+                    </span>
+                  ) : scannedStudentNumber ? (
+                    <span className="badge badge-admin" style={{ fontSize: '0.72rem' }}>
+                      🟣 Unmatched — Select or Enter Name
+                    </span>
+                  ) : null}
+                </div>
+              )}
               <div className="form-group" style={{ marginBottom: '0.6rem' }}>
                 <label style={{ fontSize: '0.78rem' }}>Select Registered Student Account</label>
                 <select

@@ -693,12 +693,18 @@
     const passed = overrides.passed !== undefined ? !!overrides.passed : (body.passed !== undefined && body.passed !== null ? !!body.passed : (pct >= 70));
     const timeSecs = Math.min(86400, Math.max(0, parseInt(overrides.timeSpentSeconds !== undefined ? overrides.timeSpentSeconds : (body.timeSpentSeconds || 60), 10) || 60));
 
+    const isAdminRecordingForStudent = currentUser && currentUser.role === 'admin' && body && body.studentId && String(body.studentId).trim() !== '';
+
     return {
       id: String(id).slice(0, 128),
-      studentId: currentUser.id,
-      studentName: String((currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee')).slice(0, 200),
-      studentEmail: String(currentUser.email || body.studentEmail || '').slice(0, 254),
-      school: String(currentUser.school || body.school || 'NEUST').slice(0, 250),
+      studentId: String(isAdminRecordingForStudent ? body.studentId : currentUser.id).slice(0, 128),
+      studentName: String(
+        isAdminRecordingForStudent
+          ? (body.studentName || 'Scanned Student')
+          : ((currentUser.fullName && currentUser.fullName !== 'Student') ? currentUser.fullName : (body.studentName || 'Student Reviewee'))
+      ).slice(0, 200),
+      studentEmail: String(isAdminRecordingForStudent ? (body.studentEmail || '') : (currentUser.email || body.studentEmail || '')).slice(0, 254),
+      school: String(isAdminRecordingForStudent ? (body.school || 'NEUST') : (currentUser.school || body.school || 'NEUST')).slice(0, 250),
       quizId: String(overrides.quizId || body.quizId || 'custom_quiz').slice(0, 128),
       quizTitle: String(overrides.quizTitle || body.quizTitle || 'Board Prep Quiz').slice(0, 300),
       totalQuestions: totalVal,

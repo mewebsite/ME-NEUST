@@ -836,16 +836,24 @@ app.post('/api/attempts', authenticateToken, async (req, res) => {
   }
 
   const users = await fetchCollection('users');
-  const student = users.find(u => u.id === req.user.id);
+  const isAdminRecordingForStudent = req.user.role === 'admin' && req.body.studentId && String(req.body.studentId).trim() !== '';
+  const targetStudentId = isAdminRecordingForStudent ? String(req.body.studentId) : req.user.id;
+  const student = users.find(u => u.id === targetStudentId);
 
   const newAttempt = {
     id: `att_${Date.now()}`,
     quizId: quizId || 'custom_quiz',
     quizTitle: quizTitle || 'Board Prep Quiz',
-    studentId: req.user.id,
-    studentName: req.user.fullName || (student ? student.fullName : 'Student'),
-    studentEmail: req.user.email || (student ? student.email : 'N/A'),
-    school: student ? (student.school || 'Mapúa University') : 'Mapúa University',
+    studentId: targetStudentId,
+    studentName: isAdminRecordingForStudent
+      ? (req.body.studentName || (student ? student.fullName : 'Scanned Student'))
+      : (req.user.fullName || (student ? student.fullName : 'Student')),
+    studentEmail: isAdminRecordingForStudent
+      ? (req.body.studentEmail || (student ? student.email : 'N/A'))
+      : (req.user.email || (student ? student.email : 'N/A')),
+    school: isAdminRecordingForStudent
+      ? (req.body.school || (student ? student.school : 'NEUST'))
+      : (student ? (student.school || 'NEUST') : 'NEUST'),
     score: parseInt(score) || 0,
     totalQuestions: parseInt(totalQuestions) || 50,
     percentage: String(percentage),

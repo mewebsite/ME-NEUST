@@ -455,6 +455,524 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
   );
 }
 
+// ============================================================================
+// ADMIN-ONLY OMR ANSWER SHEET GENERATOR & CAMERA/PHOTO SCANNER ENGINE
+// ============================================================================
+function getOmrSheetLayout(itemCount = 50) {
+  const N = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+  const cols = N <= 50 ? 2 : 4;
+  const rowsPerCol = Math.ceil(N / cols);
+  const padTop = 0.085;
+  const padBottom = 0.055;
+  const padLeft = 0.055;
+  const padRight = 0.045;
+  const usableW = 1 - padLeft - padRight;
+  const usableH = 1 - padTop - padBottom;
+  const colW = usableW / cols;
+  const rowH = usableH / rowsPerCol;
+  const opts = ['A', 'B', 'C', 'D'];
+
+  const colHeaders = [];
+  for (let c = 0; c < cols; c++) {
+    const colX = padLeft + c * colW;
+    const numW = colW * 0.24;
+    const optAreaW = colW * 0.70;
+    const stepX = optAreaW / 4;
+    colHeaders.push({
+      col: c,
+      xStart: colX,
+      numCenterU: colX + numW * 0.45,
+      optUs: opts.map((_, oi) => colX + numW + (oi + 0.5) * stepX),
+      headerV: padTop * 0.55
+    });
+  }
+
+  const bubbles = [];
+  const radiusU = Math.min((colW * 0.70) / 10.2, 0.022);
+  const radiusV = Math.min(rowH * 0.34, 0.0175);
+
+  for (let i = 0; i < N; i++) {
+    const c = Math.floor(i / rowsPerCol);
+    const r = i % rowsPerCol;
+    const colX = padLeft + c * colW;
+    const numW = colW * 0.24;
+    const optAreaW = colW * 0.70;
+    const stepX = optAreaW / 4;
+    const v = padTop + (r + 0.5) * rowH;
+
+    bubbles.push({
+      itemNum: i + 1,
+      col: c,
+      row: r,
+      numU: colX + numW * 0.45,
+      v,
+      options: opts.map((letter, oi) => ({
+        letter,
+        u: colX + numW + (oi + 0.5) * stepX,
+        v,
+        ru: radiusU,
+        rv: radiusV
+      }))
+    });
+  }
+
+  return { N, cols, rowsPerCol, colHeaders, bubbles, radiusU, radiusV };
+}
+
+function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+  const layout = getOmrSheetLayout(itemCount);
+  const svgW = 816;
+  const svgH = 1056;
+  // Fiducial square centers define the exact [0,1]x[0,1] scanning box
+  const fx0 = 58;
+  const fy0 = 205;
+  const fw = 700;
+  const fh = 795;
+  const mSize = 26;
+
+  const mapX = (u) => fx0 + u * fw;
+  const mapY = (v) => fy0 + v * fh;
+
+  let gridSvg = '';
+
+  // Subtle column divider lines
+  for (let c = 1; c < layout.cols; c++) {
+    const xLine = mapX(0.055 + c * ((1 - 0.10) / layout.cols) - 0.008);
+    gridSvg += `<line x1="${xLine.toFixed(1)}" y1="${(fy0 + 26).toFixed(1)}" x2="${xLine.toFixed(1)}" y2="${(fy0 + fh - 26).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
+  }
+
+  // Column A B C D Headers
+  layout.colHeaders.forEach(ch => {
+    const hy = mapY(ch.headerV);
+    gridSvg += `<text x="${mapX(ch.numCenterU).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">#</text>`;
+    ['A', 'B', 'C', 'D'].forEach((ltr, idx) => {
+      gridSvg += `<text x="${mapX(ch.optUs[idx]).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="12" font-weight="700" fill="#0f172a">${ltr}</text>`;
+    });
+  });
+
+  // Rows & Bubbles
+  const rPx = Math.max(7.5, Math.min(12.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+  layout.bubbles.forEach(item => {
+    const cy = mapY(item.v);
+    if (item.row % 2 === 1) {
+      const colW = (1 - 0.10) / layout.cols;
+      const rx = mapX(0.055 + item.col * colW);
+      const rw = colW * fw - 8;
+      const rh = ((1 - 0.14) / layout.rowsPerCol) * fh;
+      gridSvg += `<rect x="${rx.toFixed(1)}" y="${(cy - rh / 2).toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="#f8fafc" rx="3" />`;
+    }
+    gridSvg += `<text x="${mapX(item.numU).toFixed(1)}" y="${(cy + 4).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#0f172a">${item.itemNum}.</text>`;
+    item.options.forEach(opt => {
+      const cx = mapX(opt.u);
+      gridSvg += `
+        <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${rPx.toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.6" />
+        <text x="${cx.toFixed(1)}" y="${(cy + 3.5).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="600" fill="#64748b">${opt.letter}</text>
+      `;
+    });
+  });
+
+  // 4 Solid Black Corner Fiducial Squares (centered exactly at (fx0, fy0), (fx0+fw, fy0), (fx0, fy0+fh), (fx0+fw, fy0+fh))
+  const corners = [
+    [fx0, fy0],
+    [fx0 + fw, fy0],
+    [fx0, fy0 + fh],
+    [fx0 + fw, fy0 + fh]
+  ];
+  const fiducialsSvg = corners.map(([cx, cy]) => `
+    <rect x="${(cx - mSize / 2 - 6).toFixed(1)}" y="${(cy - mSize / 2 - 6).toFixed(1)}" width="${mSize + 12}" height="${mSize + 12}" fill="#ffffff" />
+    <rect x="${(cx - mSize / 2).toFixed(1)}" y="${(cy - mSize / 2).toFixed(1)}" width="${mSize}" height="${mSize}" fill="#000000" />
+  `).join('');
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="100%" style="background:#ffffff; display:block; font-family: Arial, Helvetica, sans-serif;">
+    <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="#ffffff" />
+    <!-- OFFICIAL HEADER -->
+    <text x="${svgW / 2}" y="34" text-anchor="middle" font-size="10.5" letter-spacing="1" fill="#334155">REPUBLIC OF THE PHILIPPINES</text>
+    <text x="${svgW / 2}" y="53" text-anchor="middle" font-size="15" font-weight="800" fill="#0f172a">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</text>
+    <text x="${svgW / 2}" y="70" text-anchor="middle" font-size="11.5" font-weight="600" fill="#334155">College of Engineering — Mechanical Engineering Department</text>
+    <text x="${svgW / 2}" y="94" text-anchor="middle" font-size="14" font-weight="800" fill="#0f172a">${escapeHtmlForWord(title).toUpperCase()} — OMR ANSWER SHEET (${layout.N} ITEMS)</text>
+    ${subtitle ? `<text x="${svgW / 2}" y="110" text-anchor="middle" font-size="10" fill="#475569">${escapeHtmlForWord(subtitle)}</text>` : ''}
+    <line x1="42" y1="118" x2="${svgW - 42}" y2="118" stroke="#0f172a" stroke-width="2" />
+
+    <!-- STUDENT INFO FIELDS -->
+    <text x="48" y="142" font-size="11.5" font-weight="700" fill="#0f172a">Student Name:</text>
+    <line x1="138" y1="144" x2="495" y2="144" stroke="#334155" stroke-width="1.2" />
+    <text x="515" y="142" font-size="11.5" font-weight="700" fill="#0f172a">Date:</text>
+    <line x1="552" y1="144" x2="768" y2="144" stroke="#334155" stroke-width="1.2" />
+
+    <text x="48" y="168" font-size="11.5" font-weight="700" fill="#0f172a">Year &amp; Section:</text>
+    <line x1="145" y1="170" x2="495" y2="170" stroke="#334155" stroke-width="1.2" />
+    <text x="515" y="168" font-size="11.5" font-weight="700" fill="#0f172a">Score:</text>
+    <line x1="560" y1="170" x2="675" y2="170" stroke="#334155" stroke-width="1.2" />
+    <text x="684" y="168" font-size="11.5" font-weight="700" fill="#0f172a">/ ${layout.N}</text>
+
+    <!-- SHADING INSTRUCTIONS -->
+    <rect x="44" y="178" width="${svgW - 88}" height="18" fill="#f1f5f9" rx="3" />
+    <text x="${svgW / 2}" y="191" text-anchor="middle" font-size="9.5" font-weight="600" fill="#334155">INSTRUCTIONS: Completely shade the circle of your chosen answer using dark pencil or black/blue pen. Do NOT mark over the 4 black corner squares.</text>
+
+    <!-- ANSWER BUBBLE GRID -->
+    ${gridSvg}
+
+    <!-- 4 BLACK CORNER ALIGNMENT FIDUCIAL SQUARES -->
+    ${fiducialsSvg}
+
+    <text x="${svgW / 2}" y="${svgH - 18}" text-anchor="middle" font-size="9" fill="#64748b">ME BoardPrep Official OMR Scannable Answer Sheet • Align 4 Black Corner Squares inside Camera Frame</text>
+  </svg>`;
+}
+
+function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
+    window.showToast?.('Access restricted: Only administrators can generate answer sheets.', 'error');
+    return;
+  }
+  const svgMarkup = buildOmrAnswerSheetSvg({ title, itemCount, subtitle });
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>${escapeHtmlForWord(title)} - OMR Answer Sheet</title>
+  <style>
+    @page { size: letter portrait; margin: 0.25in; }
+    body { margin: 0; padding: 16px; background: #e2e8f0; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
+    .toolbar { margin-bottom: 14px; display: flex; gap: 10px; align-items: center; }
+    .print-btn { background: #2563eb; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .sheet-page { width: 8.5in; max-width: 100%; background: #ffffff; box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
+    @media print {
+      body { background: #ffffff; padding: 0; }
+      .toolbar { display: none !important; }
+      .sheet-page { box-shadow: none; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF (100% Scale)</button>
+    <span style="font-size: 13px; color: #334155;">Tip: Print at 100% scale so the 4 black corner squares scan cleanly.</span>
+  </div>
+  <div class="sheet-page">${svgMarkup}</div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const safeBase = String(title || 'ME_Quiz').replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Quiz';
+  const fileName = `${safeBase}_OMR_Answer_Sheet_${itemCount}Qs.html`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  window.showToast?.(`Downloaded Printable OMR Answer Sheet "${fileName}"! Open and print at 100% scale.`, 'success');
+}
+
+function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
+    window.showToast?.('Access restricted: Only administrators can generate answer sheets.', 'error');
+    return;
+  }
+  const N = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+  const cols = N <= 50 ? 2 : 4;
+  const rowsPerCol = Math.ceil(N / cols);
+
+  let tableRows = '';
+  for (let r = 0; r < rowsPerCol; r++) {
+    let rowCells = '';
+    for (let c = 0; c < cols; c++) {
+      const num = c * rowsPerCol + r + 1;
+      if (num <= N) {
+        rowCells += `
+          <td style="padding: 3pt 4pt; font-weight: bold; text-align: right; border-bottom: 1px solid #e2e8f0; width: 22pt;">${num}.</td>
+          <td style="padding: 3pt 6pt; text-align: center; border-bottom: 1px solid #e2e8f0; font-family: 'Segoe UI Symbol', Arial, sans-serif; font-size: 11pt; letter-spacing: 3pt;">Ⓐ Ⓑ Ⓒ Ⓓ</td>
+        `;
+      } else {
+        rowCells += '<td colspan="2" style="padding: 3pt;"></td>';
+      }
+    }
+    tableRows += `<tr>${rowCells}</tr>`;
+  }
+
+  const docHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtmlForWord(title)} - Answer Sheet</title>
+  <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+  <style>
+    @page WordSection1 { size: 8.5in 11.0in; margin: 0.65in; }
+    div.WordSection1 { page: WordSection1; }
+    body { font-family: Calibri, Arial, sans-serif; color: #0f172a; font-size: 10.5pt; }
+  </style>
+</head>
+<body>
+  <div class="WordSection1">
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 6pt; margin-bottom: 10pt;">
+      <p style="margin: 0; font-size: 9pt;">REPUBLIC OF THE PHILIPPINES</p>
+      <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+      <p style="margin: 1pt 0 4pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+      <h1 style="margin: 2pt 0 0 0; font-size: 13pt; text-transform: uppercase;">${escapeHtmlForWord(title)} — OFFICIAL ANSWER SHEET (${N} ITEMS)</h1>
+      ${subtitle ? `<p style="margin: 2pt 0 0 0; font-size: 9pt; color: #475569;">${escapeHtmlForWord(subtitle)}</p>` : ''}
+    </div>
+    <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
+      <tr>
+        <td style="padding: 3pt 0; width: 58%;"><b>Student Name:</b> ____________________________________</td>
+        <td style="padding: 3pt 0; width: 42%;"><b>Date:</b> _______________________</td>
+      </tr>
+      <tr>
+        <td style="padding: 3pt 0;"><b>Year &amp; Section:</b> ___________________________________</td>
+        <td style="padding: 3pt 0;"><b>Score:</b> _________ / ${N}</td>
+      </tr>
+    </table>
+    <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 5pt 8pt; margin-bottom: 10pt; font-size: 9pt;">
+      <b>DIRECTIONS:</b> Completely shade the bubble corresponding to your chosen answer (A, B, C, or D) using a dark pencil or pen.
+    </div>
+    <table style="width: 100%; border-collapse: collapse; border: 1.5px solid #0f172a;">
+      ${tableRows}
+    </table>
+  </div>
+</body>
+</html>`;
+
+  const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword;charset=utf-8' });
+  const safeBase = String(title || 'ME_Quiz').replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Quiz';
+  const fileName = `${safeBase}_Answer_Sheet_${N}Qs.doc`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  window.showToast?.(`Downloaded Word Answer Sheet "${fileName}"!`, 'success');
+}
+
+// --- PROJECTIVE 3x3 HOMOGRAPHY SOLVER (Maps normalized [0,1]x[0,1] -> 4 scanned corner points) ---
+function computeOmrHomography(dstPts) {
+  // dstPts = [TL, TR, BR, BL] corresponding to (0,0), (1,0), (1,1), (0,1)
+  const src = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  const A = [];
+  const b = [];
+  for (let i = 0; i < 4; i++) {
+    const [u, v] = src[i];
+    const { x, y } = dstPts[i];
+    A.push([u, v, 1, 0, 0, 0, -u * x, -v * x]);
+    b.push(x);
+    A.push([0, 0, 0, u, v, 1, -u * y, -v * y]);
+    b.push(y);
+  }
+  // Gaussian elimination with partial pivoting
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    let maxRow = i;
+    for (let r = i + 1; r < n; r++) {
+      if (Math.abs(A[r][i]) > Math.abs(A[maxRow][i])) maxRow = r;
+    }
+    [A[i], A[maxRow]] = [A[maxRow], A[i]];
+    [b[i], b[maxRow]] = [b[maxRow], b[i]];
+    const pivot = A[i][i] || 1e-12;
+    for (let r = i + 1; r < n; r++) {
+      const factor = A[r][i] / pivot;
+      for (let c = i; c < n; c++) A[r][c] -= factor * A[i][c];
+      b[r] -= factor * b[i];
+    }
+  }
+  const h = new Array(8).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let sum = b[i];
+    for (let c = i + 1; c < n; c++) sum -= A[i][c] * h[c];
+    h[i] = sum / (A[i][i] || 1e-12);
+  }
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function applyOmrHomography(H, u, v) {
+  const denom = H[6] * u + H[7] * v + H[8];
+  const x = (H[0] * u + H[1] * v + H[2]) / (denom || 1e-9);
+  const y = (H[3] * u + H[4] * v + H[5]) / (denom || 1e-9);
+  return { x, y };
+}
+
+// --- FAST INTEGRAL-IMAGE FIDUCIAL SQUARE DETECTOR ---
+function detectOmrFiducialCorners(imgData) {
+  const { width: w, height: h, data } = imgData;
+  // Build grayscale summed-area table (SAT)
+  const sat = new Float64Array((w + 1) * (h + 1));
+  const stride = w + 1;
+  for (let y = 0; y < h; y++) {
+    let rowSum = 0;
+    const rowOff = (y + 1) * stride;
+    const prevOff = y * stride;
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      rowSum += lum;
+      sat[rowOff + x + 1] = sat[prevOff + x + 1] + rowSum;
+    }
+  }
+
+  const boxMean = (x0, y0, x1, y1) => {
+    const cx0 = Math.max(0, Math.min(w, x0 | 0));
+    const cy0 = Math.max(0, Math.min(h, y0 | 0));
+    const cx1 = Math.max(cx0 + 1, Math.min(w, x1 | 0));
+    const cy1 = Math.max(cy0 + 1, Math.min(h, y1 | 0));
+    const area = (cx1 - cx0) * (cy1 - cy0);
+    const sum = sat[cy1 * stride + cx1] - sat[cy0 * stride + cx1] - sat[cy1 * stride + cx0] + sat[cy0 * stride + cx0];
+    return sum / area;
+  };
+
+  // Fiducial square expected side length ~ 2.4% to 4.5% of image width
+  const scales = [
+    Math.max(8, Math.round(w * 0.025)),
+    Math.max(10, Math.round(w * 0.032)),
+    Math.max(12, Math.round(w * 0.042))
+  ];
+  const step = Math.max(2, Math.round(w / 260));
+
+  const searchRegion = (rx0, ry0, rx1, ry1, fallback) => {
+    let bestScore = -1e9;
+    let bestPt = fallback;
+    for (const s of scales) {
+      const half = Math.floor(s / 2);
+      const outer = Math.floor(s * 0.95);
+      const xStart = Math.max(outer + 1, Math.floor(rx0));
+      const xEnd = Math.min(w - outer - 2, Math.floor(rx1));
+      const yStart = Math.max(outer + 1, Math.floor(ry0));
+      const yEnd = Math.min(h - outer - 2, Math.floor(ry1));
+
+      for (let y = yStart; y <= yEnd; y += step) {
+        for (let x = xStart; x <= xEnd; x += step) {
+          const innerMean = boxMean(x - half, y - half, x + half, y + half);
+          if (innerMean > 135) continue; // must be dark solid square
+          const outerBoxMean = boxMean(x - outer, y - outer, x + outer, y + outer);
+          const innerArea = (2 * half) * (2 * half);
+          const outerArea = (2 * outer) * (2 * outer);
+          const ringMean = (outerBoxMean * outerArea - innerMean * innerArea) / Math.max(1, outerArea - innerArea);
+          if (ringMean < 130) continue; // must have bright quiet border around square
+          const contrast = ringMean - innerMean;
+          // Verify all 4 inner sub-quadrants are similarly dark (true solid square, not a thin line)
+          const q1 = boxMean(x - half, y - half, x, y);
+          const q2 = boxMean(x, y - half, x + half, y);
+          const q3 = boxMean(x - half, y, x, y + half);
+          const q4 = boxMean(x, y, x + half, y + half);
+          const maxQ = Math.max(q1, q2, q3, q4);
+          if (maxQ > 155) continue;
+          const uniformityPenalty = Math.abs(q1 - q4) + Math.abs(q2 - q3);
+          const score = contrast - uniformityPenalty * 0.5;
+          if (score > bestScore) {
+            bestScore = score;
+            bestPt = { x, y, detected: true, score };
+          }
+        }
+      }
+    }
+    return bestPt;
+  };
+
+  // Expected default normalized positions of fiducials on the printed SVG sheet
+  const tl = searchRegion(0, h * 0.08, w * 0.36, h * 0.44, { x: w * (58 / 816), y: h * (205 / 1056), detected: false });
+  const tr = searchRegion(w * 0.64, h * 0.08, w, h * 0.44, { x: w * (758 / 816), y: h * (205 / 1056), detected: false });
+  const br = searchRegion(w * 0.64, h * 0.60, w, h * 0.99, { x: w * (758 / 816), y: h * (1000 / 1056), detected: false });
+  const bl = searchRegion(0, h * 0.60, w * 0.36, h * 0.99, { x: w * (58 / 816), y: h * (1000 / 1056), detected: false });
+
+  return [tl, tr, br, bl]; // order: TL, TR, BR, BL
+}
+
+// --- OMR BUBBLE SAMPLER & AUTO-GRADER ---
+function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 0.22) {
+  const { width: w, height: h, data } = imgData;
+  const layout = getOmrSheetLayout(itemCount);
+  const H = computeOmrHomography(corners);
+
+  const sampleDiskBrightness = (cx, cy, rPx) => {
+    const r = Math.max(2, Math.round(rPx));
+    const r2 = r * r;
+    const xMin = Math.max(0, Math.floor(cx - r));
+    const xMax = Math.min(w - 1, Math.ceil(cx + r));
+    const yMin = Math.max(0, Math.floor(cy - r));
+    const yMax = Math.min(h - 1, Math.ceil(cy + r));
+    let sum = 0;
+    let count = 0;
+    for (let y = yMin; y <= yMax; y++) {
+      const dy = y - cy;
+      for (let x = xMin; x <= xMax; x++) {
+        const dx = x - cx;
+        if (dx * dx + dy * dy <= r2) {
+          const idx = (y * w + x) * 4;
+          sum += (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]) / 255;
+          count++;
+        }
+      }
+    }
+    return count > 0 ? (sum / count) : 1;
+  };
+
+  // Estimate pixel scale from top/left edge lengths
+  const topW = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+  const leftH = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+
+  const results = layout.bubbles.map(item => {
+    const optionStats = item.options.map(opt => {
+      const pt = applyOmrHomography(H, opt.u, opt.v);
+      const rPx = Math.max(3, Math.min(opt.ru * topW, opt.rv * leftH));
+      // Sample inner 62% of bubble (avoids printed circle border!)
+      const coreBrightness = sampleDiskBrightness(pt.x, pt.y, rPx * 0.62);
+      // Local paper reference brightness just above/below bubble
+      const ref1 = sampleDiskBrightness(pt.x, pt.y - rPx * 1.45, Math.max(2, rPx * 0.25));
+      const ref2 = sampleDiskBrightness(pt.x, pt.y + rPx * 1.45, Math.max(2, rPx * 0.25));
+      const localPaper = Math.max(0.45, Math.max(ref1, ref2));
+      const fillRatio = Math.max(0, (localPaper - coreBrightness) / localPaper);
+      return {
+        letter: opt.letter,
+        x: pt.x,
+        y: pt.y,
+        rPx,
+        fillRatio
+      };
+    });
+
+    // Sort by fillRatio descending
+    const sorted = [...optionStats].sort((a, b) => b.fillRatio - a.fillRatio);
+    const darkest = sorted[0];
+    const second = sorted[1];
+    // Baseline unshaded average of the 3 lightest bubbles
+    const unshadedBaseline = (sorted[1].fillRatio + sorted[2].fillRatio + sorted[3].fillRatio) / 3;
+    const relativeContrast = darkest.fillRatio - unshadedBaseline;
+
+    const marked = optionStats.filter(o => (o.fillRatio - unshadedBaseline) >= sensitivity && o.fillRatio >= sensitivity * 0.9);
+
+    let detected = '';
+    let status = 'blank';
+    if (marked.length === 1) {
+      detected = marked[0].letter;
+      status = 'single';
+    } else if (marked.length > 1) {
+      // If top choice is overwhelmingly darker than second (e.g. light erasure), accept top choice
+      if (darkest.fillRatio - second.fillRatio >= 0.18) {
+        detected = darkest.letter;
+        status = 'single';
+      } else {
+        detected = 'MULTI';
+        status = 'multi';
+      }
+    } else if (relativeContrast >= sensitivity * 1.15 && darkest.fillRatio >= sensitivity) {
+      detected = darkest.letter;
+      status = 'single';
+    }
+
+    return {
+      itemNum: item.itemNum,
+      detected,
+      status,
+      optionStats
+    };
+  });
+
+  return results;
+}
+
 // ROBUST ATTEMPT SCORE EXTRACTION HELPERS
 function getAttemptScore(att) {
   if (!att) return 0;
@@ -4105,6 +4623,978 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
   );
 }
 
+// ============================================================================
+// ADMIN-ONLY OMR ANSWER SHEET GENERATOR & PAPER SCANNER VIEW
+// ============================================================================
+function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, showToast }) {
+  // Mode & Quiz / Key State
+  const [selectedQuizId, setSelectedQuizId] = useState(quizzesList[0]?.id || 'custom');
+  const [customTitle, setCustomTitle] = useState('ME Board Exam Practice Quiz');
+  const [itemCount, setItemCount] = useState(quizzesList[0]?.questionCount ? Math.min(100, quizzesList[0].questionCount) : 50);
+  const [passingPct, setPassingPct] = useState(quizzesList[0]?.passingScorePct || 70);
+  const [answerKey, setAnswerKey] = useState([]);
+  const [bulkKeyInput, setBulkKeyInput] = useState('');
+  const [showSheetPreview, setShowSheetPreview] = useState(true);
+
+  // Camera & Scanner State
+  const videoRef = React.useRef(null);
+  const scanCanvasRef = React.useRef(null);
+  const sourceCanvasRef = React.useRef(null);
+  const fileInputRef = React.useRef(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [streamObj, setStreamObj] = useState(null);
+  const [hasScannedImage, setHasScannedImage] = useState(false);
+  const [corners, setCorners] = useState(null); // [TL, TR, BR, BL]
+  const [draggingCornerIdx, setDraggingCornerIdx] = useState(null);
+  const [sensitivity, setSensitivity] = useState(0.22);
+  const [scanResults, setScanResults] = useState([]);
+  const [manualOverrides, setManualOverrides] = useState({});
+
+  // Student Recording State
+  const studentsOnly = usersList.filter(u => u && u.role !== 'admin');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [manualStudentName, setManualStudentName] = useState('');
+  const [manualStudentSection, setManualStudentSection] = useState('BSME');
+  const [isSavingScore, setIsSavingScore] = useState(false);
+  const [scannedHistory, setScannedHistory] = useState([]);
+
+  const selectedQuiz = quizzesList.find(q => q.id === selectedQuizId) || null;
+  const activeExamTitle = selectedQuiz ? selectedQuiz.title : customTitle;
+
+  // Load Answer Key automatically when selectedQuizId changes
+  useEffect(() => {
+    if (selectedQuiz) {
+      const qs = resolveQuestionsForQuizExport(selectedQuiz);
+      const count = Math.max(1, Math.min(100, qs.length || selectedQuiz.questionCount || 50));
+      setItemCount(count);
+      setPassingPct(selectedQuiz.passingScorePct || 70);
+      const keyArr = Array.from({ length: count }, (_, idx) => {
+        const ans = qs[idx] && qs[idx].CorrectAnswer ? String(qs[idx].CorrectAnswer).trim().toUpperCase().charAt(0) : 'A';
+        return ['A', 'B', 'C', 'D'].includes(ans) ? ans : 'A';
+      });
+      setAnswerKey(keyArr);
+      setBulkKeyInput(keyArr.join(''));
+    } else {
+      const count = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+      setAnswerKey(prev => {
+        const next = Array.from({ length: count }, (_, idx) => prev[idx] || ['A', 'B', 'C', 'D'][idx % 4]);
+        setBulkKeyInput(next.join(''));
+        return next;
+      });
+    }
+    setManualOverrides({});
+  }, [selectedQuizId]);
+
+  // Adjust answer key array length if custom itemCount changes
+  const handleItemCountChange = (newCount) => {
+    const n = Math.max(1, Math.min(100, parseInt(newCount, 10) || 20));
+    setItemCount(n);
+    setAnswerKey(prev => {
+      const next = Array.from({ length: n }, (_, idx) => prev[idx] || ['A', 'B', 'C', 'D'][idx % 4]);
+      setBulkKeyInput(next.join(''));
+      return next;
+    });
+    setManualOverrides({});
+  };
+
+  const applyBulkKeyString = (val) => {
+    setBulkKeyInput(val);
+    const cleaned = val.toUpperCase().replace(/[^ABCD]/g, '');
+    if (cleaned.length > 0) {
+      const next = Array.from({ length: itemCount }, (_, idx) => cleaned[idx] || answerKey[idx] || 'A');
+      setAnswerKey(next);
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamObj) {
+      streamObj.getTracks().forEach(t => t.stop());
+      setStreamObj(null);
+    }
+    setCameraActive(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamObj) streamObj.getTracks().forEach(t => t.stop());
+    };
+  }, [streamObj]);
+
+  const startCamera = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showToast?.('Camera access is not supported in this browser. Use "Upload Test Paper Photo" instead.', 'warning');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1600 }, height: { ideal: 1200 } },
+        audio: false
+      });
+      setStreamObj(stream);
+      setCameraActive(true);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 100);
+    } catch (err) {
+      showToast?.('Unable to open camera (' + (err.message || 'Permission denied') + '). You can still upload a photo of the test paper.', 'error');
+    }
+  };
+
+  // Run OMR grading + draw annotated overlay onto scanCanvasRef
+  const runScanAndRender = React.useCallback((activeCorners, activeSensitivity, overridesMap = manualOverrides) => {
+    const srcCanvas = sourceCanvasRef.current;
+    const dispCanvas = scanCanvasRef.current;
+    if (!srcCanvas || !dispCanvas || !activeCorners || activeCorners.length !== 4) return;
+
+    const w = srcCanvas.width;
+    const h = srcCanvas.height;
+    dispCanvas.width = w;
+    dispCanvas.height = h;
+    const srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    const dispCtx = dispCanvas.getContext('2d');
+    const imgData = srcCtx.getImageData(0, 0, w, h);
+
+    const rawResults = scanOmrBubblesFromImageData(imgData, activeCorners, itemCount, activeSensitivity);
+    setScanResults(rawResults);
+
+    // Draw original image
+    dispCtx.clearRect(0, 0, w, h);
+    dispCtx.drawImage(srcCanvas, 0, 0);
+
+    // Draw alignment quad connecting TL -> TR -> BR -> BL
+    dispCtx.save();
+    dispCtx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+    dispCtx.lineWidth = Math.max(2, w / 350);
+    dispCtx.setLineDash([8, 6]);
+    dispCtx.beginPath();
+    dispCtx.moveTo(activeCorners[0].x, activeCorners[0].y);
+    dispCtx.lineTo(activeCorners[1].x, activeCorners[1].y);
+    dispCtx.lineTo(activeCorners[2].x, activeCorners[2].y);
+    dispCtx.lineTo(activeCorners[3].x, activeCorners[3].y);
+    dispCtx.closePath();
+    dispCtx.stroke();
+    dispCtx.setLineDash([]);
+
+    // Draw graded bubble overlays
+    rawResults.forEach((res, idx) => {
+      const correctAns = answerKey[idx] || 'A';
+      const studentAns = overridesMap[res.itemNum] !== undefined ? overridesMap[res.itemNum] : res.detected;
+      const isCorrect = studentAns && studentAns !== 'MULTI' && studentAns === correctAns;
+
+      res.optionStats.forEach(opt => {
+        const isStudentChoice = studentAns === opt.letter;
+        const isRightOption = correctAns === opt.letter;
+
+        if (isStudentChoice) {
+          dispCtx.beginPath();
+          dispCtx.arc(opt.x, opt.y, opt.rPx * 1.15, 0, Math.PI * 2);
+          dispCtx.lineWidth = Math.max(2.2, w / 340);
+          dispCtx.strokeStyle = isCorrect ? '#10b981' : '#ef4444';
+          dispCtx.fillStyle = isCorrect ? 'rgba(16, 185, 129, 0.28)' : 'rgba(239, 68, 68, 0.28)';
+          dispCtx.fill();
+          dispCtx.stroke();
+        } else if (!isCorrect && isRightOption) {
+          dispCtx.beginPath();
+          dispCtx.arc(opt.x, opt.y, opt.rPx * 1.12, 0, Math.PI * 2);
+          dispCtx.lineWidth = Math.max(1.8, w / 420);
+          dispCtx.strokeStyle = '#10b981';
+          dispCtx.stroke();
+        } else if (studentAns === 'MULTI' && opt.fillRatio >= activeSensitivity) {
+          dispCtx.beginPath();
+          dispCtx.arc(opt.x, opt.y, opt.rPx * 1.15, 0, Math.PI * 2);
+          dispCtx.lineWidth = Math.max(2, w / 360);
+          dispCtx.strokeStyle = '#f59e0b';
+          dispCtx.stroke();
+        }
+      });
+    });
+
+    // Draw 4 draggable corner handles (TL, TR, BR, BL)
+    const labels = ['TL', 'TR', 'BR', 'BL'];
+    const handleR = Math.max(11, Math.round(w / 55));
+    activeCorners.forEach((pt, idx) => {
+      dispCtx.beginPath();
+      dispCtx.arc(pt.x, pt.y, handleR, 0, Math.PI * 2);
+      dispCtx.fillStyle = 'rgba(14, 165, 233, 0.85)';
+      dispCtx.fill();
+      dispCtx.lineWidth = 2.5;
+      dispCtx.strokeStyle = '#ffffff';
+      dispCtx.stroke();
+      dispCtx.fillStyle = '#ffffff';
+      dispCtx.font = `bold ${Math.max(10, Math.round(handleR * 0.8))}px Arial`;
+      dispCtx.textAlign = 'center';
+      dispCtx.textBaseline = 'middle';
+      dispCtx.fillText(labels[idx], pt.x, pt.y);
+    });
+    dispCtx.restore();
+  }, [itemCount, answerKey, manualOverrides]);
+
+  useEffect(() => {
+    if (hasScannedImage && corners) {
+      runScanAndRender(corners, sensitivity, manualOverrides);
+    }
+  }, [hasScannedImage, corners, sensitivity, answerKey, itemCount, manualOverrides, runScanAndRender]);
+
+  const loadImageOntoScanner = (imgOrVideo, srcW, srcH) => {
+    const maxDim = 1100;
+    const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
+    const w = Math.round(srcW * scale);
+    const h = Math.round(srcH * scale);
+
+    if (!sourceCanvasRef.current) {
+      sourceCanvasRef.current = document.createElement('canvas');
+    }
+    const srcCanvas = sourceCanvasRef.current;
+    srcCanvas.width = w;
+    srcCanvas.height = h;
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(imgOrVideo, 0, 0, w, h);
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const detectedCorners = detectOmrFiducialCorners(imgData);
+    setManualOverrides({});
+    setCorners(detectedCorners);
+    setHasScannedImage(true);
+
+    const foundCount = detectedCorners.filter(c => c.detected).length;
+    showToast?.(
+      foundCount === 4
+        ? 'All 4 corner markers auto-detected! Paper graded instantly.'
+        : `Auto-aligned ${foundCount}/4 corner markers. Drag any cyan corner handle onto the black squares if needed.`,
+      foundCount === 4 ? 'success' : 'info'
+    );
+  };
+
+  const captureFromCamera = () => {
+    const vid = videoRef.current;
+    if (!vid || !vid.videoWidth) return;
+    loadImageOntoScanner(vid, vid.videoWidth, vid.videoHeight);
+    stopCamera();
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        loadImageOntoScanner(img, img.naturalWidth || img.width, img.naturalHeight || img.height);
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // Generate a realistic Demo Completed Answer Sheet to test the OMR Scanner instantaneously
+  const loadDemoCompletedPaper = () => {
+    const svgStr = buildOmrAnswerSheetSvg({
+      title: activeExamTitle,
+      itemCount,
+      subtitle: 'DEMO COMPLETED STUDENT PAPER (~82% ACCURACY)'
+    });
+    const layout = getOmrSheetLayout(itemCount);
+    const fx0 = 58, fy0 = 205, fw = 700, fh = 795;
+    const rPx = Math.max(7.5, Math.min(12.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+    let shadedCircles = '';
+    layout.bubbles.forEach((item, idx) => {
+      const correctLtr = answerKey[idx] || 'A';
+      // 82% correct, 14% wrong, 4% blank
+      let chosen = correctLtr;
+      if (idx % 17 === 4) chosen = ''; // blank
+      else if (idx % 7 === 2) {
+        const others = ['A', 'B', 'C', 'D'].filter(l => l !== correctLtr);
+        chosen = others[idx % others.length];
+      }
+      if (chosen) {
+        const opt = item.options.find(o => o.letter === chosen);
+        if (opt) {
+          const cx = fx0 + opt.u * fw;
+          const cy = fy0 + opt.v * fh;
+          shadedCircles += `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${(rPx * 0.92).toFixed(1)}" fill="#1e293b" />`;
+        }
+      }
+    });
+    const filledSvg = svgStr.replace('</svg>', `${shadedCircles}</svg>`);
+    const blob = new Blob([filledSvg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      // Draw onto an offscreen canvas with slight realistic camera margin & 1.5° tilt
+      const demoC = document.createElement('canvas');
+      demoC.width = 900;
+      demoC.height = 1140;
+      const dCtx = demoC.getContext('2d');
+      dCtx.fillStyle = '#d1d5db';
+      dCtx.fillRect(0, 0, demoC.width, demoC.height);
+      dCtx.save();
+      dCtx.translate(demoC.width / 2, demoC.height / 2);
+      dCtx.rotate(0.022);
+      dCtx.drawImage(img, -408, -528, 816, 1056);
+      dCtx.restore();
+      URL.revokeObjectURL(url);
+      loadImageOntoScanner(demoC, demoC.width, demoC.height);
+    };
+    img.src = url;
+  };
+
+  // Dragging 4 corner handles (Mouse + Touch)
+  const getCanvasPoint = (e) => {
+    const canvas = scanCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height
+    };
+  };
+
+  const handleCanvasPointerDown = (e) => {
+    if (!corners) return;
+    const pt = getCanvasPoint(e);
+    if (!pt) return;
+    const hitR = Math.max(24, (scanCanvasRef.current?.width || 800) / 28);
+    const idx = corners.findIndex(c => Math.hypot(c.x - pt.x, c.y - pt.y) <= hitR);
+    if (idx !== -1) {
+      e.preventDefault();
+      setDraggingCornerIdx(idx);
+    }
+  };
+
+  const handleCanvasPointerMove = (e) => {
+    if (draggingCornerIdx === null || !corners) return;
+    e.preventDefault();
+    const pt = getCanvasPoint(e);
+    if (!pt) return;
+    const next = corners.map((c, idx) => idx === draggingCornerIdx ? { ...c, x: pt.x, y: pt.y, detected: true } : c);
+    setCorners(next);
+  };
+
+  const handleCanvasPointerUp = () => {
+    setDraggingCornerIdx(null);
+  };
+
+  const handleReAutoAlign = () => {
+    if (!sourceCanvasRef.current) return;
+    const srcCanvas = sourceCanvasRef.current;
+    const ctx = srcCanvas.getContext('2d', { willReadFrequently: true });
+    const detected = detectOmrFiducialCorners(ctx.getImageData(0, 0, srcCanvas.width, srcCanvas.height));
+    setCorners(detected);
+    showToast?.('Re-ran automatic 4-corner marker detection.', 'info');
+  };
+
+  // Compute Grading Summary
+  const gradedItems = React.useMemo(() => {
+    return Array.from({ length: itemCount }, (_, idx) => {
+      const itemNum = idx + 1;
+      const keyAns = answerKey[idx] || 'A';
+      const scanItem = scanResults[idx];
+      const detected = scanItem ? scanItem.detected : '';
+      const finalAns = manualOverrides[itemNum] !== undefined ? manualOverrides[itemNum] : detected;
+      const isCorrect = !!finalAns && finalAns !== 'MULTI' && finalAns === keyAns;
+      const isBlank = !finalAns;
+      const isMulti = finalAns === 'MULTI';
+      return { itemNum, keyAns, detected, finalAns, isCorrect, isBlank, isMulti };
+    });
+  }, [itemCount, answerKey, scanResults, manualOverrides]);
+
+  const correctCount = gradedItems.filter(i => i.isCorrect).length;
+  const blankOrMultiCount = gradedItems.filter(i => i.isBlank || i.isMulti).length;
+  const wrongCount = itemCount - correctCount - blankOrMultiCount;
+  const scorePct = itemCount > 0 ? Math.round((correctCount / itemCount) * 100) : 0;
+  const isPassed = scorePct >= passingPct;
+
+  const handleSaveScannedScore = async () => {
+    if (!hasScannedImage && Object.keys(manualOverrides).length === 0) {
+      showToast?.('Please scan a student answer sheet first before saving.', 'warning');
+      return;
+    }
+    const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId);
+    const finalName = chosenStudent ? chosenStudent.fullName : manualStudentName.trim();
+    if (!finalName) {
+      showToast?.('Please select a registered student or enter the student name.', 'warning');
+      return;
+    }
+
+    setIsSavingScore(true);
+    const payload = {
+      studentId: chosenStudent ? chosenStudent.id : `scanned_${Date.now()}`,
+      studentName: finalName,
+      studentEmail: chosenStudent ? (chosenStudent.email || '') : '',
+      school: chosenStudent ? (chosenStudent.school || 'NEUST') : (manualStudentSection || 'NEUST'),
+      quizId: selectedQuiz ? selectedQuiz.id : `omr_paper_${Date.now()}`,
+      quizTitle: `[OMR Scan] ${activeExamTitle}`,
+      score: correctCount,
+      totalQuestions: itemCount,
+      percentage: scorePct,
+      passed: isPassed,
+      timeSpentSeconds: 60
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/api/attempts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) {
+        showToast?.(data.error, 'error');
+      } else {
+        setScannedHistory(prev => [{
+          id: Date.now(),
+          studentName: finalName,
+          section: payload.school,
+          quizTitle: activeExamTitle,
+          score: correctCount,
+          total: itemCount,
+          percentage: scorePct,
+          passed: isPassed,
+          scannedAt: new Date().toLocaleTimeString()
+        }, ...prev]);
+        showToast?.(`Saved scanned score for ${finalName}: ${correctCount}/${itemCount} (${scorePct}%)!`, 'success');
+        if (loadAttempts) loadAttempts();
+        setManualStudentName('');
+      }
+    } catch (err) {
+      showToast?.('Error saving scanned score: ' + err.message, 'error');
+    } finally {
+      setIsSavingScore(false);
+    }
+  };
+
+  const exportSessionScoresCsv = () => {
+    if (scannedHistory.length === 0) {
+      showToast?.('No scanned papers saved in this session yet.', 'warning');
+      return;
+    }
+    const headers = ['Student Name', 'Section/School', 'Quiz Title', 'Score', 'Total Items', 'Percentage', 'Status', 'Scanned Time'];
+    const rows = [headers.join(',')];
+    scannedHistory.forEach(r => {
+      rows.push([
+        `"${String(r.studentName).replace(/"/g, '""')}"`,
+        `"${String(r.section).replace(/"/g, '""')}"`,
+        `"${String(r.quizTitle).replace(/"/g, '""')}"`,
+        r.score,
+        r.total,
+        `${r.percentage}%`,
+        r.passed ? 'PASSED' : 'FAILED',
+        `"${r.scannedAt}"`
+      ].join(','));
+    });
+    const blob = new Blob(['\ufeff' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `OMR_Scanned_Scores_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    showToast?.('Exported scanned scores CSV successfully!', 'success');
+  };
+
+  return (
+    <div className="tab-content-fade" key="tab-omr">
+      {/* HEADER BANNER */}
+      <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem', borderLeft: '4px solid #38bdf8' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+              <span className="badge badge-admin" style={{ fontSize: '0.72rem' }}>🔒 ADMIN EXCLUSIVE</span>
+              <span className="badge badge-status" style={{ fontSize: '0.72rem' }}>OMR Optical Scanner</span>
+            </div>
+            <h3 style={{ fontSize: '1.35rem', marginBottom: '0.25rem' }}>📄 Answer Sheet Generator &amp; Test Paper Scanner</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
+              Generate scannable NEUST OMR bubble answer sheets for any quiz, then scan completed student papers using your camera or uploaded photo to automatically check and save scores.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => exportOmrAnswerSheetHtml({ title: activeExamTitle, itemCount, subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '' })}
+            >
+              🖨️ Download Printable OMR Sheet (.html)
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ borderColor: 'rgba(56, 189, 248, 0.5)', color: '#38bdf8' }}
+              onClick={() => exportOmrAnswerSheetWord({ title: activeExamTitle, itemCount, subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '' })}
+            >
+              📄 Download Word Answer Sheet (.doc)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* STEP 1: QUIZ & ANSWER KEY CONFIGURATION */}
+      <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <h4 style={{ marginBottom: '1rem', fontSize: '1.05rem', color: 'var(--primary-light)' }}>
+          1️⃣ Step 1: Select Quiz &amp; Official Answer Key
+        </h4>
+
+        <div className="grid-2col" style={{ gap: '1rem', marginBottom: '1rem' }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Select Faculty Quiz (Auto-Loads Answer Key)</label>
+            <select
+              className="form-control"
+              value={selectedQuizId}
+              onChange={e => setSelectedQuizId(e.target.value)}
+            >
+              <option value="custom">✏️ Custom Test Paper / Manual Answer Key</option>
+              {quizzesList.map(qz => (
+                <option key={qz.id} value={qz.id}>
+                  {qz.title} ({Math.min(100, qz.questionCount || 50)} Items)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid-2col" style={{ gap: '0.75rem' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Number of Items (1–100)</label>
+              <select
+                className="form-control"
+                value={itemCount}
+                onChange={e => handleItemCountChange(e.target.value)}
+                disabled={!!selectedQuiz}
+              >
+                <option value="10">10 Items</option>
+                <option value="20">20 Items</option>
+                <option value="25">25 Items</option>
+                <option value="30">30 Items</option>
+                <option value="40">40 Items</option>
+                <option value="50">50 Items (Standard)</option>
+                <option value="75">75 Items</option>
+                <option value="100">100 Items (Board Exam)</option>
+                {![10, 20, 25, 30, 40, 50, 75, 100].includes(itemCount) && (
+                  <option value={itemCount}>{itemCount} Items (From Quiz)</option>
+                )}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Passing Score (%)</label>
+              <input
+                type="number"
+                className="form-control"
+                min="1"
+                max="100"
+                value={passingPct}
+                onChange={e => setPassingPct(Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 70)))}
+              />
+            </div>
+          </div>
+        </div>
+
+        {!selectedQuiz && (
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label>Custom Exam / Quiz Title (Printed on Answer Sheet)</label>
+            <input
+              type="text"
+              className="form-control"
+              value={customTitle}
+              onChange={e => setCustomTitle(e.target.value)}
+              placeholder="e.g. Midterm Exam - Power Plant Design"
+            />
+          </div>
+        )}
+
+        {/* Quick Answer Key Input + Toggleable Preview */}
+        <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <label style={{ margin: 0 }}>
+              Official Answer Key ({answerKey.length} Items) — Click pills below or type A/B/C/D string:
+            </label>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ padding: '0.2rem 0.65rem', fontSize: '0.76rem' }}
+              onClick={() => setShowSheetPreview(p => !p)}
+            >
+              {showSheetPreview ? '🙈 Hide Answer Sheet Preview' : '👁️ Show Answer Sheet Preview'}
+            </button>
+          </div>
+          <input
+            type="text"
+            className="form-control"
+            style={{ fontFamily: 'monospace', letterSpacing: '2px', fontSize: '0.88rem' }}
+            value={bulkKeyInput}
+            onChange={e => applyBulkKeyString(e.target.value)}
+            placeholder="e.g. ABCDABCD..."
+          />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.6rem', maxHeight: '110px', overflowY: 'auto', padding: '0.5rem', background: 'var(--bg-input)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            {answerKey.map((ltr, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '0.18rem 0.48rem', fontSize: '0.73rem', fontFamily: 'monospace' }}
+                title={`Click to cycle Answer Key for Item #${idx + 1}`}
+                onClick={() => {
+                  const opts = ['A', 'B', 'C', 'D'];
+                  const nextLtr = opts[(opts.indexOf(ltr) + 1) % 4];
+                  const nextKey = [...answerKey];
+                  nextKey[idx] = nextLtr;
+                  setAnswerKey(nextKey);
+                  setBulkKeyInput(nextKey.join(''));
+                }}
+              >
+                {idx + 1}:<strong style={{ color: 'var(--primary-light)', marginLeft: '2px' }}>{ltr}</strong>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Printable OMR Answer Sheet Live Preview */}
+        {showSheetPreview && (
+          <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(15, 23, 42, 0.5)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.84rem', fontWeight: '600', color: '#38bdf8' }}>
+                📋 Scannable OMR Answer Sheet Preview ({itemCount} Items with 4 Corner Alignment Squares)
+              </span>
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
+                Print the downloaded .html file at 100% scale for highest optical scanning accuracy.
+              </span>
+            </div>
+            <div
+              style={{ maxWidth: '460px', margin: '0 auto', borderRadius: '6px', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+              dangerouslySetInnerHTML={{
+                __html: buildOmrAnswerSheetSvg({
+                  title: activeExamTitle,
+                  itemCount,
+                  subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : ''
+                })
+              }}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* STEP 2 & 3: LIVE CAMERA / PHOTO SCANNER & INSTANT GRADING WORKSPACE */}
+      <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <div>
+            <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#34d399' }}>
+              2️⃣ Step 2: Scan Student Test Paper / Answer Sheet
+            </h4>
+            <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Use your device camera or upload a photo of the shaded answer sheet. Drag the 4 cyan corner handles (TL, TR, BR, BL) onto the 4 black squares if manual fine-tuning is needed.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {!cameraActive ? (
+              <button type="button" className="btn-primary" onClick={startCamera}>
+                📷 Start Live Camera
+              </button>
+            ) : (
+              <>
+                <button type="button" className="btn-success" onClick={captureFromCamera}>
+                  📸 Capture &amp; Grade Paper
+                </button>
+                <button type="button" className="btn-danger" onClick={stopCamera}>
+                  ⏹️ Stop Camera
+                </button>
+              </>
+            )}
+            <button type="button" className="btn-secondary" onClick={() => fileInputRef.current?.click()}>
+              🖼️ Upload Paper Photo
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ borderColor: 'rgba(245, 158, 11, 0.5)', color: '#fbbf24' }}
+              onClick={loadDemoCompletedPaper}
+              title="Load a sample shaded student answer sheet to test the OMR scanner right now"
+            >
+              🧪 Test with Demo Paper
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={handlePhotoUpload}
+            />
+          </div>
+        </div>
+
+        {/* LIVE CAMERA VIEWFINDER */}
+        {cameraActive && (
+          <div style={{ position: 'relative', maxWidth: '580px', margin: '0 auto 1.25rem auto', borderRadius: '12px', overflow: 'hidden', border: '2px solid #34d399', background: '#000' }}>
+            <video ref={videoRef} playsInline muted style={{ width: '100%', display: 'block' }} />
+            <div style={{ position: 'absolute', inset: '8% 8%', border: '2px dashed rgba(52, 211, 153, 0.85)', borderRadius: '6px', pointerEvents: 'none', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: '0.6rem' }}>
+              <span style={{ background: 'rgba(0,0,0,0.7)', color: '#34d399', padding: '0.25rem 0.7rem', borderRadius: '999px', fontSize: '0.78rem', fontWeight: '600' }}>
+                Align all 4 black corner squares inside this frame
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* SCANNED PAPER CANVAS + GRADING RESULTS SIDE-BY-SIDE */}
+        <div className="grid-2col" style={{ gap: '1.25rem', alignItems: 'start' }}>
+          {/* LEFT: INTERACTIVE SCANNED CANVAS */}
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: '600', color: 'var(--text-main)' }}>
+                Scanned Paper Optical Overlay
+              </span>
+              {hasScannedImage && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', margin: 0 }}>
+                    Sensitivity:
+                    <input
+                      type="range"
+                      min="0.10"
+                      max="0.42"
+                      step="0.02"
+                      value={sensitivity}
+                      onChange={e => setSensitivity(parseFloat(e.target.value))}
+                      style={{ width: '85px' }}
+                    />
+                    <span style={{ fontFamily: 'monospace' }}>{Math.round(sensitivity * 100)}%</span>
+                  </label>
+                  <button type="button" className="btn-secondary" style={{ padding: '0.2rem 0.55rem', fontSize: '0.74rem' }} onClick={handleReAutoAlign}>
+                    🔄 Auto-Align
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: 'rgba(2, 6, 23, 0.65)', border: '1px solid var(--border-color)', borderRadius: '10px', minHeight: '340px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+              {!hasScannedImage ? (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.6rem' }}>📷</div>
+                  <p style={{ fontSize: '0.9rem', marginBottom: '0.4rem', color: 'var(--text-main)', fontWeight: '600' }}>
+                    No Test Paper Scanned Yet
+                  </p>
+                  <p style={{ fontSize: '0.8rem', maxWidth: '300px', margin: '0 auto' }}>
+                    Click <strong>Start Live Camera</strong>, <strong>Upload Paper Photo</strong>, or <strong>Test with Demo Paper</strong> to scan and auto-grade.
+                  </p>
+                </div>
+              ) : (
+                <canvas
+                  ref={scanCanvasRef}
+                  onMouseDown={handleCanvasPointerDown}
+                  onMouseMove={handleCanvasPointerMove}
+                  onMouseUp={handleCanvasPointerUp}
+                  onMouseLeave={handleCanvasPointerUp}
+                  onTouchStart={handleCanvasPointerDown}
+                  onTouchMove={handleCanvasPointerMove}
+                  onTouchEnd={handleCanvasPointerUp}
+                  style={{ width: '100%', height: 'auto', display: 'block', cursor: draggingCornerIdx !== null ? 'grabbing' : 'grab', touchAction: 'none' }}
+                />
+              )}
+            </div>
+            {hasScannedImage && (
+              <div style={{ marginTop: '0.45rem', fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', gap: '0.85rem', flexWrap: 'wrap' }}>
+                <span>🟢 Correct Answer</span>
+                <span>🔴 Wrong Answer (Green ring = Key)</span>
+                <span>🟡 Multiple Marks</span>
+                <span>🔵 Drag TL/TR/BR/BL to align</span>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: SCORE BREAKDOWN, MANUAL OVERRIDE & SAVE TO STUDENT RECORD */}
+          <div>
+            {/* LIVE SCORE SUMMARY CARD */}
+            <div className="glass-card" style={{ padding: '1.15rem', marginBottom: '1rem', background: hasScannedImage ? (isPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)') : 'var(--bg-input)', border: hasScannedImage ? (isPassed ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(239, 68, 68, 0.45)') : '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Scanned Paper Score</div>
+                  <div style={{ fontSize: '2rem', fontWeight: '800', color: hasScannedImage ? (isPassed ? '#34d399' : '#f87171') : 'var(--text-dim)', lineHeight: 1.1 }}>
+                    {hasScannedImage ? `${correctCount} / ${itemCount}` : `-- / ${itemCount}`}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '1.65rem', fontWeight: '800', color: hasScannedImage ? (isPassed ? '#34d399' : '#f87171') : 'var(--text-dim)' }}>
+                    {hasScannedImage ? `${scorePct}%` : '--%'}
+                  </div>
+                  {hasScannedImage && (
+                    <span className={`badge ${isPassed ? 'badge-status' : 'badge-admin'}`}>
+                      {isPassed ? '✅ PASSED' : '❌ NEEDS REVIEW'}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', textAlign: 'center', fontSize: '0.78rem' }}>
+                <div style={{ padding: '0.35rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.14)', color: '#34d399' }}>
+                  <strong>{hasScannedImage ? correctCount : 0}</strong> Correct
+                </div>
+                <div style={{ padding: '0.35rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.14)', color: '#f87171' }}>
+                  <strong>{hasScannedImage ? wrongCount : 0}</strong> Wrong
+                </div>
+                <div style={{ padding: '0.35rem', borderRadius: '6px', background: 'rgba(245, 158, 11, 0.14)', color: '#fbbf24' }}>
+                  <strong>{hasScannedImage ? blankOrMultiCount : 0}</strong> Blank/Multi
+                </div>
+              </div>
+            </div>
+
+            {/* ASSIGN TO STUDENT & SAVE SCORE */}
+            <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', background: 'var(--bg-input)' }}>
+              <div style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '0.6rem' }}>
+                💾 Save Checked Score to Student Record
+              </div>
+              <div className="form-group" style={{ marginBottom: '0.6rem' }}>
+                <label style={{ fontSize: '0.78rem' }}>Select Registered Student Account</label>
+                <select
+                  className="form-control"
+                  value={selectedStudentId}
+                  onChange={e => setSelectedStudentId(e.target.value)}
+                >
+                  <option value="">-- Or Enter Walk-In Student Name Below --</option>
+                  {studentsOnly.map(st => (
+                    <option key={st.id} value={st.id}>
+                      {st.fullName} ({st.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!selectedStudentId && (
+                <div className="grid-2col" style={{ gap: '0.5rem', marginBottom: '0.65rem' }}>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Student Full Name"
+                    value={manualStudentName}
+                    onChange={e => setManualStudentName(e.target.value)}
+                  />
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Year & Section (e.g. BSME 4A)"
+                    value={manualStudentSection}
+                    onChange={e => setManualStudentSection(e.target.value)}
+                  />
+                </div>
+              )}
+              <button
+                type="button"
+                className="btn-success"
+                style={{ width: '100%', fontWeight: '700' }}
+                onClick={handleSaveScannedScore}
+                disabled={isSavingScore || !hasScannedImage}
+              >
+                {isSavingScore ? '⏳ Saving to Cloud Database...' : '💾 Save Scanned Score to Student Academic Log'}
+              </button>
+            </div>
+
+            {/* ITEM-BY-ITEM VERIFICATION & MANUAL OVERRIDE GRID */}
+            <div className="glass-card" style={{ padding: '0.9rem', background: 'var(--bg-input)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontWeight: '700', fontSize: '0.84rem' }}>
+                  🔍 Item-by-Item Breakdown (Click to Override)
+                </span>
+                {Object.keys(manualOverrides).length > 0 && (
+                  <button type="button" className="btn-secondary" style={{ padding: '0.15rem 0.45rem', fontSize: '0.7rem' }} onClick={() => setManualOverrides({})}>
+                    Reset Overrides
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))', gap: '0.35rem', maxHeight: '240px', overflowY: 'auto' }}>
+                {gradedItems.map(item => (
+                  <button
+                    key={item.itemNum}
+                    type="button"
+                    onClick={() => {
+                      const cycle = ['A', 'B', 'C', 'D', ''];
+                      const cur = item.finalAns === 'MULTI' ? '' : item.finalAns;
+                      const nextVal = cycle[(cycle.indexOf(cur) + 1) % cycle.length];
+                      setManualOverrides(prev => ({ ...prev, [item.itemNum]: nextVal }));
+                    }}
+                    title={`Item #${item.itemNum}: Detected=${item.finalAns || 'Blank'}, Key=${item.keyAns}. Click to override.`}
+                    style={{
+                      padding: '0.32rem 0.45rem',
+                      borderRadius: '6px',
+                      fontSize: '0.74rem',
+                      fontFamily: 'monospace',
+                      cursor: 'pointer',
+                      textAlign: 'left',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: !hasScannedImage
+                        ? '1px solid var(--border-color)'
+                        : item.isCorrect
+                          ? '1px solid rgba(16, 185, 129, 0.5)'
+                          : (item.isBlank || item.isMulti)
+                            ? '1px solid rgba(245, 158, 11, 0.5)'
+                            : '1px solid rgba(239, 68, 68, 0.5)',
+                      background: !hasScannedImage
+                        ? 'rgba(255,255,255,0.03)'
+                        : item.isCorrect
+                          ? 'rgba(16, 185, 129, 0.14)'
+                          : (item.isBlank || item.isMulti)
+                            ? 'rgba(245, 158, 11, 0.14)'
+                            : 'rgba(239, 68, 68, 0.14)',
+                      color: 'var(--text-main)'
+                    }}
+                  >
+                    <span><strong>{item.itemNum}.</strong> {hasScannedImage ? (item.finalAns || '—') : '·'}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>({item.keyAns})</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SESSION SCANNED PAPERS LOG */}
+      {scannedHistory.length > 0 && (
+        <div className="glass-card" style={{ padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h4 style={{ margin: 0 }}>✅ Papers Checked in This Session ({scannedHistory.length})</h4>
+            <button type="button" className="btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }} onClick={exportSessionScoresCsv}>
+              📥 Export Session Scores (.csv)
+            </button>
+          </div>
+          <div className="table-responsive">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Student Name</th>
+                  <th>Section / School</th>
+                  <th>Quiz / Exam</th>
+                  <th>Score</th>
+                  <th>Percentage</th>
+                  <th>Status</th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scannedHistory.map(row => (
+                  <tr key={row.id}>
+                    <td style={{ fontWeight: '600' }}>{row.studentName}</td>
+                    <td>{row.section}</td>
+                    <td>{row.quizTitle}</td>
+                    <td style={{ fontWeight: '700' }}>{row.score} / {row.total}</td>
+                    <td style={{ fontWeight: '700', color: row.passed ? 'var(--success)' : 'var(--danger)' }}>{row.percentage}%</td>
+                    <td><span className={`badge ${row.passed ? 'badge-status' : 'badge-admin'}`}>{row.passed ? 'PASSED' : 'FAILED'}</span></td>
+                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{row.scannedAt}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ADMIN DASHBOARD, USER MASTER BOARD, QUIZ & RESULTS MANAGEMENT VIEW
 function AdminView({ 
   stats, 
@@ -4383,6 +5873,13 @@ function AdminView({
         </button>
         <button className={`btn-secondary ${activeTab === 'questions' ? 'btn-primary' : ''}`} onClick={() => { setActiveTab('questions'); fetchAdminQuestions(1); }}>
           📝 Question Bank ({stats ? stats.totalQuestions : totalQuestionsCount})
+        </button>
+        <button
+          className={`btn-secondary ${activeTab === 'omr' ? 'btn-primary' : ''}`}
+          style={activeTab !== 'omr' ? { borderColor: 'rgba(56, 189, 248, 0.5)', color: '#38bdf8' } : {}}
+          onClick={() => { setActiveTab('omr'); loadQuizzes(); loadUsers(); }}
+        >
+          📷 Answer Sheet &amp; Scanner
         </button>
       </div>
 
@@ -4756,9 +6253,18 @@ function AdminView({
                           className="btn-secondary"
                           style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'rgba(16, 185, 129, 0.45)', color: '#34d399' }}
                           onClick={() => exportQuizToWordFile(qz, { answerKeyOnly: true })}
-                          title="Download Quiz with Answer Key & Solutions as Microsoft Word (.doc)"
+                          title="Download Answer Key & Solutions as Microsoft Word (.doc)"
                         >
                           🔑 Answer Key (.doc)
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'rgba(245, 158, 11, 0.45)', color: '#fbbf24' }}
+                          onClick={() => exportOmrAnswerSheetHtml({ title: qz.title, itemCount: Math.min(100, qz.questionCount || 50), subtitle: qz.module || 'Comprehensive Board Exam' })}
+                          title="Admin Only: Generate & Download Printable OMR Scannable Answer Sheet"
+                        >
+                          📝 Answer Sheet
                         </button>
                         <button className="btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'var(--accent-light)', color: 'var(--accent-light)' }} onClick={() => openQuizResultsModal(qz.id)}>
                           📊 Results
@@ -4945,6 +6451,15 @@ function AdminView({
           </div>
         </div>
         </div>
+      )}
+
+      {activeTab === 'omr' && (
+        <AdminOmrScannerView
+          quizzesList={quizzesList}
+          usersList={usersList}
+          loadAttempts={loadAttempts}
+          showToast={showToast}
+        />
       )}
     </div>
   );
@@ -5778,6 +7293,18 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                   }, { answerKeyOnly: true })}
                 >
                   🔑 Download Answer Key Word File (.doc)
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#fbbf24', fontWeight: '600' }}
+                  onClick={() => exportOmrAnswerSheetHtml({
+                    title: title || 'ME Board Evaluation Quiz',
+                    itemCount: Math.min(100, selectionMode === 'manual' ? (specificQuestionIds.length || 50) : (totalRandomQuestions || 50)),
+                    subtitle: combinedModuleStr || 'Comprehensive Board Exam'
+                  })}
+                >
+                  📝 Generate OMR Answer Sheet
                 </button>
               </div>
             </div>

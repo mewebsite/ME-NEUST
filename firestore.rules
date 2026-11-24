@@ -64,7 +64,7 @@ rules_version = '2';
 //    Immutability: Strictly immutable once created (allow update: if false)
 //    Fields (strict allowlist via hasOnly):
 //      - id: string (required, id == attemptId, length 1..128)
-//      - studentId: string (required, studentId == request.auth.uid, length 1..128)
+//      - studentId: string (required, studentId == request.auth.uid || isAdmin(), length 1..128)
 //      - quizId: string (required, length 1..128)
 //      - quizTitle: string (required, length 1..300)
 //      - score: int (required, range 0..500, score <= totalQuestions)
@@ -336,7 +336,7 @@ service cloud.firestore {
              data.id.size() >= 1 &&
              data.id.size() <= 128 &&
              data.studentId is string &&
-             data.studentId == request.auth.uid &&
+             (data.studentId == request.auth.uid || isAdmin()) &&
              data.studentId.size() >= 1 &&
              data.studentId.size() <= 128 &&
              data.quizId is string &&

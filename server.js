@@ -236,9 +236,9 @@ function requireAdmin(req, res, next) {
 
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
-  const { fullName, email, password, role, school, adminCode } = req.body;
-  if (!fullName || !email || !password) {
-    return res.status(400).json({ error: 'Full name, email, and password are required.' });
+  const { fullName, studentNumber, email, password, role, school, adminCode } = req.body;
+  if (!fullName || !studentNumber || !email || !password) {
+    return res.status(400).json({ error: 'Full name, student number, email, and password are required.' });
   }
 
   const users = await fetchCollection('users');
@@ -252,12 +252,13 @@ app.post('/api/auth/register', async (req, res) => {
   const newUser = {
     id: `usr_${Date.now()}`,
     fullName,
+    studentNumber: String(studentNumber).trim().slice(0, 60),
     email: email.toLowerCase(),
     passwordHash,
     role: userRole,
     status: 'pending', // Requires administrator approval before activation
     createdDate: new Date().toISOString().split('T')[0],
-    school: school || 'N/A',
+    school: school || 'NEUST',
     targetExamDate: '2026-10-15'
   };
 
@@ -323,13 +324,14 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
 
 // PUT /api/auth/profile
 app.put('/api/auth/profile', authenticateToken, async (req, res) => {
-  const { fullName, school, targetExamDate, newPassword } = req.body;
+  const { fullName, studentNumber, school, targetExamDate, newPassword } = req.body;
   const users = await fetchCollection('users');
   const userIndex = users.findIndex(u => u.id === req.user.id);
 
   if (userIndex === -1) return res.status(404).json({ error: 'User not found' });
 
   if (fullName) users[userIndex].fullName = fullName;
+  if (studentNumber !== undefined) users[userIndex].studentNumber = String(studentNumber || '').trim().slice(0, 60);
   if (school) users[userIndex].school = school;
   if (targetExamDate) users[userIndex].targetExamDate = targetExamDate;
   if (newPassword) {
@@ -1329,7 +1331,7 @@ app.get('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 
 // POST /api/users (Admin Create User)
 app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
-  const { fullName, email, password, role, school } = req.body;
+  const { fullName, studentNumber, email, password, role, school } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'Full name, email, and password are required.' });
   }
@@ -1351,12 +1353,13 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   const newUser = {
     id: `usr_${Date.now()}`,
     fullName,
+    ...(studentNumber ? { studentNumber: String(studentNumber).trim().slice(0, 60) } : {}),
     email: email.toLowerCase(),
     passwordHash,
     role: assignedRole,
     status: 'active',
     createdDate: new Date().toISOString().split('T')[0],
-    school: school || 'N/A',
+    school: school || 'NEUST',
     targetExamDate: '2026-10-15'
   };
 
@@ -1370,7 +1373,7 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
 // PUT /api/users/:id (Admin Update User)
 app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { fullName, role, status, school, targetExamDate } = req.body;
+  const { fullName, studentNumber, role, status, school, targetExamDate } = req.body;
   const users = await fetchCollection('users');
   const idx = users.findIndex(u => u.id === id);
 
@@ -1384,6 +1387,7 @@ app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
   }
 
   if (fullName) users[idx].fullName = fullName;
+  if (studentNumber !== undefined) users[idx].studentNumber = String(studentNumber || '').trim().slice(0, 60);
   if (role) users[idx].role = role;
   if (status) users[idx].status = status;
   if (school) users[idx].school = school;

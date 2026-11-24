@@ -911,11 +911,12 @@
 
     // 1. REGISTER (Firebase Authentication + Pending Student Profile)
     if (urlStr.includes('/api/auth/register') && method === 'POST') {
-      const { fullName, email, password, school } = body;
+      const { fullName, studentNumber, email, password, school } = body;
       const cleanName = String(fullName || '').trim();
+      const cleanStudentNumber = String(studentNumber || '').trim().slice(0, 60);
       const cleanEmail = String(email || '').toLowerCase().trim();
-      if (!cleanName || !cleanEmail || !password) {
-        return jsonResponse({ error: 'Full name, email, and password are required.' }, 400);
+      if (!cleanName || !cleanStudentNumber || !cleanEmail || !password) {
+        return jsonResponse({ error: 'Full name, student number, email, and password are required.' }, 400);
       }
       if (String(password).length < 6) {
         return jsonResponse({ error: 'Password must be at least 6 characters long.' }, 400);
@@ -931,6 +932,7 @@
         const newUser = {
           id: cred.user.uid,
           fullName: cleanName.slice(0, 200),
+          studentNumber: cleanStudentNumber,
           email: cleanEmail,
           role: 'student',
           status: 'pending',
@@ -1022,7 +1024,7 @@
 
     // 3.5 PROFILE UPDATE (PUT /api/auth/profile)
     if (urlStr.includes('/api/auth/profile') && method === 'PUT') {
-      const { fullName, school, targetExamDate, newPassword } = body;
+      const { fullName, studentNumber, school, targetExamDate, newPassword } = body;
 
       if (newPassword) {
         if (String(newPassword).length < 6) {
@@ -1037,6 +1039,7 @@
 
       const updates = { updatedAt: new Date().toISOString() };
       if (fullName && String(fullName).trim()) updates.fullName = String(fullName).trim().slice(0, 200);
+      if (studentNumber !== undefined) updates.studentNumber = String(studentNumber || '').trim().slice(0, 60);
       if (school !== undefined) updates.school = String(school || '').trim().slice(0, 250);
       if (targetExamDate) updates.targetExamDate = String(targetExamDate).trim().slice(0, 40);
 
@@ -1094,8 +1097,9 @@
       }
 
       if (method === 'POST') {
-        const { fullName, email, password, school, targetExamDate } = body;
+        const { fullName, studentNumber, email, password, school, targetExamDate } = body;
         const cleanName = String(fullName || '').trim();
+        const cleanStudentNumber = String(studentNumber || '').trim().slice(0, 60);
         const cleanEmail = String(email || '').toLowerCase().trim();
         if (!cleanName || !cleanEmail || !password) {
           return jsonResponse({ error: 'Full name, email, and password are required.' }, 400);
@@ -1114,6 +1118,7 @@
           const newUser = {
             id: newUid,
             fullName: cleanName.slice(0, 200),
+            ...(cleanStudentNumber ? { studentNumber: cleanStudentNumber } : {}),
             email: cleanEmail,
             role: 'student',
             status: 'active',
@@ -1148,6 +1153,7 @@
 
         const updates = { updatedAt: new Date().toISOString() };
         if (body.fullName && String(body.fullName).trim()) updates.fullName = String(body.fullName).trim().slice(0, 200);
+        if (body.studentNumber !== undefined) updates.studentNumber = String(body.studentNumber || '').trim().slice(0, 60);
         if (body.role && ['student', 'admin'].includes(body.role)) updates.role = body.role;
         if (body.status && ['pending', 'active', 'deactivated', 'rejected'].includes(body.status)) updates.status = body.status;
         if (body.school !== undefined) updates.school = String(body.school || '').trim().slice(0, 250);

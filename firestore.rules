@@ -16,6 +16,7 @@ rules_version = '2';
 //      - role: string (required, immutable for non-admins, enum ['student', 'admin']) - RBAC role
 //      - status: string (required, immutable for non-admins, enum ['pending', 'active', 'deactivated', 'rejected'])
 //      - school: string (optional, length 0..250) - affiliated institution
+//      - studentNumber: string (optional, length 0..60) - university student ID number
 //      - createdDate: string (optional, immutable for non-admins, length 0..40) - ISO creation date string
 //      - targetExamDate: string (optional, length 0..40) - target board exam date string
 //      - diagnosticCompleted: bool (optional) - whether initial diagnostic assessment was completed
@@ -192,6 +193,7 @@ service cloud.firestore {
                'role',
                'status',
                'school',
+               'studentNumber',
                'createdDate',
                'targetExamDate',
                'diagnosticCompleted',
@@ -216,6 +218,7 @@ service cloud.firestore {
              data.status is string &&
              data.status in ['pending', 'active', 'deactivated', 'rejected'] &&
              isValidOptionalString('school', 0, 250) &&
+             isValidOptionalString('studentNumber', 0, 60) &&
              isValidOptionalString('createdDate', 0, 40) &&
              isValidOptionalString('targetExamDate', 0, 40) &&
              isValidOptionalBool('diagnosticCompleted') &&
@@ -427,6 +430,7 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'fullName',
           'school',
+          'studentNumber',
           'targetExamDate',
           'diagnosticCompleted',
           'diagnosticScore',

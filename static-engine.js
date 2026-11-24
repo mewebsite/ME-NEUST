@@ -21,6 +21,7 @@
     USERS: 'me_users_data',
     ATTEMPTS: 'me_attempts_data',
     QUIZZES: 'me_quizzes_data',
+    QUIZ_SETS: 'me_quiz_sets_data',
     QUESTIONS: 'me_questions_data',
     CURRENT_USER: 'me_current_user',
     DELETED_QUIZZES: 'me_deleted_quiz_ids',
@@ -485,6 +486,15 @@
           window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'USER_UPDATE' } }));
         }, err => console.warn('[Firestore Live] users listener error:', err.message))
       );
+      // 5. Quiz Sets A-Z Listener (Admin-only answer keys & rotating sets)
+      unsubscribeFns.push(
+        db.collection('quiz_sets').onSnapshot(snap => {
+          const sets = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+          setLocal(STORAGE_KEYS.QUIZ_SETS, sets);
+          window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'QUIZ_SET_UPDATE' } }));
+          window.dispatchEvent(new CustomEvent('me_quiz_sets_updated', { detail: { sets } }));
+        }, err => console.warn('[Firestore Live] quiz_sets listener error:', err.message))
+      );
     } else {
       unsubscribeFns.push(
         db.collection('users').doc(currentUser.id).onSnapshot(docSnap => {
@@ -719,6 +729,19 @@
     };
   }
 
+  async function fetchQuizSetsForAdmin(forceServer = false) {
+    const opts = forceServer ? { source: 'server' } : undefined;
+    try {
+      const snap = opts ? await db.collection('quiz_sets').get(opts) : await db.collection('quiz_sets').get();
+      const sets = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+      setLocal(STORAGE_KEYS.QUIZ_SETS, sets);
+      return sets;
+    } catch (e) {
+      console.warn('[Firestore] Fallback to cached quiz_sets:', e.message);
+      return getLocal(STORAGE_KEYS.QUIZ_SETS, []);
+    }
+  }
+
   // Force live sync trigger from UI Refresh Live Data button
   if (typeof window !== 'undefined') {
     window.addEventListener('me_force_live_sync', async () => {
@@ -727,7 +750,8 @@
       await Promise.all([
         fetchQuizzesForUser(currentUser, true),
         fetchAttemptsForUser(currentUser, true),
-        currentUser.role === 'admin' ? fetchUsersForAdmin(true) : Promise.resolve()
+        currentUser.role === 'admin' ? fetchUsersForAdmin(true) : Promise.resolve(),
+        currentUser.role === 'admin' ? fetchQuizSetsForAdmin(true) : Promise.resolve()
       ]);
       window.dispatchEvent(new CustomEvent('me_live_update', { detail: { type: 'FORCED_SERVER_SYNC' } }));
     });
@@ -1890,6 +1914,78 @@
           return jsonResponse({ message: 'Quiz permanently deleted across all devices and accounts.', quizId: id });
         } catch (err) {
           return jsonResponse({ error: 'Failed to delete quiz: ' + err.message }, 500);
+        }
+      }
+    }
+
+    // 17. ADMIN-ONLY QUIZ SETS A-Z & ANSWER KEYS (/api/quiz-sets)
+    if (urlStr.includes('/api/quiz-sets')) {
+      if (currentUser.role !== 'admin') {
+        return jsonResponse({ error: 'Access denied. Administrator privileges required.' }, 403);
+      }
+
+      const cleanUrl = urlStr.split('?')[0].replace(/\/+$/, '');
+      const parts = cleanUrl.split('/api/quiz-sets');
+      const subPath = parts[1] ? parts[1].replace(/^\//, '') : '';
+      const setId = subPath ? decodeURIComponent(subPath.split('/')[0]) : (body && body.id);
+
+      if (method === 'GET') {
+        const sets = await fetchQuizSetsForAdmin();
+        return jsonResponse({ sets });
+      }
+
+      if (method === 'POST' || method === 'PUT') {
+        const rawQuizId = String(body.quizId || '').trim().slice(0, 128);
+        const rawSetLetter = String(body.setLetter || 'A').trim().toUpperCase().charAt(0);
+        if (!rawQuizId || !/^[A-Z]$/.test(rawSetLetter)) {
+          return jsonResponse({ error: 'Valid quizId and setLetter (A-Z) are required.' }, 400);
+        }
+        const docId = String(body.id || `${rawQuizId}__${rawSetLetter}`).slice(0, 160);
+        const setIndex = rawSetLetter.charCodeAt(0) - 65;
+        const omrQuizCode = Math.max(1, Math.min(4095, parseInt(body.omrQuizCode, 10) || 1));
+        const itemCount = Math.max(1, Math.min(500, parseInt(body.itemCount, 10) || 1));
+        const answerKey = String(body.answerKey || 'A').toUpperCase().replace(/[^ABCD]/g, '').slice(0, 500) || 'A';
+        const questionIds = Array.isArray(body.questionIds) ? body.questionIds.slice(0, 500).map(String) : [];
+        const nowIso = new Date().toISOString();
+
+        const setDoc = {
+          id: docId,
+          quizId: rawQuizId,
+          quizTitle: String(body.quizTitle || 'ME Board Evaluation Quiz').trim().slice(0, 300),
+          omrQuizCode,
+          setLetter: rawSetLetter,
+          setIndex,
+          itemCount,
+          answerKey,
+          questionIds,
+          passingScorePct: Math.max(1, Math.min(100, parseInt(body.passingScorePct, 10) || 70)),
+          module: String(body.module || '').slice(0, 500),
+          createdAt: String(body.createdAt || nowIso).slice(0, 60),
+          updatedAt: nowIso,
+          createdBy: String(currentUser.fullName || currentUser.email || 'Administrator').slice(0, 200)
+        };
+
+        try {
+          await db.collection('quiz_sets').doc(docId).set(setDoc);
+          const localSets = getLocal(STORAGE_KEYS.QUIZ_SETS, []).filter(s => s && s.id !== docId);
+          localSets.unshift(setDoc);
+          setLocal(STORAGE_KEYS.QUIZ_SETS, localSets);
+          window.dispatchEvent(new CustomEvent('me_quiz_sets_updated', { detail: { sets: localSets } }));
+          return jsonResponse({ message: `Quiz Set ${rawSetLetter} saved to Cloud Database.`, set: setDoc });
+        } catch (err) {
+          return jsonResponse({ error: 'Failed to save quiz set: ' + err.message }, 500);
+        }
+      }
+
+      if (method === 'DELETE' && setId) {
+        try {
+          await db.collection('quiz_sets').doc(setId).delete();
+          const localSets = getLocal(STORAGE_KEYS.QUIZ_SETS, []).filter(s => s && s.id !== setId);
+          setLocal(STORAGE_KEYS.QUIZ_SETS, localSets);
+          window.dispatchEvent(new CustomEvent('me_quiz_sets_updated', { detail: { sets: localSets } }));
+          return jsonResponse({ message: 'Quiz set deleted.', id: setId });
+        } catch (err) {
+          return jsonResponse({ error: 'Failed to delete quiz set: ' + err.message }, 500);
         }
       }
     }

@@ -96,6 +96,25 @@ rules_version = '2';
 //      - deletedAt: string (required, length 1..60)
 //      - deletedBy: string (required, length 0..254)
 //
+// 8. Collection: /quiz_sets/{setDocId}
+//    Document ID: Rotating quiz set identifier (e.g., 'qz_01__A', id == setDocId, length 1..160)
+//    Access: Strictly Admin-only (isAdmin()) — protects official answer keys from student access
+//    Fields (strict allowlist via hasOnly):
+//      - id: string (required, immutable, id == setDocId, length 1..160)
+//      - quizId: string (required, length 1..128)
+//      - quizTitle: string (required, length 1..300)
+//      - omrQuizCode: int (required, range 1..4095)
+//      - setLetter: string (required, length == 1, matches '^[A-Z]$')
+//      - setIndex: int (required, range 0..25)
+//      - itemCount: int (required, range 1..500)
+//      - answerKey: string (required, length 1..500)
+//      - questionIds: list (optional, size <= 500)
+//      - passingScorePct: int (optional, range 1..100)
+//      - module: string (optional, length 0..500)
+//      - createdAt: string (required, length 1..60)
+//      - updatedAt: string (optional, length 0..60)
+//      - createdBy: string (optional, length 0..200)
+//
 // ===============================================================
 
 service cloud.firestore {
@@ -386,6 +405,71 @@ service cloud.firestore {
              data.CorrectAnswer.size() <= 50;
     }
 
+    function validQuizSetDoc(setDocId) {
+      let data = request.resource.data;
+      return hasRequiredFields([
+               'id',
+               'quizId',
+               'quizTitle',
+               'omrQuizCode',
+               'setLetter',
+               'setIndex',
+               'itemCount',
+               'answerKey',
+               'createdAt'
+             ]) &&
+             hasOnlyAllowedFields([
+               'id',
+               'quizId',
+               'quizTitle',
+               'omrQuizCode',
+               'setLetter',
+               'setIndex',
+               'itemCount',
+               'answerKey',
+               'questionIds',
+               'passingScorePct',
+               'module',
+               'createdAt',
+               'updatedAt',
+               'createdBy'
+             ]) &&
+             data.id is string &&
+             data.id == setDocId &&
+             data.id.size() >= 1 &&
+             data.id.size() <= 160 &&
+             data.quizId is string &&
+             data.quizId.size() >= 1 &&
+             data.quizId.size() <= 128 &&
+             data.quizTitle is string &&
+             data.quizTitle.size() >= 1 &&
+             data.quizTitle.size() <= 300 &&
+             data.omrQuizCode is int &&
+             data.omrQuizCode >= 1 &&
+             data.omrQuizCode <= 4095 &&
+             data.setLetter is string &&
+             data.setLetter.size() == 1 &&
+             data.setLetter.matches('^[A-Z]$') &&
+             data.setIndex is int &&
+             data.setIndex >= 0 &&
+             data.setIndex <= 25 &&
+             data.itemCount is int &&
+             data.itemCount >= 1 &&
+             data.itemCount <= 500 &&
+             data.answerKey is string &&
+             data.answerKey.size() >= 1 &&
+             data.answerKey.size() <= 500 &&
+             data.createdAt is string &&
+             data.createdAt.size() >= 1 &&
+             data.createdAt.size() <= 60 &&
+             (!('questionIds' in data) ||
+              (data.questionIds is list && data.questionIds.size() <= 500)) &&
+             isValidOptionalInt('passingScorePct', 1, 100) &&
+             isValidOptionalString('module', 0, 500) &&
+             isValidOptionalString('updatedAt', 0, 60) &&
+             isValidOptionalString('createdBy', 0, 200);
+    }
+
     // ===============================================================
     // Collection Rules
     // ===============================================================
@@ -491,6 +575,15 @@ service cloud.firestore {
     match /deleted_questions/{questionId} {
       allow read: if isActiveUser();
       allow create, update: if isAdmin() && validTombstoneDoc(questionId, 64);
+      allow delete: if isAdmin();
+    }
+
+    // 8. Rotating Quiz Sets & Answer Keys (/quiz_sets/{setDocId})
+    match /quiz_sets/{setDocId} {
+      // Strictly Admin-only: students must never read or write official answer keys.
+      allow read: if isAdmin();
+      allow create: if isAdmin() && validQuizSetDoc(setDocId);
+      allow update: if isAdmin() && validQuizSetDoc(setDocId) && request.resource.data.id == resource.data.id;
       allow delete: if isAdmin();
     }
 

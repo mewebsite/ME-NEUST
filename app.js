@@ -165,8 +165,12 @@ function getAvailableQuestionCounts({ moduleStr = '', batchStr = '', topicsStr =
   };
 }
 
-// MICROSOFT WORD (.DOC) QUIZ DOCUMENT GENERATOR & DOWNLOADER (SEPARATE QUESTION & ANSWER KEY FILES)
+// ============================================================================
+// ROTATING QUIZ SETS (A–Z) ENGINE + MICROSOFT WORD (.DOC) QUIZ GENERATOR
+// ============================================================================
 const QUIZ_WORD_EXPORT_CACHE = new Map();
+const QUIZ_SET_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const QUIZ_SETS_STORAGE_KEY = 'me_quiz_sets_data';
 
 function escapeHtmlForWord(str) {
   if (str === null || str === undefined) return '';
@@ -177,37 +181,126 @@ function escapeHtmlForWord(str) {
     .replace(/"/g, '&quot;');
 }
 
-function getQuizExportCacheKey(quizConfig = {}) {
-  const idPart = quizConfig.id ? String(quizConfig.id) : 'draft';
-  const modPart = String(quizConfig.module || '');
-  const topPart = String(quizConfig.topics || '');
-  const sPart = String(quizConfig.solvingCount !== undefined ? quizConfig.solvingCount : '');
-  const ePart = String(quizConfig.elementCount !== undefined ? quizConfig.elementCount : '');
-  const qPart = String(quizConfig.questionCount || 50);
-  const modePart = String(quizConfig.selectionMode || 'random');
-  const idsPart = Array.isArray(quizConfig.specificQuestionIds) ? quizConfig.specificQuestionIds.join(',') : '';
-  return [idPart, modPart, topPart, sPart, ePart, qPart, modePart, idsPart].join('|');
+function getQuizStableId(quizConfig = {}) {
+  if (quizConfig && quizConfig.id && String(quizConfig.id).trim() !== '') {
+    return String(quizConfig.id).trim();
+  }
+  const slug = String((quizConfig && quizConfig.title) || 'me_board_quiz')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 60) || 'me_board_quiz';
+  return 'draft_' + slug;
 }
 
-function resolveQuestionsForQuizExport(quizConfig = {}) {
+// Deterministic 12-bit Quiz Code (1..4095) encoded in the OMR Optical Barcode Strip
+function getQuizOmrCode(quizId) {
+  const str = String(quizId || 'custom');
+  let hash = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return ((hash >>> 0) % 4095) + 1;
+}
+
+function getStoredQuizSets() {
+  try {
+    const raw = localStorage.getItem(QUIZ_SETS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(s => s && s.quizId && s.setLetter) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveQuizSetRecord(setRecord) {
+  if (!setRecord || !setRecord.id) return;
+  try {
+    const existing = getStoredQuizSets().filter(s => s.id !== setRecord.id);
+    existing.unshift(setRecord);
+    localStorage.setItem(QUIZ_SETS_STORAGE_KEY, JSON.stringify(existing));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('me_quiz_sets_updated', { detail: { sets: existing, latest: setRecord } }));
+    }
+  } catch (e) {}
+
+  // Sync to Cloud Firestore (/quiz_sets) asynchronously so all admin devices share the exact Set A-Z keys
+  try {
+    if (typeof fetch !== 'undefined' && typeof API_BASE !== 'undefined') {
+      fetch(`${API_BASE}/api/quiz-sets`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(setRecord)
+      }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
+function getSetsForQuiz(quizId) {
+  const id = String(quizId || '');
+  return getStoredQuizSets()
+    .filter(s => s.quizId === id)
+    .sort((a, b) => (a.setIndex ?? 0) - (b.setIndex ?? 0));
+}
+
+function getLatestSetForQuiz(quizId) {
+  const sets = getSetsForQuiz(quizId);
+  if (sets.length === 0) return null;
+  return [...sets].sort((a, b) => {
+    const tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    if (tB !== tA) return tB - tA;
+    return (b.setIndex ?? 0) - (a.setIndex ?? 0);
+  })[0];
+}
+
+function getNextSetLetterForQuiz(quizId) {
+  const latest = getLatestSetForQuiz(quizId);
+  if (!latest) return 'A';
+  const curIdx = typeof latest.setIndex === 'number'
+    ? latest.setIndex
+    : Math.max(0, QUIZ_SET_LETTERS.indexOf(String(latest.setLetter || 'A').toUpperCase()));
+  return QUIZ_SET_LETTERS[(curIdx + 1) % QUIZ_SET_LETTERS.length];
+}
+
+function shuffleArrayFisherYates(arr) {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
+function drawRandomizedQuestionsForQuiz(quizConfig = {}, previousIdsSignature = '') {
   const all = (typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS))
     ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '')
     : [];
 
   if (Array.isArray(quizConfig.questionsList) && quizConfig.questionsList.length > 0) {
-    return quizConfig.questionsList;
+    let drawn = shuffleArrayFisherYates(quizConfig.questionsList);
+    for (let tries = 0; tries < 5 && drawn.length > 1 && drawn.map(q => q.ID).join(',') === previousIdsSignature; tries++) {
+      drawn = shuffleArrayFisherYates(quizConfig.questionsList);
+    }
+    return drawn;
   }
 
   if (Array.isArray(quizConfig.specificQuestionIds) && quizConfig.specificQuestionIds.length > 0) {
     const idMap = new Map(all.map(q => [String(q.ID), q]));
     const picked = quizConfig.specificQuestionIds.map(id => idMap.get(String(id))).filter(Boolean);
-    if (picked.length > 0) return picked;
-  }
-
-  // Use cached draw so the separate Question Word file and Answer Key Word file always match 100% item-for-item
-  const cacheKey = getQuizExportCacheKey(quizConfig);
-  if (!quizConfig.forceReshuffle && QUIZ_WORD_EXPORT_CACHE.has(cacheKey)) {
-    return QUIZ_WORD_EXPORT_CACHE.get(cacheKey);
+    if (picked.length > 0) {
+      let drawn = shuffleArrayFisherYates(picked);
+      for (let tries = 0; tries < 5 && drawn.length > 1 && drawn.map(q => q.ID).join(',') === previousIdsSignature; tries++) {
+        drawn = shuffleArrayFisherYates(picked);
+      }
+      return drawn;
+    }
   }
 
   let filtered = all;
@@ -238,37 +331,172 @@ function resolveQuestionsForQuizExport(quizConfig = {}) {
   const sCount = Math.max(0, parseInt(quizConfig.solvingCount, 10) || 0);
   const eCount = Math.max(0, parseInt(quizConfig.elementCount, 10) || 0);
 
-  let selectedList = [];
-  if (hasTypeCounts && (sCount + eCount) > 0) {
-    const solvingPool = [...filtered.filter(isSolvingQuestion)].sort(() => 0.5 - Math.random());
-    const elementPool = [...filtered.filter(q => !isSolvingQuestion(q))].sort(() => 0.5 - Math.random());
-    selectedList = [
-      ...solvingPool.slice(0, sCount),
-      ...elementPool.slice(0, eCount)
-    ];
-  } else {
+  const pickOnce = () => {
+    if (hasTypeCounts && (sCount + eCount) > 0) {
+      const solvingPool = shuffleArrayFisherYates(filtered.filter(isSolvingQuestion));
+      const elementPool = shuffleArrayFisherYates(filtered.filter(q => !isSolvingQuestion(q)));
+      return shuffleArrayFisherYates([
+        ...solvingPool.slice(0, sCount),
+        ...elementPool.slice(0, eCount)
+      ]);
+    }
     const targetTotal = Math.max(1, parseInt(quizConfig.questionCount, 10) || 50);
-    selectedList = [...filtered].sort(() => 0.5 - Math.random()).slice(0, targetTotal);
-  }
+    return shuffleArrayFisherYates(filtered).slice(0, targetTotal);
+  };
 
-  QUIZ_WORD_EXPORT_CACHE.set(cacheKey, selectedList);
+  let selectedList = pickOnce();
+  for (let tries = 0; tries < 5 && selectedList.length > 1 && selectedList.map(q => q.ID).join(',') === previousIdsSignature; tries++) {
+    selectedList = pickOnce();
+  }
   return selectedList;
 }
 
-function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
-  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
-    window.showToast?.('Access restricted: Only administrators can download quiz Word files.', 'error');
-    return;
-  }
-  const quizQuestions = resolveQuestionsForQuizExport(quizConfig);
-  if (!quizQuestions || quizQuestions.length === 0) {
-    window.showToast?.('No questions available to export for this quiz configuration.', 'warning');
-    return;
-  }
+function generateNewQuizSet(quizConfig = {}, { forcedSetLetter = null } = {}) {
+  const quizId = getQuizStableId(quizConfig);
+  const latest = getLatestSetForQuiz(quizId);
+  const prevSig = latest && Array.isArray(latest.questionIds) ? latest.questionIds.join(',') : '';
 
+  const cleanForced = forcedSetLetter ? String(forcedSetLetter).trim().toUpperCase().charAt(0) : '';
+  const setLetter = /^[A-Z]$/.test(cleanForced) ? cleanForced : getNextSetLetterForQuiz(quizId);
+  const setIndex = QUIZ_SET_LETTERS.indexOf(setLetter);
+  const questions = drawRandomizedQuestionsForQuiz(quizConfig, prevSig);
+  if (!questions || questions.length === 0) return null;
+
+  const answerKey = questions.map(q => {
+    const ans = q && q.CorrectAnswer ? String(q.CorrectAnswer).trim().toUpperCase().charAt(0) : 'A';
+    return ['A', 'B', 'C', 'D'].includes(ans) ? ans : 'A';
+  }).join('');
+
+  const prevMaxMs = latest ? new Date(latest.updatedAt || latest.createdAt || 0).getTime() : 0;
+  const nowIso = new Date(Math.max(Date.now(), prevMaxMs + 1)).toISOString();
   const quizTitle = (quizConfig.title && String(quizConfig.title).trim())
     ? String(quizConfig.title).trim()
     : 'ME Licensure Board Evaluation Quiz';
+  const setDocId = `${quizId}__${setLetter}`;
+
+  const setRecord = {
+    id: setDocId,
+    quizId,
+    quizTitle,
+    omrQuizCode: getQuizOmrCode(quizId),
+    setLetter,
+    setIndex,
+    itemCount: questions.length,
+    answerKey,
+    questionIds: questions.map(q => String(q.ID)),
+    passingScorePct: Math.max(1, Math.min(100, parseInt(quizConfig.passingScorePct, 10) || 70)),
+    module: String(quizConfig.module || ''),
+    createdAt: nowIso,
+    updatedAt: nowIso
+  };
+
+  QUIZ_WORD_EXPORT_CACHE.set(setDocId, questions);
+  saveQuizSetRecord(setRecord);
+  return { setRecord, questions };
+}
+
+function resolveQuestionsForExistingSet(quizConfig = {}, setRecord = null) {
+  if (!setRecord) return [];
+  if (QUIZ_WORD_EXPORT_CACHE.has(setRecord.id)) {
+    return QUIZ_WORD_EXPORT_CACHE.get(setRecord.id);
+  }
+  const all = (typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS))
+    ? window.INITIAL_QUESTIONS.filter(q => q && q.ID !== 'Total' && q.QuestionText && q.QuestionText.trim() !== '')
+    : [];
+  if (Array.isArray(setRecord.questionIds) && setRecord.questionIds.length > 0) {
+    const idMap = new Map(all.map(q => [String(q.ID), q]));
+    const reconstructed = setRecord.questionIds.map(id => idMap.get(String(id))).filter(Boolean);
+    if (reconstructed.length > 0) {
+      QUIZ_WORD_EXPORT_CACHE.set(setRecord.id, reconstructed);
+      return reconstructed;
+    }
+  }
+  return drawRandomizedQuestionsForQuiz(quizConfig);
+}
+
+function resolveQuestionsForQuizExport(quizConfig = {}) {
+  const quizId = getQuizStableId(quizConfig);
+  const latest = getLatestSetForQuiz(quizId);
+  if (latest && !quizConfig.forceReshuffle) {
+    const qs = resolveQuestionsForExistingSet(quizConfig, latest);
+    if (qs && qs.length > 0) return qs;
+  }
+  return drawRandomizedQuestionsForQuiz(quizConfig);
+}
+
+function ensureLatestSetForQuiz(quizConfig = {}) {
+  const quizId = getQuizStableId(quizConfig);
+  const latest = getLatestSetForQuiz(quizId);
+  if (latest) return latest;
+  const created = generateNewQuizSet(quizConfig, { forcedSetLetter: 'A' });
+  return created ? created.setRecord : null;
+}
+
+function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false, setLetter = null } = {}) {
+  if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
+    window.showToast?.('Access restricted: Only administrators can download quiz Word files.', 'error');
+    return null;
+  }
+
+  const quizId = getQuizStableId(quizConfig);
+  let activeSet = null;
+  let quizQuestions = [];
+
+  if (!answerKeyOnly) {
+    // QUESTIONS WORD FILE: Every download generates the next rotating set A -> B -> ... -> Z -> A
+    // (unless an explicit existing setLetter was requested from the Scanner/Set Manager)
+    if (setLetter && /^[A-Z]$/i.test(String(setLetter))) {
+      const upperLtr = String(setLetter).toUpperCase();
+      const found = getSetsForQuiz(quizId).find(s => s.setLetter === upperLtr);
+      if (found) {
+        activeSet = found;
+        quizQuestions = resolveQuestionsForExistingSet(quizConfig, found);
+      } else {
+        const gen = generateNewQuizSet(quizConfig, { forcedSetLetter: upperLtr });
+        if (gen) {
+          activeSet = gen.setRecord;
+          quizQuestions = gen.questions;
+        }
+      }
+    } else {
+      const gen = generateNewQuizSet(quizConfig);
+      if (gen) {
+        activeSet = gen.setRecord;
+        quizQuestions = gen.questions;
+      }
+    }
+  } else {
+    // ANSWER KEY WORD FILE: Matches the exact specified Set or the latest generated Set for this quiz
+    const existingSets = getSetsForQuiz(quizId);
+    if (setLetter && /^[A-Z]$/i.test(String(setLetter))) {
+      activeSet = existingSets.find(s => s.setLetter === String(setLetter).toUpperCase()) || null;
+    }
+    if (!activeSet) {
+      activeSet = getLatestSetForQuiz(quizId);
+    }
+    if (activeSet) {
+      quizQuestions = resolveQuestionsForExistingSet(quizConfig, activeSet);
+    } else {
+      const gen = generateNewQuizSet(quizConfig, { forcedSetLetter: 'A' });
+      if (gen) {
+        activeSet = gen.setRecord;
+        quizQuestions = gen.questions;
+      }
+    }
+  }
+
+  if (!quizQuestions || quizQuestions.length === 0 || !activeSet) {
+    window.showToast?.('No questions available to export for this quiz configuration.', 'warning');
+    return null;
+  }
+
+  const activeLetter = activeSet.setLetter || 'A';
+  const nextLetter = QUIZ_SET_LETTERS[(QUIZ_SET_LETTERS.indexOf(activeLetter) + 1) % QUIZ_SET_LETTERS.length];
+  const omrQuizCode = activeSet.omrQuizCode || getQuizOmrCode(quizId);
+
+  const quizTitle = (quizConfig.title && String(quizConfig.title).trim())
+    ? String(quizConfig.title).trim()
+    : (activeSet.quizTitle || 'ME Licensure Board Evaluation Quiz');
   const quizDesc = (quizConfig.description && String(quizConfig.description).trim())
     ? String(quizConfig.description).trim()
     : 'Read each item carefully and select the letter corresponding to the best answer.';
@@ -276,7 +504,7 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
     ? String(quizConfig.module).trim()
     : 'All Curriculum Modules (Comprehensive)';
   const durationMins = parseInt(quizConfig.durationMins, 10) || 50;
-  const passingScorePct = parseInt(quizConfig.passingScorePct, 10) || 70;
+  const passingScorePct = parseInt(quizConfig.passingScorePct, 10) || activeSet.passingScorePct || 70;
 
   let actualSolving = 0;
   let actualElement = 0;
@@ -313,21 +541,32 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
     }).join('');
 
     bodyInnerHtml = `
-      <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 10pt;">
-        <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
-        <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
-        <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
-        <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — QUESTIONNAIRE</h1>
-      </div>
+      <table style="width: 100%; border-collapse: collapse; border-bottom: 2px solid #0f172a; margin-bottom: 10pt;">
+        <tr>
+          <td style="text-align: center; padding-bottom: 8pt;">
+            <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+            <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+            <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+            <h1 style="margin: 4pt 0 0 0; font-size: 13.5pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — QUESTIONNAIRE</h1>
+          </td>
+          <td style="width: 95pt; text-align: center; vertical-align: middle; padding-bottom: 8pt;">
+            <div style="border: 2.5px solid #0f172a; padding: 6pt 4pt; background: #f1f5f9;">
+              <div style="font-size: 8pt; font-weight: bold; letter-spacing: 0.5pt; color: #334155;">EXAM SET</div>
+              <div style="font-size: 20pt; font-weight: bold; line-height: 1.1; color: #0f172a;">SET ${activeLetter}</div>
+              <div style="font-size: 7.5pt; color: #475569; margin-top: 2pt;">CODE #${omrQuizCode}</div>
+            </div>
+          </td>
+        </tr>
+      </table>
 
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt; font-size: 10pt;">
         <tr>
           <td style="padding: 3pt 4pt; width: 55%;"><b>Student Name:</b> _____________________________________</td>
-          <td style="padding: 3pt 4pt; width: 45%;"><b>Date:</b> ___________________________</td>
+          <td style="padding: 3pt 4pt; width: 45%;"><b>Student No.:</b> _______________________</td>
         </tr>
         <tr>
           <td style="padding: 3pt 4pt;"><b>Year &amp; Section:</b> ____________________________________</td>
-          <td style="padding: 3pt 4pt;"><b>Score:</b> _________ / ${quizQuestions.length} (Passing: ${passingScorePct}%)</td>
+          <td style="padding: 3pt 4pt;"><b>Exam Set:</b> <b>SET ${activeLetter}</b> &nbsp;|&nbsp; <b>Date:</b> ______________</td>
         </tr>
         <tr>
           <td style="padding: 3pt 4pt;"><b>Module Coverage:</b> ${escapeHtmlForWord(moduleLabel)}</td>
@@ -336,7 +575,7 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
       </table>
 
       <div style="border: 1px solid #94a3b8; background: #f8fafc; padding: 6pt 8pt; margin-bottom: 14pt; font-size: 9.5pt;">
-        <b>DIRECTIONS:</b> ${escapeHtmlForWord(quizDesc)}
+        <b>DIRECTIONS (SET ${activeLetter}):</b> ${escapeHtmlForWord(quizDesc)} Make sure your OMR Answer Sheet is also labeled <b>SET ${activeLetter}</b> and shade your 10-digit Student Number completely.
       </div>
 
       ${questionsHtml}
@@ -375,22 +614,33 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
     }).join('');
 
     bodyInnerHtml = `
-      <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8pt; margin-bottom: 12pt;">
-        <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
-        <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
-        <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
-        <h1 style="margin: 4pt 0 0 0; font-size: 14pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — OFFICIAL ANSWER KEY</h1>
-        <p style="margin: 3pt 0 0 0; font-size: 9.5pt; color: #334155;">
-          Total Items: ${quizQuestions.length} (${actualSolving} Solving Questions | ${actualElement} Element Questions) | Module: ${escapeHtmlForWord(moduleLabel)}
-        </p>
-      </div>
+      <table style="width: 100%; border-collapse: collapse; border-bottom: 2px solid #0f172a; margin-bottom: 12pt;">
+        <tr>
+          <td style="text-align: center; padding-bottom: 8pt;">
+            <p style="margin: 0; font-size: 9.5pt; letter-spacing: 0.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+            <p style="margin: 1pt 0; font-size: 12pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+            <p style="margin: 1pt 0 6pt 0; font-size: 10pt;">College of Engineering — Mechanical Engineering Department</p>
+            <h1 style="margin: 4pt 0 0 0; font-size: 13.5pt; text-transform: uppercase;">${escapeHtmlForWord(quizTitle)} — OFFICIAL ANSWER KEY (SET ${activeLetter})</h1>
+            <p style="margin: 3pt 0 0 0; font-size: 9.5pt; color: #334155;">
+              Total Items: ${quizQuestions.length} (${actualSolving} Solving | ${actualElement} Element) | Quiz Code: #${omrQuizCode} | Module: ${escapeHtmlForWord(moduleLabel)}
+            </p>
+          </td>
+          <td style="width: 95pt; text-align: center; vertical-align: middle; padding-bottom: 8pt;">
+            <div style="border: 2.5px solid #047857; padding: 6pt 4pt; background: #ecfdf5;">
+              <div style="font-size: 8pt; font-weight: bold; color: #047857;">ANSWER KEY</div>
+              <div style="font-size: 20pt; font-weight: bold; line-height: 1.1; color: #065f46;">SET ${activeLetter}</div>
+              <div style="font-size: 7.5pt; color: #047857; margin-top: 2pt;">CODE #${omrQuizCode}</div>
+            </div>
+          </td>
+        </tr>
+      </table>
 
-      <h3 style="font-size: 11pt; margin: 0 0 6pt 0;">I. Quick Answer Key Summary Grid</h3>
+      <h3 style="font-size: 11pt; margin: 0 0 6pt 0;">I. Quick Answer Key Summary Grid (SET ${activeLetter})</h3>
       <table style="width: 100%; border-collapse: collapse; margin-bottom: 16pt;">
         ${quickKeyRows.join('')}
       </table>
 
-      <h3 style="font-size: 11pt; margin: 0 0 8pt 0;">II. Item-by-Item Answer Key &amp; Complete Step-by-Step Solutions</h3>
+      <h3 style="font-size: 11pt; margin: 0 0 8pt 0;">II. Item-by-Item Answer Key &amp; Complete Step-by-Step Solutions (SET ${activeLetter})</h3>
       ${detailedSolutions}
     `;
   }
@@ -401,7 +651,7 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtmlForWord(quizTitle)} - ${answerKeyOnly ? 'Answer Key' : 'Questions'}</title>
+  <title>${escapeHtmlForWord(quizTitle)} - SET ${activeLetter} - ${answerKeyOnly ? 'Answer Key' : 'Questions'}</title>
   <!--[if gte mso 9]>
   <xml>
     <w:WordDocument>
@@ -435,7 +685,7 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
 
   const blob = new Blob(['\ufeff', wordDocHtml], { type: 'application/msword;charset=utf-8' });
   const safeBaseName = quizTitle.replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Board_Quiz';
-  const suffix = answerKeyOnly ? '_Answer_Key' : '_Questions';
+  const suffix = answerKeyOnly ? `_SET_${activeLetter}_Answer_Key` : `_SET_${activeLetter}_Questions`;
   const fileName = `${safeBaseName}${suffix}.doc`;
 
   const url = URL.createObjectURL(blob);
@@ -449,31 +699,65 @@ function exportQuizToWordFile(quizConfig = {}, { answerKeyOnly = false } = {}) {
 
   window.showToast?.(
     answerKeyOnly
-      ? `Downloaded Answer Key Word file: "${fileName}" (${quizQuestions.length} Items)!`
-      : `Downloaded Question Word file: "${fileName}" (${quizQuestions.length} Items)!`,
+      ? `Downloaded SET ${activeLetter} Answer Key: "${fileName}" (${quizQuestions.length} Items)!`
+      : `Downloaded SET ${activeLetter} Questions: "${fileName}" (${quizQuestions.length} Items). Matching SET ${activeLetter} Answer Key &amp; OMR Sheet synced! (Next download: SET ${nextLetter})`,
     'success'
   );
+  return activeSet;
 }
 
 // ============================================================================
 // ADMIN-ONLY OMR ANSWER SHEET GENERATOR & CAMERA/PHOTO SCANNER ENGINE
-// (WITH SCANNABLE 10-DIGIT STUDENT NUMBER SHADING GRID + ANSWER BUBBLES)
+// (OPTICAL QUIZ+SET BARCODE + 10-DIGIT STUDENT NUMBER SHADING + ANSWER BUBBLES)
 // ============================================================================
+function encodeOmrQuizSetBarcode(omrQuizCode = 0, setLetter = '') {
+  const code12 = Math.max(0, Math.min(4095, parseInt(omrQuizCode, 10) || 0));
+  const cleanLtr = String(setLetter || '').trim().toUpperCase().charAt(0);
+  const setNum = /^[A-Z]$/.test(cleanLtr) ? (cleanLtr.charCodeAt(0) - 64) : 0; // 1=A .. 26=Z, 0=none
+  const checksum6 = (((code12 * 31) + (setNum * 17)) ^ (code12 >> 5) ^ 0x2A) & 0x3F;
+
+  const bits = [1, 0]; // Start calibration: BLACK, WHITE
+  for (let i = 11; i >= 0; i--) bits.push((code12 >> i) & 1);
+  for (let i = 4; i >= 0; i--) bits.push((setNum >> i) & 1);
+  for (let i = 5; i >= 0; i--) bits.push((checksum6 >> i) & 1);
+  bits.push(0, 1); // Stop calibration: WHITE, BLACK
+  return bits; // 27 bits total
+}
+
 function getOmrSheetLayout(itemCount = 50) {
   const N = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+
+  // --- OPTICAL QUIZ+SET BARCODE STRIP (27 crisp blocks between TL & TR fiducials) ---
+  const bcCount = 27;
+  const bcStartU = 0.125;
+  const bcEndU = 0.875;
+  const bcStepU = (bcEndU - bcStartU) / bcCount;
+  const bcCenterV = 0.011;
+  const bcBlockW = bcStepU * 0.72;
+  const bcBlockH = 0.017;
+  const barcodeBits = [];
+  for (let i = 0; i < bcCount; i++) {
+    barcodeBits.push({
+      index: i,
+      u: bcStartU + (i + 0.5) * bcStepU,
+      v: bcCenterV,
+      wu: bcBlockW,
+      hv: bcBlockH
+    });
+  }
 
   // --- ZONE 1 (TOP): 10-DIGIT STUDENT NUMBER SHADING GRID (Columns 0..9, Rows 0..9) ---
   const idDigitsCount = 10;
   const idStartU = 0.068;
   const idEndU = 0.588;
   const idStepU = (idEndU - idStartU) / idDigitsCount;
-  const idBoxTopV = 0.044;
-  const idBoxBottomV = 0.078;
-  const idGridTopV = 0.095;
-  const idGridBottomV = 0.295;
+  const idBoxTopV = 0.064;
+  const idBoxBottomV = 0.094;
+  const idGridTopV = 0.110;
+  const idGridBottomV = 0.308;
   const idRowStepV = (idGridBottomV - idGridTopV) / 10;
-  const idRadiusU = 0.0138;
-  const idRadiusV = 0.0086;
+  const idRadiusU = 0.0135;
+  const idRadiusV = 0.0084;
 
   const studentIdCols = [];
   for (let c = 0; c < idDigitsCount; c++) {
@@ -503,8 +787,8 @@ function getOmrSheetLayout(itemCount = 50) {
   // --- ZONE 2 (BOTTOM): EXAMINATION ANSWER BUBBLE GRID (Items 1..N, Options A..D) ---
   const cols = N <= 50 ? 2 : 4;
   const rowsPerCol = Math.ceil(N / cols);
-  const padTop = 0.362;
-  const padBottom = 0.036;
+  const padTop = 0.372;
+  const padBottom = 0.034;
   const padLeft = 0.055;
   const padRight = 0.045;
   const usableW = 1 - padLeft - padRight;
@@ -524,13 +808,13 @@ function getOmrSheetLayout(itemCount = 50) {
       xStart: colX,
       numCenterU: colX + numW * 0.45,
       optUs: opts.map((_, oi) => colX + numW + (oi + 0.5) * stepX),
-      headerV: 0.344
+      headerV: 0.355
     });
   }
 
   const bubbles = [];
   const radiusU = Math.min((colW * 0.70) / 10.2, 0.020);
-  const radiusV = Math.min(rowH * 0.36, 0.0138);
+  const radiusV = Math.min(rowH * 0.36, 0.0136);
 
   for (let i = 0; i < N; i++) {
     const c = Math.floor(i / rowsPerCol);
@@ -557,14 +841,13 @@ function getOmrSheetLayout(itemCount = 50) {
     });
   }
 
-  return { N, cols, rowsPerCol, colHeaders, bubbles, radiusU, radiusV, studentIdCols, idRadiusU, idRadiusV };
+  return { N, cols, rowsPerCol, colHeaders, bubbles, radiusU, radiusV, studentIdCols, idRadiusU, idRadiusV, barcodeBits };
 }
 
-function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '', quizId = '', omrQuizCode = 0, setLetter = '' } = {}) {
   const layout = getOmrSheetLayout(itemCount);
   const svgW = 816;
   const svgH = 1056;
-  // Fiducial square centers define the exact [0,1]x[0,1] scanning box
   const fx0 = 58;
   const fy0 = 192;
   const fw = 700;
@@ -574,23 +857,35 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
   const mapX = (u) => fx0 + u * fw;
   const mapY = (v) => fy0 + v * fh;
 
+  const effectiveCode = omrQuizCode || (quizId ? getQuizOmrCode(quizId) : 0);
+  const cleanSet = (setLetter && /^[A-Z]$/i.test(String(setLetter).trim())) ? String(setLetter).trim().toUpperCase().charAt(0) : '';
+  const codeBits = encodeOmrQuizSetBarcode(effectiveCode, cleanSet);
+
+  // --- OPTICAL QUIZ+SET BARCODE STRIP SVG ---
+  let barcodeSvg = '';
+  layout.barcodeBits.forEach((cell, idx) => {
+    const bitVal = codeBits[idx];
+    const bw = cell.wu * fw;
+    const bh = cell.hv * fh;
+    const bx = mapX(cell.u) - bw / 2;
+    const by = mapY(cell.v) - bh / 2;
+    barcodeSvg += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${bitVal ? '#000000' : '#ffffff'}" stroke="${bitVal ? '#000000' : '#e2e8f0'}" stroke-width="0.6" />`;
+  });
+
   // --- ZONE 1 SVG: STUDENT NUMBER SHADING GRID ---
-  const idR = Math.max(6.2, Math.min(8.4, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
+  const idR = Math.max(6.0, Math.min(8.2, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
   let studentIdSvg = '';
 
-  // Enclosing border for Student Number Section
   studentIdSvg += `
-    <rect x="${mapX(0.036).toFixed(1)}" y="${mapY(0.012).toFixed(1)}" width="${(0.585 * fw).toFixed(1)}" height="${(0.296 * fh).toFixed(1)}" fill="#ffffff" stroke="#334155" stroke-width="1.3" rx="5" />
-    <text x="${mapX(0.328).toFixed(1)}" y="${mapY(0.033).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">STUDENT NUMBER (WRITE &amp; SHADE 0–9 BELOW)</text>
+    <rect x="${mapX(0.036).toFixed(1)}" y="${mapY(0.034).toFixed(1)}" width="${(0.585 * fw).toFixed(1)}" height="${(0.288 * fh).toFixed(1)}" fill="#ffffff" stroke="#334155" stroke-width="1.3" rx="5" />
+    <text x="${mapX(0.328).toFixed(1)}" y="${mapY(0.054).toFixed(1)}" text-anchor="middle" font-size="10.2" font-weight="800" fill="#0f172a">STUDENT NUMBER (WRITE &amp; SHADE 0–9 BELOW)</text>
   `;
 
-  // Row digit labels 0..9 on the left edge of the Student Number box
   for (let d = 0; d < 10; d++) {
     const dy = mapY(layout.studentIdCols[0].digits[d].v);
-    studentIdSvg += `<text x="${mapX(0.052).toFixed(1)}" y="${(dy + 3).toFixed(1)}" text-anchor="middle" font-size="9" font-weight="700" fill="#475569">${d}</text>`;
+    studentIdSvg += `<text x="${mapX(0.052).toFixed(1)}" y="${(dy + 3).toFixed(1)}" text-anchor="middle" font-size="8.8" font-weight="700" fill="#475569">${d}</text>`;
   }
 
-  // Dash visual separator between digit 4 and digit 5 (YYYY - NNNNNN)
   const dashX = (mapX(layout.studentIdCols[3].u) + mapX(layout.studentIdCols[4].u)) / 2;
   const dashY = mapY((layout.studentIdCols[0].boxTopV + layout.studentIdCols[0].boxBottomV) / 2);
   studentIdSvg += `<text x="${dashX.toFixed(1)}" y="${(dashY + 4).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="800" fill="#0f172a">-</text>`;
@@ -600,56 +895,52 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     const bw = 26;
     const by = mapY(col.boxTopV);
     const bh = mapY(col.boxBottomV) - by;
-    // Write-in digit box at top of column
     studentIdSvg += `<rect x="${(bx - bw / 2).toFixed(1)}" y="${by.toFixed(1)}" width="${bw}" height="${bh.toFixed(1)}" fill="#f8fafc" stroke="#0f172a" stroke-width="1.3" rx="2" />`;
-    // 0..9 bubbles in column
     col.digits.forEach(dig => {
       const cx = mapX(dig.u);
       const cy = mapY(dig.v);
       studentIdSvg += `
         <circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${idR.toFixed(1)}" fill="#ffffff" stroke="#1e293b" stroke-width="1.3" />
-        <text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" text-anchor="middle" font-size="7.8" font-weight="600" fill="#64748b">${dig.digit}</text>
+        <text x="${cx.toFixed(1)}" y="${(cy + 3).toFixed(1)}" text-anchor="middle" font-size="7.6" font-weight="600" fill="#64748b">${dig.digit}</text>
       `;
     });
   });
 
   // Right Info / Shading Guide Box inside Top Zone
   const guideX = mapX(0.635);
-  const guideY = mapY(0.012);
+  const guideY = mapY(0.034);
   const guideW = 0.328 * fw;
-  const guideH = 0.296 * fh;
+  const guideH = 0.288 * fh;
   studentIdSvg += `
     <rect x="${guideX.toFixed(1)}" y="${guideY.toFixed(1)}" width="${guideW.toFixed(1)}" height="${guideH.toFixed(1)}" fill="#f8fafc" stroke="#334155" stroke-width="1.3" rx="5" />
-    <text x="${(guideX + guideW / 2).toFixed(1)}" y="${(guideY + 18).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="800" fill="#0f172a">SHADING INSTRUCTIONS</text>
-    <line x1="${(guideX + 10).toFixed(1)}" y1="${(guideY + 25).toFixed(1)}" x2="${(guideX + guideW - 10).toFixed(1)}" y2="${(guideY + 25).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" />
-    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 46).toFixed(1)}" r="8" fill="#0f172a" stroke="#0f172a" stroke-width="1.5" />
-    <text x="${(guideX + 42).toFixed(1)}" y="${(guideY + 50).toFixed(1)}" font-size="9.5" font-weight="700" fill="#047857">CORRECT (Full dark shade)</text>
-    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 70).toFixed(1)}" r="8" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
-    <line x1="${(guideX + 21).toFixed(1)}" y1="${(guideY + 65).toFixed(1)}" x2="${(guideX + 31).toFixed(1)}" y2="${(guideY + 75).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
-    <line x1="${(guideX + 31).toFixed(1)}" y1="${(guideY + 65).toFixed(1)}" x2="${(guideX + 21).toFixed(1)}" y2="${(guideY + 75).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
-    <text x="${(guideX + 42).toFixed(1)}" y="${(guideY + 74).toFixed(1)}" font-size="9.5" font-weight="700" fill="#dc2626">WRONG (Check / X / Partial)</text>
-    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 102).toFixed(1)}" font-size="8.6" fill="#334155">• Shade your Student Number digits</text>
-    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 115).toFixed(1)}" font-size="8.6" fill="#334155">(skip dashes: 2022-001234 →</text>
-    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 128).toFixed(1)}" font-size="8.6" font-weight="700" fill="#0f172a">shade 2 0 2 2 0 0 1 2 3 4).</text>
-    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 148).toFixed(1)}" font-size="8.6" fill="#334155">• Use dark pencil or black/blue pen.</text>
-    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 163).toFixed(1)}" font-size="8.6" fill="#334155">• Do NOT mark the 4 corner squares.</text>
-    <line x1="${(guideX + 10).toFixed(1)}" y1="${(guideY + 180).toFixed(1)}" x2="${(guideX + guideW - 10).toFixed(1)}" y2="${(guideY + 180).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" />
-    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 202).toFixed(1)}" font-size="10" font-weight="800" fill="#0f172a">TOTAL SCORE: _______ / ${layout.N}</text>
-    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 224).toFixed(1)}" font-size="9" font-weight="600" fill="#475569">Proctor / Admin: _______________</text>
+    <rect x="${(guideX + 8).toFixed(1)}" y="${(guideY + 8).toFixed(1)}" width="${(guideW - 16).toFixed(1)}" height="28" fill="#0f172a" rx="4" />
+    <text x="${(guideX + guideW / 2).toFixed(1)}" y="${(guideY + 26).toFixed(1)}" text-anchor="middle" font-size="11.5" font-weight="800" fill="#ffffff">${cleanSet ? `EXAM SET ${cleanSet}` : 'STANDARD SET'}  •  CODE #${effectiveCode || '0000'}</text>
+    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 54).toFixed(1)}" r="7.5" fill="#0f172a" stroke="#0f172a" stroke-width="1.5" />
+    <text x="${(guideX + 41).toFixed(1)}" y="${(guideY + 58).toFixed(1)}" font-size="9.2" font-weight="700" fill="#047857">CORRECT (Full dark shade)</text>
+    <circle cx="${(guideX + 26).toFixed(1)}" cy="${(guideY + 76).toFixed(1)}" r="7.5" fill="#ffffff" stroke="#1e293b" stroke-width="1.5" />
+    <line x1="${(guideX + 21).toFixed(1)}" y1="${(guideY + 71).toFixed(1)}" x2="${(guideX + 31).toFixed(1)}" y2="${(guideY + 81).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
+    <line x1="${(guideX + 31).toFixed(1)}" y1="${(guideY + 71).toFixed(1)}" x2="${(guideX + 21).toFixed(1)}" y2="${(guideY + 81).toFixed(1)}" stroke="#dc2626" stroke-width="1.8" />
+    <text x="${(guideX + 41).toFixed(1)}" y="${(guideY + 80).toFixed(1)}" font-size="9.2" font-weight="700" fill="#dc2626">WRONG (Check / X / Partial)</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 104).toFixed(1)}" font-size="8.4" fill="#334155">• Shade your 10-digit Student Number</text>
+    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 116).toFixed(1)}" font-size="8.4" fill="#334155">(skip dashes: 2022-001234 →</text>
+    <text x="${(guideX + 18).toFixed(1)}" y="${(guideY + 128).toFixed(1)}" font-size="8.4" font-weight="700" fill="#0f172a">shade 2 0 2 2 0 0 1 2 3 4).</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 145).toFixed(1)}" font-size="8.4" fill="#334155">• Do NOT mark top barcode or corners.</text>
+    <text x="${(guideX + 12).toFixed(1)}" y="${(guideY + 159).toFixed(1)}" font-size="8.4" fill="#334155">• Use dark pencil or black/blue pen.</text>
+    <line x1="${(guideX + 10).toFixed(1)}" y1="${(guideY + 174).toFixed(1)}" x2="${(guideX + guideW - 10).toFixed(1)}" y2="${(guideY + 174).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" />
+    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 196).toFixed(1)}" font-size="10" font-weight="800" fill="#0f172a">TOTAL SCORE: _______ / ${layout.N}</text>
+    <text x="${(guideX + 14).toFixed(1)}" y="${(guideY + 217).toFixed(1)}" font-size="8.8" font-weight="600" fill="#475569">Proctor / Admin: _______________</text>
   `;
 
   // Divider between Student Number Zone and Answer Grid Zone
   let gridSvg = `
-    <line x1="${mapX(0.035).toFixed(1)}" y1="${mapY(0.320).toFixed(1)}" x2="${mapX(0.965).toFixed(1)}" y2="${mapY(0.320).toFixed(1)}" stroke="#0f172a" stroke-width="1.5" />
+    <line x1="${mapX(0.035).toFixed(1)}" y1="${mapY(0.335).toFixed(1)}" x2="${mapX(0.965).toFixed(1)}" y2="${mapY(0.335).toFixed(1)}" stroke="#0f172a" stroke-width="1.5" />
   `;
 
-  // Subtle column divider lines
   for (let c = 1; c < layout.cols; c++) {
     const xLine = mapX(0.055 + c * ((1 - 0.10) / layout.cols) - 0.008);
-    gridSvg += `<line x1="${xLine.toFixed(1)}" y1="${mapY(0.330).toFixed(1)}" x2="${xLine.toFixed(1)}" y2="${mapY(0.975).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
+    gridSvg += `<line x1="${xLine.toFixed(1)}" y1="${mapY(0.343).toFixed(1)}" x2="${xLine.toFixed(1)}" y2="${mapY(0.976).toFixed(1)}" stroke="#cbd5e1" stroke-width="1" stroke-dasharray="4,4" />`;
   }
 
-  // Column A B C D Headers
   layout.colHeaders.forEach(ch => {
     const hy = mapY(ch.headerV);
     gridSvg += `<text x="${mapX(ch.numCenterU).toFixed(1)}" y="${hy.toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#334155">#</text>`;
@@ -658,15 +949,14 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     });
   });
 
-  // Rows & Answer Bubbles
-  const rPx = Math.max(6.8, Math.min(10.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+  const rPx = Math.max(6.6, Math.min(10.3, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
   layout.bubbles.forEach(item => {
     const cy = mapY(item.v);
     if (item.row % 2 === 1) {
       const colW = (1 - 0.10) / layout.cols;
       const rx = mapX(0.055 + item.col * colW);
       const rw = colW * fw - 8;
-      const rh = ((1 - 0.362 - 0.036) / layout.rowsPerCol) * fh;
+      const rh = ((1 - 0.372 - 0.034) / layout.rowsPerCol) * fh;
       gridSvg += `<rect x="${rx.toFixed(1)}" y="${(cy - rh / 2).toFixed(1)}" width="${rw.toFixed(1)}" height="${rh.toFixed(1)}" fill="#f8fafc" rx="3" />`;
     }
     gridSvg += `<text x="${mapX(item.numU).toFixed(1)}" y="${(cy + 3.5).toFixed(1)}" text-anchor="middle" font-size="10" font-weight="700" fill="#0f172a">${item.itemNum}.</text>`;
@@ -679,7 +969,6 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     });
   });
 
-  // 4 Solid Black Corner Fiducial Squares (centered exactly at (fx0, fy0), (fx0+fw, fy0), (fx0, fy0+fh), (fx0+fw, fy0+fh))
   const corners = [
     [fx0, fy0],
     [fx0 + fw, fy0],
@@ -691,14 +980,23 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     <rect x="${(cx - mSize / 2).toFixed(1)}" y="${(cy - mSize / 2).toFixed(1)}" width="${mSize}" height="${mSize}" fill="#000000" />
   `).join('');
 
+  const setHeaderBadge = cleanSet ? `
+    <rect x="688" y="22" width="84" height="58" fill="#0f172a" rx="6" />
+    <text x="730" y="39" text-anchor="middle" font-size="9" font-weight="700" fill="#94a3b8" letter-spacing="1">EXAM SET</text>
+    <text x="730" y="69" text-anchor="middle" font-size="27" font-weight="900" fill="#ffffff">${cleanSet}</text>
+  ` : '';
+
+  const titleCenterX = cleanSet ? 364 : (svgW / 2);
+
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}" width="100%" style="background:#ffffff; display:block; font-family: Arial, Helvetica, sans-serif;">
     <rect x="0" y="0" width="${svgW}" height="${svgH}" fill="#ffffff" />
     <!-- OFFICIAL HEADER -->
-    <text x="${svgW / 2}" y="30" text-anchor="middle" font-size="10" letter-spacing="1" fill="#334155">REPUBLIC OF THE PHILIPPINES</text>
-    <text x="${svgW / 2}" y="48" text-anchor="middle" font-size="14.5" font-weight="800" fill="#0f172a">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</text>
-    <text x="${svgW / 2}" y="64" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">College of Engineering — Mechanical Engineering Department</text>
-    <text x="${svgW / 2}" y="86" text-anchor="middle" font-size="13.5" font-weight="800" fill="#0f172a">${escapeHtmlForWord(title).toUpperCase()} — OMR ANSWER SHEET (${layout.N} ITEMS)</text>
-    ${subtitle ? `<text x="${svgW / 2}" y="101" text-anchor="middle" font-size="9.5" fill="#475569">${escapeHtmlForWord(subtitle)}</text>` : ''}
+    <text x="${titleCenterX}" y="30" text-anchor="middle" font-size="10" letter-spacing="1" fill="#334155">REPUBLIC OF THE PHILIPPINES</text>
+    <text x="${titleCenterX}" y="48" text-anchor="middle" font-size="14" font-weight="800" fill="#0f172a">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</text>
+    <text x="${titleCenterX}" y="64" text-anchor="middle" font-size="10.8" font-weight="600" fill="#334155">College of Engineering — Mechanical Engineering Department</text>
+    <text x="${titleCenterX}" y="86" text-anchor="middle" font-size="12.5" font-weight="800" fill="#0f172a">${escapeHtmlForWord(title).toUpperCase().slice(0, 52)}${cleanSet ? ` — SET ${cleanSet}` : ''} (${layout.N} ITEMS)</text>
+    ${subtitle ? `<text x="${titleCenterX}" y="101" text-anchor="middle" font-size="9.2" fill="#475569">${escapeHtmlForWord(subtitle)}</text>` : ''}
+    ${setHeaderBadge}
     <line x1="42" y1="109" x2="${svgW - 42}" y2="109" stroke="#0f172a" stroke-width="2" />
 
     <!-- STUDENT INFO FIELDS -->
@@ -712,6 +1010,9 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     <text x="515" y="158" font-size="11" font-weight="700" fill="#0f172a">Student No.:</text>
     <line x1="590" y1="160" x2="768" y2="160" stroke="#334155" stroke-width="1.2" />
 
+    <!-- OPTICAL QUIZ+SET BARCODE STRIP (AUTO-DETECTS QUIZ & SET A-Z) -->
+    ${barcodeSvg}
+
     <!-- ZONE 1: STUDENT NUMBER SHADING GRID -->
     ${studentIdSvg}
 
@@ -721,25 +1022,26 @@ function buildOmrAnswerSheetSvg({ title = 'ME Board Evaluation Quiz', itemCount 
     <!-- 4 BLACK CORNER ALIGNMENT FIDUCIAL SQUARES -->
     ${fiducialsSvg}
 
-    <text x="${svgW / 2}" y="${svgH - 14}" text-anchor="middle" font-size="8.8" fill="#64748b">ME BoardPrep Official OMR Scannable Answer Sheet (Student Number + Answers) • Align 4 Black Corner Squares inside Camera Frame</text>
+    <text x="${svgW / 2}" y="${svgH - 14}" text-anchor="middle" font-size="8.6" fill="#64748b">ME BoardPrep Official OMR Scannable Sheet • Auto-ID Quiz #${effectiveCode || '0000'}${cleanSet ? ` • SET ${cleanSet}` : ''} • Student Number + Answers</text>
   </svg>`;
 }
 
-function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '', quizId = '', omrQuizCode = 0, setLetter = '' } = {}) {
   if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
     window.showToast?.('Access restricted: Only administrators can generate answer sheets.', 'error');
     return;
   }
-  const svgMarkup = buildOmrAnswerSheetSvg({ title, itemCount, subtitle });
+  const cleanSet = (setLetter && /^[A-Z]$/i.test(String(setLetter).trim())) ? String(setLetter).trim().toUpperCase().charAt(0) : '';
+  const svgMarkup = buildOmrAnswerSheetSvg({ title, itemCount, subtitle, quizId, omrQuizCode, setLetter: cleanSet });
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>${escapeHtmlForWord(title)} - OMR Answer Sheet</title>
+  <title>${escapeHtmlForWord(title)}${cleanSet ? ` - SET ${cleanSet}` : ''} - OMR Answer Sheet</title>
   <style>
     @page { size: letter portrait; margin: 0.25in; }
     body { margin: 0; padding: 16px; background: #e2e8f0; font-family: Arial, sans-serif; display: flex; flex-direction: column; align-items: center; }
-    .toolbar { margin-bottom: 14px; display: flex; gap: 10px; align-items: center; }
+    .toolbar { margin-bottom: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
     .print-btn { background: #2563eb; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; }
     .sheet-page { width: 8.5in; max-width: 100%; background: #ffffff; box-shadow: 0 10px 25px rgba(0,0,0,0.18); }
     @media print {
@@ -752,7 +1054,7 @@ function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCoun
 <body>
   <div class="toolbar">
     <button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF (100% Scale)</button>
-    <span style="font-size: 13px; color: #334155;">Includes 10-Digit Student Number Shading + ${itemCount} Answer Bubbles. Print at 100% scale.</span>
+    <span style="font-size: 13px; color: #334155;">${cleanSet ? `<b>SET ${cleanSet}</b> • ` : ''}Optical Quiz/Set Barcode + 10-Digit Student Number Shading + ${itemCount} Answer Bubbles. Print at 100% scale.</span>
   </div>
   <div class="sheet-page">${svgMarkup}</div>
 </body>
@@ -760,7 +1062,8 @@ function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCoun
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const safeBase = String(title || 'ME_Quiz').replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Quiz';
-  const fileName = `${safeBase}_OMR_Answer_Sheet_${itemCount}Qs.html`;
+  const setPart = cleanSet ? `_SET_${cleanSet}` : '';
+  const fileName = `${safeBase}${setPart}_OMR_Answer_Sheet_${itemCount}Qs.html`;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -769,19 +1072,20 @@ function exportOmrAnswerSheetHtml({ title = 'ME Board Evaluation Quiz', itemCoun
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  window.showToast?.(`Downloaded Printable OMR Answer Sheet "${fileName}" with Student Number Shading!`, 'success');
+  window.showToast?.(`Downloaded Printable OMR Answer Sheet "${fileName}" (${cleanSet ? `SET ${cleanSet} • ` : ''}Auto-Scannable Barcode + Student Number Shading)!`, 'success');
 }
 
-function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '' } = {}) {
+function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCount = 50, subtitle = '', quizId = '', omrQuizCode = 0, setLetter = '' } = {}) {
   if (typeof window !== 'undefined' && window.__CURRENT_USER_ROLE !== 'admin') {
     window.showToast?.('Access restricted: Only administrators can generate answer sheets.', 'error');
     return;
   }
   const N = Math.max(1, Math.min(100, parseInt(itemCount, 10) || 50));
+  const cleanSet = (setLetter && /^[A-Z]$/i.test(String(setLetter).trim())) ? String(setLetter).trim().toUpperCase().charAt(0) : '';
+  const effectiveCode = omrQuizCode || (quizId ? getQuizOmrCode(quizId) : 0);
   const cols = N <= 50 ? 2 : 4;
   const rowsPerCol = Math.ceil(N / cols);
 
-  // Student Number Shading Table (10 columns x 0..9 circled digits)
   const circledDigits = ['⓪', '①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨'];
   const writeBoxesRow = Array.from({ length: 10 }, (_, idx) =>
     `<td style="border: 1.5px solid #0f172a; height: 18pt; width: 22pt; text-align: center; background: #f8fafc;">&nbsp;</td>${idx === 3 ? '<td style="text-align:center; font-weight:bold; width:10pt;">-</td>' : ''}`
@@ -817,7 +1121,7 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
       xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtmlForWord(title)} - Answer Sheet</title>
+  <title>${escapeHtmlForWord(title)}${cleanSet ? ` - SET ${cleanSet}` : ''} - Answer Sheet</title>
   <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
   <style>
     @page WordSection1 { size: 8.5in 11.0in; margin: 0.55in; }
@@ -827,13 +1131,25 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
 </head>
 <body>
   <div class="WordSection1">
-    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 5pt; margin-bottom: 8pt;">
-      <p style="margin: 0; font-size: 8.5pt;">REPUBLIC OF THE PHILIPPINES</p>
-      <p style="margin: 1pt 0; font-size: 11.5pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
-      <p style="margin: 1pt 0 3pt 0; font-size: 9.5pt;">College of Engineering — Mechanical Engineering Department</p>
-      <h1 style="margin: 2pt 0 0 0; font-size: 12.5pt; text-transform: uppercase;">${escapeHtmlForWord(title)} — OFFICIAL ANSWER SHEET (${N} ITEMS)</h1>
-      ${subtitle ? `<p style="margin: 2pt 0 0 0; font-size: 8.5pt; color: #475569;">${escapeHtmlForWord(subtitle)}</p>` : ''}
-    </div>
+    <table style="width: 100%; border-collapse: collapse; border-bottom: 2px solid #0f172a; margin-bottom: 8pt;">
+      <tr>
+        <td style="text-align: center; padding-bottom: 5pt;">
+          <p style="margin: 0; font-size: 8.5pt;">REPUBLIC OF THE PHILIPPINES</p>
+          <p style="margin: 1pt 0; font-size: 11.5pt; font-weight: bold;">NUEVA ECIJA UNIVERSITY OF SCIENCE AND TECHNOLOGY</p>
+          <p style="margin: 1pt 0 3pt 0; font-size: 9.5pt;">College of Engineering — Mechanical Engineering Department</p>
+          <h1 style="margin: 2pt 0 0 0; font-size: 12pt; text-transform: uppercase;">${escapeHtmlForWord(title)} — OFFICIAL ANSWER SHEET (${N} ITEMS)</h1>
+          ${subtitle ? `<p style="margin: 2pt 0 0 0; font-size: 8.5pt; color: #475569;">${escapeHtmlForWord(subtitle)}</p>` : ''}
+        </td>
+        ${cleanSet ? `
+        <td style="width: 82pt; text-align: center; vertical-align: middle; padding-bottom: 5pt;">
+          <div style="border: 2.5px solid #0f172a; padding: 4pt; background: #f1f5f9;">
+            <div style="font-size: 7.5pt; font-weight: bold; color: #334155;">EXAM SET</div>
+            <div style="font-size: 18pt; font-weight: bold; line-height: 1.05;">SET ${cleanSet}</div>
+            <div style="font-size: 7pt; color: #475569;">CODE #${effectiveCode || '0000'}</div>
+          </div>
+        </td>` : ''}
+      </tr>
+    </table>
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt;">
       <tr>
         <td style="padding: 2pt 0; width: 58%;"><b>Student Name:</b> ____________________________________</td>
@@ -841,7 +1157,7 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
       </tr>
       <tr>
         <td style="padding: 2pt 0;"><b>Year &amp; Section:</b> ___________________________________</td>
-        <td style="padding: 2pt 0;"><b>Score:</b> _________ / ${N}</td>
+        <td style="padding: 2pt 0;"><b>Score:</b> _________ / ${N}${cleanSet ? ` &nbsp;|&nbsp; <b>Set:</b> SET ${cleanSet}` : ''}</td>
       </tr>
     </table>
     <table style="width: 100%; border-collapse: collapse; margin-bottom: 10pt;">
@@ -853,10 +1169,11 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
           </table>
         </td>
         <td style="width: 40%; border: 1.5px solid #0f172a; padding: 6pt 8pt; vertical-align: top; background: #f8fafc; font-size: 8.5pt;">
-          <div style="font-weight: bold; margin-bottom: 4pt; font-size: 9pt;">SHADING DIRECTIONS:</div>
+          <div style="font-weight: bold; margin-bottom: 4pt; font-size: 9pt;">EXAM INFO &amp; SHADING DIRECTIONS:</div>
+          <p style="margin: 0 0 4pt 0;"><b>Exam Set:</b> ${cleanSet ? `SET ${cleanSet}` : 'Standard'} &nbsp;|&nbsp; <b>Quiz Code:</b> #${effectiveCode || '0000'}</p>
           <p style="margin: 0 0 4pt 0;">1. Write your Student Number in the boxes and completely shade the matching digit (0–9) below each box (skip dashes).</p>
           <p style="margin: 0 0 4pt 0;">2. Completely shade your chosen answer bubble (A, B, C, or D) using a dark pencil or black/blue pen.</p>
-          <p style="margin: 0;">3. Avoid stray marks or incomplete erasures.</p>
+          <p style="margin: 0;">3. Tip: Use the Printable OMR Sheet (.html) for automatic camera Quiz/Set barcode scanning.</p>
         </td>
       </tr>
     </table>
@@ -869,7 +1186,8 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
 
   const blob = new Blob(['\ufeff', docHtml], { type: 'application/msword;charset=utf-8' });
   const safeBase = String(title || 'ME_Quiz').replace(/[^a-z0-9\-_]+/gi, '_').replace(/^_+|_+$/g, '') || 'ME_Quiz';
-  const fileName = `${safeBase}_Answer_Sheet_${N}Qs.doc`;
+  const setPart = cleanSet ? `_SET_${cleanSet}` : '';
+  const fileName = `${safeBase}${setPart}_Answer_Sheet_${N}Qs.doc`;
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -878,7 +1196,7 @@ function exportOmrAnswerSheetWord({ title = 'ME Board Evaluation Quiz', itemCoun
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1500);
-  window.showToast?.(`Downloaded Word Answer Sheet "${fileName}" with Student Number Shading!`, 'success');
+  window.showToast?.(`Downloaded Word Answer Sheet "${fileName}" (${cleanSet ? `SET ${cleanSet} • ` : ''}Student Number Shading)!`, 'success');
 }
 
 // --- PROJECTIVE 3x3 HOMOGRAPHY SOLVER (Maps normalized [0,1]x[0,1] -> 4 scanned corner points) ---
@@ -1006,7 +1324,75 @@ function detectOmrFiducialCorners(imgData) {
   return [tl, tr, br, bl];
 }
 
-// --- OMR BUBBLE SAMPLER FOR BOTH STUDENT NUMBER (0-9 x 10) AND ANSWERS (A-D x 1..N) ---
+// --- OPTICAL QUIZ+SET BARCODE DECODER (27-bit self-validating checksum strip) ---
+function decodeOmrBarcodeFromImageData(imgData, corners) {
+  const { width: w, height: h, data } = imgData;
+  const layout = getOmrSheetLayout(50);
+  const H = computeOmrHomography(corners);
+  const topW = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
+  const leftH = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
+
+  const sampleDiskBrightness = (cx, cy, rPx) => {
+    const r = Math.max(1.5, Math.round(rPx));
+    const r2 = r * r;
+    const xMin = Math.max(0, Math.floor(cx - r));
+    const xMax = Math.min(w - 1, Math.ceil(cx + r));
+    const yMin = Math.max(0, Math.floor(cy - r));
+    const yMax = Math.min(h - 1, Math.ceil(cy + r));
+    let sum = 0;
+    let count = 0;
+    for (let y = yMin; y <= yMax; y++) {
+      const dy = y - cy;
+      for (let x = xMin; x <= xMax; x++) {
+        const dx = x - cx;
+        if (dx * dx + dy * dy <= r2) {
+          const idx = (y * w + x) * 4;
+          sum += (0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2]) / 255;
+          count++;
+        }
+      }
+    }
+    return count > 0 ? (sum / count) : 1;
+  };
+
+  const samples = layout.barcodeBits.map(cell => {
+    const pt = applyOmrHomography(H, cell.u, cell.v);
+    const sampleR = Math.max(1.8, Math.min(cell.wu * topW, cell.hv * leftH) * 0.28);
+    const brightness = sampleDiskBrightness(pt.x, pt.y, sampleR);
+    return { index: cell.index, x: pt.x, y: pt.y, brightness };
+  });
+
+  // Calibration blocks: [0]=BLACK, [1]=WHITE, [25]=WHITE, [26]=BLACK
+  const calBlack = (samples[0].brightness + samples[26].brightness) / 2;
+  const calWhite = (samples[1].brightness + samples[25].brightness) / 2;
+  if (calWhite - calBlack < 0.18) {
+    return { valid: false, omrQuizCode: 0, setNumber: 0, setLetter: '', samples };
+  }
+
+  const threshold = (calBlack + calWhite) / 2;
+  const bits = samples.map(s => (s.brightness < threshold ? 1 : 0));
+
+  if (bits[0] !== 1 || bits[1] !== 0 || bits[25] !== 0 || bits[26] !== 1) {
+    return { valid: false, omrQuizCode: 0, setNumber: 0, setLetter: '', samples };
+  }
+
+  let omrQuizCode = 0;
+  for (let i = 0; i < 12; i++) omrQuizCode = (omrQuizCode << 1) | bits[2 + i];
+  let setNumber = 0;
+  for (let i = 0; i < 5; i++) setNumber = (setNumber << 1) | bits[14 + i];
+  let checksum = 0;
+  for (let i = 0; i < 6; i++) checksum = (checksum << 1) | bits[19 + i];
+
+  const expectedChecksum = (((omrQuizCode * 31) + (setNumber * 17)) ^ (omrQuizCode >> 5) ^ 0x2A) & 0x3F;
+  if (checksum !== expectedChecksum || setNumber > 26) {
+    return { valid: false, omrQuizCode: 0, setNumber: 0, setLetter: '', samples };
+  }
+
+  const setLetter = setNumber >= 1 && setNumber <= 26 ? QUIZ_SET_LETTERS[setNumber - 1] : '';
+  return { valid: true, omrQuizCode, setNumber, setLetter, samples };
+}
+
+// --- OMR BUBBLE SAMPLER FOR BARCODE + STUDENT NUMBER (0-9 x 10) + ANSWERS (A-D x 1..N) ---
 function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 0.22) {
   const { width: w, height: h, data } = imgData;
   const layout = getOmrSheetLayout(itemCount);
@@ -1038,6 +1424,9 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
   const topW = Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y);
   const leftH = Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y);
 
+  // 0. DECODE OPTICAL QUIZ+SET BARCODE STRIP
+  const barcode = decodeOmrBarcodeFromImageData(imgData, corners);
+
   // 1. SCAN 10-DIGIT STUDENT NUMBER SHADING GRID
   const studentIdColsStats = layout.studentIdCols.map(col => {
     const digitStats = col.digits.map(dig => {
@@ -1054,7 +1443,6 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
     const sorted = [...digitStats].sort((a, b) => b.fillRatio - a.fillRatio);
     const darkest = sorted[0];
     const second = sorted[1];
-    // Average of the 8 lightest bubbles in the 0-9 column as unshaded baseline
     const unshadedAvg = sorted.slice(2).reduce((acc, s) => acc + s.fillRatio, 0) / 8;
     const contrast = darkest.fillRatio - unshadedAvg;
     const isShaded = contrast >= sensitivity * 0.85 && darkest.fillRatio >= sensitivity * 0.85 && (darkest.fillRatio - second.fillRatio >= 0.08 || contrast >= sensitivity);
@@ -1125,6 +1513,7 @@ function scanOmrBubblesFromImageData(imgData, corners, itemCount, sensitivity = 
   });
 
   return {
+    barcode,
     studentIdColsStats,
     rawStudentNumberDigits: rawIdDigits,
     scannedStudentNumber: formattedStudentNumber,
@@ -4794,10 +5183,37 @@ function BatchAuditView({ questions, loadQuestions, totalQuestionsCount, totalPa
 
 // ============================================================================
 // ADMIN-ONLY OMR ANSWER SHEET GENERATOR & PAPER SCANNER VIEW
+// (WITH ROTATING SETS A-Z, OPTICAL QUIZ+SET AUTO-DETECT, AND AUTO SCORE RECORD)
 // ============================================================================
-function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, showToast }) {
-  // Mode & Quiz / Key State
-  const [selectedQuizId, setSelectedQuizId] = useState(quizzesList[0]?.id || 'custom');
+function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, loadUsers, showToast }) {
+  // Quiz Sets A-Z Cloud/Local Sync
+  const [quizSetsList, setQuizSetsList] = useState(() => getStoredQuizSets());
+
+  useEffect(() => {
+    const onSetsUpdate = () => setQuizSetsList(getStoredQuizSets());
+    window.addEventListener('me_quiz_sets_updated', onSetsUpdate);
+    // Fetch fresh sets from Cloud Firestore on mount
+    fetch(`${API_BASE}/api/quiz-sets`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token') || ''}` }
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d && Array.isArray(d.sets)) {
+          try { localStorage.setItem(QUIZ_SETS_STORAGE_KEY, JSON.stringify(d.sets)); } catch (e) {}
+          setQuizSetsList(d.sets);
+        }
+      })
+      .catch(() => {});
+    return () => window.removeEventListener('me_quiz_sets_updated', onSetsUpdate);
+  }, []);
+
+  // Mode & Quiz / Set / Key State
+  const initialQuizId = quizzesList[0]?.id || 'custom';
+  const [selectedQuizId, setSelectedQuizId] = useState(initialQuizId);
+  const [selectedSetLetter, setSelectedSetLetter] = useState(() => {
+    const latest = initialQuizId !== 'custom' ? getLatestSetForQuiz(initialQuizId) : null;
+    return latest ? latest.setLetter : '';
+  });
   const [customTitle, setCustomTitle] = useState('ME Board Exam Practice Quiz');
   const [itemCount, setItemCount] = useState(quizzesList[0]?.questionCount ? Math.min(100, quizzesList[0].questionCount) : 50);
   const [passingPct, setPassingPct] = useState(quizzesList[0]?.passingScorePct || 70);
@@ -4810,6 +5226,9 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
   const scanCanvasRef = React.useRef(null);
   const sourceCanvasRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
+  const autoSavedScanIdsRef = React.useRef(new Set());
+  const skipEffectKeyLoadRef = React.useRef(false);
+
   const [cameraActive, setCameraActive] = useState(false);
   const [streamObj, setStreamObj] = useState(null);
   const [hasScannedImage, setHasScannedImage] = useState(false);
@@ -4819,10 +5238,13 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
   const [scanResults, setScanResults] = useState([]);
   const [scannedStudentNumber, setScannedStudentNumber] = useState('');
   const [matchedStudentInfo, setMatchedStudentInfo] = useState(null);
+  const [detectedBarcodeInfo, setDetectedBarcodeInfo] = useState(null);
   const [manualOverrides, setManualOverrides] = useState({});
 
-  // Student Recording State
+  // Auto-Save & Student Recording State
   const studentsOnly = usersList.filter(u => u && u.role !== 'admin');
+  const [autoSaveOnScan, setAutoSaveOnScan] = useState(true);
+  const [autoSaveBanner, setAutoSaveBanner] = useState(null);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [manualStudentName, setManualStudentName] = useState('');
   const [manualStudentSection, setManualStudentSection] = useState('BSME');
@@ -4831,9 +5253,39 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
 
   const selectedQuiz = quizzesList.find(q => q.id === selectedQuizId) || null;
   const activeExamTitle = selectedQuiz ? selectedQuiz.title : customTitle;
+  const activeQuizKeyId = selectedQuiz ? selectedQuiz.id : getQuizStableId({ title: customTitle });
+  const activeQuizCode = getQuizOmrCode(activeQuizKeyId);
+  const setsForActiveQuiz = React.useMemo(
+    () => quizSetsList.filter(s => s.quizId === activeQuizKeyId).sort((a, b) => (a.setIndex ?? 0) - (b.setIndex ?? 0)),
+    [quizSetsList, activeQuizKeyId]
+  );
+  const activeSetRecord = setsForActiveQuiz.find(s => s.setLetter === selectedSetLetter) || null;
+  const nextRotatingLetter = getNextSetLetterForQuiz(activeQuizKeyId);
 
-  // Load Answer Key automatically when selectedQuizId changes
+  const handleQuizDropdownChange = (newQuizId) => {
+    setSelectedQuizId(newQuizId);
+    const targetKeyId = newQuizId === 'custom' ? getQuizStableId({ title: customTitle }) : newQuizId;
+    const latest = getLatestSetForQuiz(targetKeyId);
+    setSelectedSetLetter(latest ? latest.setLetter : '');
+    setManualOverrides({});
+  };
+
+  // Load Answer Key automatically when selectedQuizId or selectedSetLetter changes
   useEffect(() => {
+    if (skipEffectKeyLoadRef.current) {
+      skipEffectKeyLoadRef.current = false;
+      return;
+    }
+    if (activeSetRecord && activeSetRecord.answerKey) {
+      const count = Math.max(1, Math.min(100, activeSetRecord.itemCount || activeSetRecord.answerKey.length));
+      const keyArr = Array.from({ length: count }, (_, idx) => activeSetRecord.answerKey[idx] || 'A');
+      setItemCount(count);
+      setPassingPct(activeSetRecord.passingScorePct || (selectedQuiz ? selectedQuiz.passingScorePct : 70) || 70);
+      setAnswerKey(keyArr);
+      setBulkKeyInput(keyArr.join(''));
+      return;
+    }
+
     if (selectedQuiz) {
       const qs = resolveQuestionsForQuizExport(selectedQuiz);
       const count = Math.max(1, Math.min(100, qs.length || selectedQuiz.questionCount || 50));
@@ -4853,10 +5305,46 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
         return next;
       });
     }
-    setManualOverrides({});
-  }, [selectedQuizId]);
+  }, [selectedQuizId, selectedSetLetter, activeSetRecord?.id, activeSetRecord?.updatedAt]);
 
-  // Adjust answer key array length if custom itemCount changes
+  const handleGenerateNextSet = () => {
+    const cfg = selectedQuiz || {
+      id: activeQuizKeyId,
+      title: customTitle,
+      questionCount: itemCount,
+      passingScorePct: passingPct
+    };
+    const gen = generateNewQuizSet(cfg);
+    if (!gen) {
+      showToast?.('Could not generate quiz set — check available questions.', 'warning');
+      return;
+    }
+    setQuizSetsList(getStoredQuizSets());
+    setSelectedSetLetter(gen.setRecord.setLetter);
+    showToast?.(`Generated SET ${gen.setRecord.setLetter} (${gen.setRecord.itemCount} Items) with its own unique Answer Key! Next set in rotation: SET ${getNextSetLetterForQuiz(activeQuizKeyId)}.`, 'success');
+  };
+
+  const handleDownloadOmrSheetForActiveSet = (asWord = false) => {
+    let targetSet = activeSetRecord;
+    if (!targetSet && selectedQuiz) {
+      targetSet = ensureLatestSetForQuiz(selectedQuiz);
+      if (targetSet) {
+        setQuizSetsList(getStoredQuizSets());
+        setSelectedSetLetter(targetSet.setLetter);
+      }
+    }
+    const opts = {
+      title: activeExamTitle,
+      itemCount: targetSet ? Math.min(100, targetSet.itemCount) : itemCount,
+      subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '',
+      quizId: activeQuizKeyId,
+      omrQuizCode: targetSet ? targetSet.omrQuizCode : activeQuizCode,
+      setLetter: targetSet ? targetSet.setLetter : (selectedSetLetter || 'A')
+    };
+    if (asWord) exportOmrAnswerSheetWord(opts);
+    else exportOmrAnswerSheetHtml(opts);
+  };
+
   const handleItemCountChange = (newCount) => {
     const n = Math.max(1, Math.min(100, parseInt(newCount, 10) || 20));
     setItemCount(n);
@@ -4914,6 +5402,121 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     }
   };
 
+  // Persist scanned score directly onto the matched student's official cloud record
+  const persistScoreToStudentRecord = React.useCallback(async ({
+    chosenStudent,
+    fallbackName = '',
+    fallbackSection = 'BSME',
+    scannedNum = '',
+    quizObj = null,
+    examTitle = '',
+    setLetter = '',
+    scoreVal = 0,
+    totalVal = 50,
+    pctVal = 0,
+    passedVal = false,
+    isAuto = false
+  }) => {
+    const finalName = chosenStudent
+      ? chosenStudent.fullName
+      : (fallbackName.trim() || (scannedNum ? `Student #${scannedNum}` : ''));
+    if (!finalName) {
+      if (!isAuto) showToast?.('Please select a registered student or enter the student name.', 'warning');
+      return false;
+    }
+
+    setIsSavingScore(true);
+    if (isAuto) {
+      setAutoSaveBanner({
+        status: 'saving',
+        message: `Auto-recording score for ${finalName} (${scannedNum || chosenStudent?.studentNumber || ''})...`
+      });
+    }
+
+    const setLabel = setLetter ? `SET ${setLetter}` : '';
+    const displayQuizTitle = setLabel ? `[OMR Scan • ${setLabel}] ${examTitle}` : `[OMR Scan] ${examTitle}`;
+    const payload = {
+      studentId: chosenStudent ? chosenStudent.id : (scannedNum ? `stud_${scannedNum.replace(/\D/g, '')}` : `scanned_${Date.now()}`),
+      studentName: chosenStudent
+        ? (chosenStudent.studentNumber ? `${chosenStudent.fullName} (${chosenStudent.studentNumber})` : chosenStudent.fullName)
+        : (scannedNum && !finalName.includes(scannedNum) ? `${finalName} (${scannedNum})` : finalName),
+      studentEmail: chosenStudent ? (chosenStudent.email || '') : '',
+      school: chosenStudent ? (chosenStudent.school || 'NEUST') : (fallbackSection || 'NEUST'),
+      quizId: quizObj ? quizObj.id : `omr_paper_${Date.now()}`,
+      quizTitle: displayQuizTitle.slice(0, 300),
+      score: scoreVal,
+      totalQuestions: totalVal,
+      percentage: pctVal,
+      passed: passedVal,
+      timeSpentSeconds: 60
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/api/attempts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) {
+        if (isAuto) {
+          setAutoSaveBanner({ status: 'error', message: 'Auto-save failed: ' + data.error });
+        }
+        showToast?.(data.error, 'error');
+        return false;
+      }
+
+      setScannedHistory(prev => [{
+        id: Date.now() + Math.random(),
+        studentName: finalName,
+        studentNumber: (chosenStudent && chosenStudent.studentNumber) || scannedNum || '—',
+        section: payload.school,
+        quizTitle: examTitle,
+        setLetter: setLetter || '—',
+        score: scoreVal,
+        total: totalVal,
+        percentage: pctVal,
+        passed: passedVal,
+        autoSaved: isAuto,
+        scannedAt: new Date().toLocaleTimeString()
+      }, ...prev]);
+
+      if (isAuto) {
+        setAutoSaveBanner({
+          status: 'saved',
+          studentName: finalName,
+          studentNumber: (chosenStudent && chosenStudent.studentNumber) || scannedNum,
+          quizTitle: examTitle,
+          setLetter,
+          score: scoreVal,
+          total: totalVal,
+          percentage: pctVal,
+          passed: passedVal,
+          message: `Automatically moved score to ${finalName}'s official student record!`
+        });
+        showToast?.(`✅ Auto-Saved! ${finalName} (${setLabel || 'OMR'}) — ${scoreVal}/${totalVal} (${pctVal}%) moved to student record!`, 'success');
+      } else {
+        showToast?.(`Saved scanned score for ${finalName}: ${scoreVal}/${totalVal} (${pctVal}%)!`, 'success');
+        setManualStudentName('');
+      }
+
+      if (loadAttempts) loadAttempts();
+      if (loadUsers) loadUsers();
+      return true;
+    } catch (err) {
+      if (isAuto) {
+        setAutoSaveBanner({ status: 'error', message: 'Auto-save error: ' + err.message });
+      }
+      showToast?.('Error saving scanned score: ' + err.message, 'error');
+      return false;
+    } finally {
+      setIsSavingScore(false);
+    }
+  }, [loadAttempts, loadUsers, showToast]);
+
   // Run OMR grading + draw annotated overlay onto scanCanvasRef
   const runScanAndRender = React.useCallback((activeCorners, activeSensitivity, overridesMap = manualOverrides) => {
     const srcCanvas = sourceCanvasRef.current;
@@ -4932,7 +5535,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     const rawResults = scanOutput.answerResults || [];
     setScanResults(rawResults);
 
-    // Auto-detect & match Student Number against registered student accounts
+    // Match Student Number against registered student accounts
     const detectedNumStr = scanOutput.scannedStudentNumber || '';
     const detectedDigitsOnly = scanOutput.rawStudentNumberDigits || '';
     setScannedStudentNumber(detectedNumStr);
@@ -4969,7 +5572,26 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     dispCtx.stroke();
     dispCtx.setLineDash([]);
 
-    // Draw purple/cyan rings on detected Student Number shaded bubbles
+    // Draw emerald highlight around decoded Optical Quiz+Set Barcode Strip
+    if (scanOutput.barcode && scanOutput.barcode.valid && scanOutput.barcode.samples && scanOutput.barcode.samples.length === 27) {
+      const firstS = scanOutput.barcode.samples[0];
+      const lastS = scanOutput.barcode.samples[26];
+      const midX = (firstS.x + lastS.x) / 2;
+      const midY = (firstS.y + lastS.y) / 2;
+      const stripLen = Math.hypot(lastS.x - firstS.x, lastS.y - firstS.y);
+      const angle = Math.atan2(lastS.y - firstS.y, lastS.x - firstS.x);
+      dispCtx.save();
+      dispCtx.translate(midX, midY);
+      dispCtx.rotate(angle);
+      dispCtx.strokeStyle = '#10b981';
+      dispCtx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+      dispCtx.lineWidth = Math.max(2, w / 380);
+      dispCtx.fillRect(-stripLen / 2 - 8, -12, stripLen + 16, 24);
+      dispCtx.strokeRect(-stripLen / 2 - 8, -12, stripLen + 16, 24);
+      dispCtx.restore();
+    }
+
+    // Draw purple rings on detected Student Number shaded bubbles
     (scanOutput.studentIdColsStats || []).forEach(col => {
       if (!col.detectedDigit) return;
       const digObj = col.digitStats.find(d => d.digit === col.detectedDigit);
@@ -5036,7 +5658,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       dispCtx.fillText(labels[idx], pt.x, pt.y);
     });
     dispCtx.restore();
-  }, [itemCount, answerKey, manualOverrides]);
+  }, [itemCount, answerKey, manualOverrides, studentsOnly]);
 
   useEffect(() => {
     if (hasScannedImage && corners) {
@@ -5044,7 +5666,9 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     }
   }, [hasScannedImage, corners, sensitivity, answerKey, itemCount, manualOverrides, runScanAndRender]);
 
+  // Load new scanned image -> Auto-Identify Quiz & Set -> Auto-Grade -> Auto-Move Score to Student Record!
   const loadImageOntoScanner = (imgOrVideo, srcW, srcH) => {
+    const scanSessionId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const maxDim = 1100;
     const scale = Math.min(1, maxDim / Math.max(srcW, srcH));
     const w = Math.round(srcW * scale);
@@ -5061,17 +5685,136 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
 
     const imgData = ctx.getImageData(0, 0, w, h);
     const detectedCorners = detectOmrFiducialCorners(imgData);
+    const foundCount = detectedCorners.filter(c => c.detected).length;
+
+    // 1. AUTO-IDENTIFY QUIZ & SET (A-Z) FROM OPTICAL BARCODE STRIP
+    const barcode = decodeOmrBarcodeFromImageData(imgData, detectedCorners);
+    let effQuiz = selectedQuiz;
+    let effTitle = activeExamTitle;
+    let effSetLetter = selectedSetLetter;
+    let effItemCount = itemCount;
+    let effPassingPct = passingPct;
+    let effAnswerKey = answerKey;
+
+    if (barcode && barcode.valid && barcode.omrQuizCode > 0) {
+      const allSets = getStoredQuizSets();
+      const matchedQuiz = quizzesList.find(q => getQuizOmrCode(q.id) === barcode.omrQuizCode) || null;
+      const matchedSet = allSets.find(s =>
+        (matchedQuiz ? s.quizId === matchedQuiz.id : s.omrQuizCode === barcode.omrQuizCode) &&
+        (!barcode.setLetter || s.setLetter === barcode.setLetter)
+      ) || null;
+
+      if (matchedQuiz) {
+        effQuiz = matchedQuiz;
+        effTitle = matchedQuiz.title;
+      } else if (matchedSet && matchedSet.quizTitle) {
+        effTitle = matchedSet.quizTitle;
+      }
+
+      if (barcode.setLetter) {
+        effSetLetter = barcode.setLetter;
+      }
+
+      if (matchedSet && matchedSet.answerKey) {
+        effItemCount = Math.max(1, Math.min(100, matchedSet.itemCount || matchedSet.answerKey.length));
+        effPassingPct = matchedSet.passingScorePct || (matchedQuiz ? matchedQuiz.passingScorePct : 70) || 70;
+        effAnswerKey = Array.from({ length: effItemCount }, (_, i) => matchedSet.answerKey[i] || 'A');
+      } else if (matchedQuiz) {
+        const qs = resolveQuestionsForQuizExport(matchedQuiz);
+        effItemCount = Math.max(1, Math.min(100, qs.length || matchedQuiz.questionCount || 50));
+        effPassingPct = matchedQuiz.passingScorePct || 70;
+        effAnswerKey = Array.from({ length: effItemCount }, (_, i) => {
+          const ans = qs[i] && qs[i].CorrectAnswer ? String(qs[i].CorrectAnswer).trim().toUpperCase().charAt(0) : 'A';
+          return ['A', 'B', 'C', 'D'].includes(ans) ? ans : 'A';
+        });
+      }
+
+      // Sync UI selectors to the auto-detected Quiz + Set + Answer Key
+      skipEffectKeyLoadRef.current = true;
+      if (matchedQuiz) setSelectedQuizId(matchedQuiz.id);
+      if (effSetLetter) setSelectedSetLetter(effSetLetter);
+      setItemCount(effItemCount);
+      setPassingPct(effPassingPct);
+      setAnswerKey(effAnswerKey);
+      setBulkKeyInput(effAnswerKey.join(''));
+      setDetectedBarcodeInfo({
+        valid: true,
+        omrQuizCode: barcode.omrQuizCode,
+        setLetter: effSetLetter,
+        matchedQuizTitle: effTitle,
+        setKeyFound: !!matchedSet
+      });
+    } else {
+      setDetectedBarcodeInfo({ valid: false });
+    }
+
+    // 2. RUN IMMEDIATE SCAN WITH RESOLVED QUIZ/SET ANSWER KEY
+    const initialScan = scanOmrBubblesFromImageData(imgData, detectedCorners, effItemCount, sensitivity);
+    const detectedDigits = initialScan.rawStudentNumberDigits || '';
+    const detectedNumFormatted = initialScan.scannedStudentNumber || '';
+    const matchedStudent = detectedDigits.length >= 4
+      ? studentsOnly.find(st => {
+          const stDigits = String(st.studentNumber || '').replace(/\D/g, '');
+          return stDigits && (stDigits === detectedDigits || stDigits.endsWith(detectedDigits) || detectedDigits.endsWith(stDigits));
+        }) || null
+      : null;
+
+    let initialCorrect = 0;
+    (initialScan.answerResults || []).forEach((res, idx) => {
+      const k = effAnswerKey[idx] || 'A';
+      if (res.detected && res.detected !== 'MULTI' && res.detected === k) initialCorrect++;
+    });
+    const initialPct = effItemCount > 0 ? Math.round((initialCorrect / effItemCount) * 100) : 0;
+    const initialPassed = initialPct >= effPassingPct;
+
     setManualOverrides({});
+    setAutoSaveBanner(null);
     setCorners(detectedCorners);
     setHasScannedImage(true);
+    setScannedStudentNumber(detectedNumFormatted);
+    if (matchedStudent) {
+      setMatchedStudentInfo(matchedStudent);
+      setSelectedStudentId(matchedStudent.id);
+    } else {
+      setMatchedStudentInfo(null);
+    }
 
-    const foundCount = detectedCorners.filter(c => c.detected).length;
-    showToast?.(
-      foundCount === 4
-        ? 'All 4 corner markers auto-detected! Paper graded instantly.'
-        : `Auto-aligned ${foundCount}/4 corner markers. Drag any cyan corner handle onto the black squares if needed.`,
-      foundCount === 4 ? 'success' : 'info'
-    );
+    // 3. AUTOMATICALLY MOVE SCORE TO MATCHED STUDENT'S RECORD
+    if (autoSaveOnScan && matchedStudent && foundCount >= 3 && !autoSavedScanIdsRef.current.has(scanSessionId)) {
+      autoSavedScanIdsRef.current.add(scanSessionId);
+      persistScoreToStudentRecord({
+        chosenStudent: matchedStudent,
+        scannedNum: detectedNumFormatted,
+        quizObj: effQuiz,
+        examTitle: effTitle,
+        setLetter: effSetLetter,
+        scoreVal: initialCorrect,
+        totalVal: effItemCount,
+        pctVal: initialPct,
+        passedVal: initialPassed,
+        isAuto: true
+      });
+    } else if (autoSaveOnScan && !matchedStudent) {
+      setAutoSaveBanner({
+        status: 'unmatched',
+        message: detectedNumFormatted
+          ? `Scanned Student No. ${detectedNumFormatted} did not match any registered student account. Select the student below and click Save.`
+          : 'Student Number shading was blank or incomplete. Select the student below and click Save.'
+      });
+      showToast?.(
+        foundCount === 4
+          ? `Paper scanned (${effSetLetter ? `SET ${effSetLetter} • ` : ''}${initialCorrect}/${effItemCount}). Select a student to save score.`
+          : `Auto-aligned ${foundCount}/4 corner markers. Drag cyan handles if needed.`,
+        foundCount === 4 ? 'info' : 'warning'
+      );
+    } else {
+      showToast?.(
+        foundCount === 4
+          ? `Scanned ${effTitle}${effSetLetter ? ` (SET ${effSetLetter})` : ''}: ${initialCorrect}/${effItemCount} (${initialPct}%).`
+          : `Auto-aligned ${foundCount}/4 corner markers. Drag cyan handles onto the black squares if needed.`,
+        foundCount === 4 ? 'success' : 'info'
+      );
+    }
   };
 
   const captureFromCamera = () => {
@@ -5096,20 +5839,36 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     e.target.value = '';
   };
 
-  // Generate a realistic Demo Completed Answer Sheet (with Shaded Student Number + Answers)
+  // Generate a realistic Demo Completed Answer Sheet (with Quiz+Set Barcode + Shaded Student Number + Answers)
   const loadDemoCompletedPaper = () => {
+    let demoSet = activeSetRecord;
+    if (!demoSet && selectedQuiz) {
+      demoSet = ensureLatestSetForQuiz(selectedQuiz);
+      if (demoSet) {
+        setQuizSetsList(getStoredQuizSets());
+        setSelectedSetLetter(demoSet.setLetter);
+      }
+    }
+    const demoSetLetter = demoSet ? demoSet.setLetter : (selectedSetLetter || 'A');
+    const demoQuizCode = demoSet ? demoSet.omrQuizCode : activeQuizCode;
+    const demoItemCount = demoSet ? Math.min(100, demoSet.itemCount) : itemCount;
+    const demoKey = demoSet && demoSet.answerKey ? demoSet.answerKey.split('') : answerKey;
+
     const sampleStudent = studentsOnly.find(s => s.studentNumber && String(s.studentNumber).replace(/\D/g, '').length >= 4);
     const demoDigits = (sampleStudent ? String(sampleStudent.studentNumber).replace(/\D/g, '') : '2022001234').slice(0, 10);
 
     const svgStr = buildOmrAnswerSheetSvg({
       title: activeExamTitle,
-      itemCount,
-      subtitle: `DEMO PAPER • STUDENT NO: ${demoDigits.length === 10 ? demoDigits.slice(0, 4) + '-' + demoDigits.slice(4) : demoDigits}`
+      itemCount: demoItemCount,
+      subtitle: `DEMO PAPER • SET ${demoSetLetter} • STUDENT NO: ${demoDigits.length === 10 ? demoDigits.slice(0, 4) + '-' + demoDigits.slice(4) : demoDigits}`,
+      quizId: activeQuizKeyId,
+      omrQuizCode: demoQuizCode,
+      setLetter: demoSetLetter
     });
-    const layout = getOmrSheetLayout(itemCount);
+    const layout = getOmrSheetLayout(demoItemCount);
     const fx0 = 58, fy0 = 192, fw = 700, fh = 810;
-    const idR = Math.max(6.2, Math.min(8.4, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
-    const rPx = Math.max(6.8, Math.min(10.5, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
+    const idR = Math.max(6.0, Math.min(8.2, Math.min(layout.idRadiusU * fw, layout.idRadiusV * fh)));
+    const rPx = Math.max(6.6, Math.min(10.3, Math.min(layout.radiusU * fw, layout.radiusV * fh)));
     let shadedCircles = '';
 
     // Shade demo Student Number digits & print written digits in top boxes
@@ -5127,9 +5886,9 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       }
     }
 
-    // Shade demo Answer bubbles (~82% correct)
+    // Shade demo Answer bubbles (~82% correct against this Set's Answer Key)
     layout.bubbles.forEach((item, idx) => {
-      const correctLtr = answerKey[idx] || 'A';
+      const correctLtr = demoKey[idx] || 'A';
       let chosen = correctLtr;
       if (idx % 17 === 4) chosen = '';
       else if (idx % 7 === 2) {
@@ -5150,7 +5909,6 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => {
-      // Draw onto an offscreen canvas with slight realistic camera margin & 1.5° tilt
       const demoC = document.createElement('canvas');
       demoC.width = 900;
       demoC.height = 1140;
@@ -5241,65 +5999,21 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       showToast?.('Please scan a student answer sheet first before saving.', 'warning');
       return;
     }
-    const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId);
-    const finalName = chosenStudent
-      ? chosenStudent.fullName
-      : (manualStudentName.trim() || (scannedStudentNumber ? `Student #${scannedStudentNumber}` : ''));
-    if (!finalName) {
-      showToast?.('Please select a registered student or enter the student name.', 'warning');
-      return;
-    }
-
-    setIsSavingScore(true);
-    const payload = {
-      studentId: chosenStudent ? chosenStudent.id : (scannedStudentNumber ? `stud_${scannedStudentNumber.replace(/\D/g, '')}` : `scanned_${Date.now()}`),
-      studentName: chosenStudent
-        ? (chosenStudent.studentNumber ? `${chosenStudent.fullName} (${chosenStudent.studentNumber})` : chosenStudent.fullName)
-        : (scannedStudentNumber && !finalName.includes(scannedStudentNumber) ? `${finalName} (${scannedStudentNumber})` : finalName),
-      studentEmail: chosenStudent ? (chosenStudent.email || '') : '',
-      school: chosenStudent ? (chosenStudent.school || 'NEUST') : (manualStudentSection || 'NEUST'),
-      quizId: selectedQuiz ? selectedQuiz.id : `omr_paper_${Date.now()}`,
-      quizTitle: `[OMR Scan] ${activeExamTitle}`,
-      score: correctCount,
-      totalQuestions: itemCount,
-      percentage: scorePct,
-      passed: isPassed,
-      timeSpentSeconds: 60
-    };
-
-    try {
-      const res = await fetch(`${API_BASE}/api/attempts`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (data.error) {
-        showToast?.(data.error, 'error');
-      } else {
-        setScannedHistory(prev => [{
-          id: Date.now(),
-          studentName: finalName,
-          section: payload.school,
-          quizTitle: activeExamTitle,
-          score: correctCount,
-          total: itemCount,
-          percentage: scorePct,
-          passed: isPassed,
-          scannedAt: new Date().toLocaleTimeString()
-        }, ...prev]);
-        showToast?.(`Saved scanned score for ${finalName}: ${correctCount}/${itemCount} (${scorePct}%)!`, 'success');
-        if (loadAttempts) loadAttempts();
-        setManualStudentName('');
-      }
-    } catch (err) {
-      showToast?.('Error saving scanned score: ' + err.message, 'error');
-    } finally {
-      setIsSavingScore(false);
-    }
+    const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId) || null;
+    await persistScoreToStudentRecord({
+      chosenStudent,
+      fallbackName: manualStudentName,
+      fallbackSection: manualStudentSection,
+      scannedNum: scannedStudentNumber,
+      quizObj: selectedQuiz,
+      examTitle: activeExamTitle,
+      setLetter: selectedSetLetter,
+      scoreVal: correctCount,
+      totalVal: itemCount,
+      pctVal: scorePct,
+      passedVal: isPassed,
+      isAuto: false
+    });
   };
 
   const exportSessionScoresCsv = () => {
@@ -5307,17 +6021,20 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       showToast?.('No scanned papers saved in this session yet.', 'warning');
       return;
     }
-    const headers = ['Student Name', 'Section/School', 'Quiz Title', 'Score', 'Total Items', 'Percentage', 'Status', 'Scanned Time'];
+    const headers = ['Student Name', 'Student Number', 'Section/School', 'Quiz Title', 'Exam Set', 'Score', 'Total Items', 'Percentage', 'Status', 'Mode', 'Scanned Time'];
     const rows = [headers.join(',')];
     scannedHistory.forEach(r => {
       rows.push([
         `"${String(r.studentName).replace(/"/g, '""')}"`,
+        `"${String(r.studentNumber || '').replace(/"/g, '""')}"`,
         `"${String(r.section).replace(/"/g, '""')}"`,
         `"${String(r.quizTitle).replace(/"/g, '""')}"`,
+        `"${String(r.setLetter || '—')}"`,
         r.score,
         r.total,
         `${r.percentage}%`,
         r.passed ? 'PASSED' : 'FAILED',
+        r.autoSaved ? 'Auto-Recorded' : 'Manual Save',
         `"${r.scannedAt}"`
       ].join(','));
     });
@@ -5339,82 +6056,152 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
       <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem', borderLeft: '4px solid #38bdf8' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem', flexWrap: 'wrap' }}>
               <span className="badge badge-admin" style={{ fontSize: '0.72rem' }}>🔒 ADMIN EXCLUSIVE</span>
-              <span className="badge badge-status" style={{ fontSize: '0.72rem' }}>OMR Optical Scanner</span>
+              <span className="badge badge-status" style={{ fontSize: '0.72rem' }}>Sets A–Z Optical Auto-ID</span>
+              <span className="badge badge-student" style={{ fontSize: '0.72rem' }}>⚡ Auto-Records to Student Profile</span>
             </div>
-            <h3 style={{ fontSize: '1.35rem', marginBottom: '0.25rem' }}>📄 Answer Sheet Generator &amp; Test Paper Scanner</h3>
+            <h3 style={{ fontSize: '1.35rem', marginBottom: '0.25rem' }}>📄 Answer Sheet Generator &amp; Smart OMR Scanner</h3>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', margin: 0 }}>
-              Generate scannable NEUST OMR bubble answer sheets for any quiz, then scan completed student papers using your camera or uploaded photo to automatically check and save scores.
+              Every quiz download rotates Sets <strong>A → Z</strong> (looping back to A) with its own saved Answer Key and optical Quiz+Set barcode. Scanning a student paper automatically detects the <strong>Quiz, Set, and Student Number</strong> and moves the score straight to that student's record.
             </p>
           </div>
           <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
             <button
               type="button"
               className="btn-primary"
-              onClick={() => exportOmrAnswerSheetHtml({ title: activeExamTitle, itemCount, subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '' })}
+              onClick={() => handleDownloadOmrSheetForActiveSet(false)}
             >
-              🖨️ Download Printable OMR Sheet (.html)
+              🖨️ Printable OMR Sheet (.html){selectedSetLetter ? ` — SET ${selectedSetLetter}` : ''}
             </button>
             <button
               type="button"
               className="btn-secondary"
               style={{ borderColor: 'rgba(56, 189, 248, 0.5)', color: '#38bdf8' }}
-              onClick={() => exportOmrAnswerSheetWord({ title: activeExamTitle, itemCount, subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '' })}
+              onClick={() => handleDownloadOmrSheetForActiveSet(true)}
             >
-              📄 Download Word Answer Sheet (.doc)
+              📄 Word Answer Sheet (.doc){selectedSetLetter ? ` — SET ${selectedSetLetter}` : ''}
             </button>
           </div>
         </div>
       </div>
 
-      {/* STEP 1: QUIZ & ANSWER KEY CONFIGURATION */}
+      {/* STEP 1: QUIZ, ROTATING SET A-Z & ANSWER KEY CONFIGURATION */}
       <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
-        <h4 style={{ marginBottom: '1rem', fontSize: '1.05rem', color: 'var(--primary-light)' }}>
-          1️⃣ Step 1: Select Quiz &amp; Official Answer Key
-        </h4>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+          <h4 style={{ margin: 0, fontSize: '1.05rem', color: 'var(--primary-light)' }}>
+            1️⃣ Step 1: Select Quiz &amp; Exam Set (A–Z Rotation • Code #{activeQuizCode})
+          </h4>
+          <div style={{ display: 'flex', gap: '0.45rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', borderColor: 'rgba(168, 85, 247, 0.55)', color: '#c084fc', fontWeight: '700' }}
+              onClick={handleGenerateNextSet}
+              title="Generate the next distinct Set in the A–Z rotation with a fresh randomized Answer Key"
+            >
+              ➕ Generate Next Set (SET {nextRotatingLetter})
+            </button>
+            {selectedQuiz && (
+              <>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', borderColor: 'rgba(56, 189, 248, 0.5)', color: '#38bdf8' }}
+                  onClick={() => {
+                    const createdSet = exportQuizToWordFile(selectedQuiz, { answerKeyOnly: false, setLetter: selectedSetLetter || null });
+                    if (createdSet) {
+                      setQuizSetsList(getStoredQuizSets());
+                      setSelectedSetLetter(createdSet.setLetter);
+                    }
+                  }}
+                >
+                  📄 Questions (.doc){selectedSetLetter ? ` [SET ${selectedSetLetter}]` : ` [Next: SET ${nextRotatingLetter}]`}
+                </button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  style={{ padding: '0.32rem 0.7rem', fontSize: '0.78rem', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#34d399' }}
+                  onClick={() => {
+                    const keySet = exportQuizToWordFile(selectedQuiz, { answerKeyOnly: true, setLetter: selectedSetLetter || null });
+                    if (keySet) {
+                      setQuizSetsList(getStoredQuizSets());
+                      setSelectedSetLetter(keySet.setLetter);
+                    }
+                  }}
+                >
+                  🔑 Answer Key (.doc){selectedSetLetter ? ` [SET ${selectedSetLetter}]` : ''}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
         <div className="grid-2col" style={{ gap: '1rem', marginBottom: '1rem' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label>Select Faculty Quiz (Auto-Loads Answer Key)</label>
+            <label>Select Faculty Quiz (Auto-Loads Saved Sets &amp; Answer Keys)</label>
             <select
               className="form-control"
               value={selectedQuizId}
-              onChange={e => setSelectedQuizId(e.target.value)}
+              onChange={e => handleQuizDropdownChange(e.target.value)}
             >
               <option value="custom">✏️ Custom Test Paper / Manual Answer Key</option>
-              {quizzesList.map(qz => (
-                <option key={qz.id} value={qz.id}>
-                  {qz.title} ({Math.min(100, qz.questionCount || 50)} Items)
-                </option>
-              ))}
+              {quizzesList.map(qz => {
+                const countSets = quizSetsList.filter(s => s.quizId === qz.id).length;
+                return (
+                  <option key={qz.id} value={qz.id}>
+                    {qz.title} ({Math.min(100, qz.questionCount || 50)} Items • Code #{getQuizOmrCode(qz.id)}{countSets > 0 ? ` • ${countSets} Set${countSets > 1 ? 's' : ''}` : ''})
+                  </option>
+                );
+              })}
             </select>
           </div>
 
-          <div className="grid-2col" style={{ gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr 0.9fr', gap: '0.65rem' }}>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Number of Items (1–100)</label>
+              <label>Exam Set (A–Z)</label>
+              <select
+                className="form-control"
+                value={selectedSetLetter}
+                onChange={e => {
+                  setSelectedSetLetter(e.target.value);
+                  setManualOverrides({});
+                }}
+              >
+                {setsForActiveQuiz.length === 0 ? (
+                  <option value="">No Set Generated Yet (Next: SET A)</option>
+                ) : (
+                  setsForActiveQuiz.map(s => (
+                    <option key={s.id} value={s.setLetter}>
+                      SET {s.setLetter} ({s.itemCount} Items)
+                    </option>
+                  ))
+                )}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Items (1–100)</label>
               <select
                 className="form-control"
                 value={itemCount}
                 onChange={e => handleItemCountChange(e.target.value)}
-                disabled={!!selectedQuiz}
+                disabled={!!selectedQuiz || !!activeSetRecord}
               >
                 <option value="10">10 Items</option>
                 <option value="20">20 Items</option>
                 <option value="25">25 Items</option>
                 <option value="30">30 Items</option>
                 <option value="40">40 Items</option>
-                <option value="50">50 Items (Standard)</option>
+                <option value="50">50 Items</option>
                 <option value="75">75 Items</option>
-                <option value="100">100 Items (Board Exam)</option>
+                <option value="100">100 Items</option>
                 {![10, 20, 25, 30, 40, 50, 75, 100].includes(itemCount) && (
-                  <option value={itemCount}>{itemCount} Items (From Quiz)</option>
+                  <option value={itemCount}>{itemCount} Items</option>
                 )}
               </select>
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label>Passing Score (%)</label>
+              <label>Passing %</label>
               <input
                 type="number"
                 className="form-control"
@@ -5426,6 +6213,38 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             </div>
           </div>
         </div>
+
+        {/* Saved Sets A-Z Quick Pill Bar */}
+        {setsForActiveQuiz.length > 0 && (
+          <div style={{ marginBottom: '0.9rem', padding: '0.6rem 0.75rem', background: 'rgba(168, 85, 247, 0.08)', border: '1px solid rgba(168, 85, 247, 0.28)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.76rem', fontWeight: '700', color: '#c084fc', marginRight: '0.25rem' }}>
+              Saved Sets ({setsForActiveQuiz.length}/26):
+            </span>
+            {setsForActiveQuiz.map(s => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => { setSelectedSetLetter(s.setLetter); setManualOverrides({}); }}
+                style={{
+                  padding: '0.2rem 0.55rem',
+                  borderRadius: '999px',
+                  fontSize: '0.75rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  border: selectedSetLetter === s.setLetter ? '1px solid #38bdf8' : '1px solid rgba(148, 163, 184, 0.3)',
+                  background: selectedSetLetter === s.setLetter ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.5)',
+                  color: selectedSetLetter === s.setLetter ? '#38bdf8' : 'var(--text-main)'
+                }}
+                title={`Switch to SET ${s.setLetter} (${s.itemCount} Items, Code #${s.omrQuizCode})`}
+              >
+                SET {s.setLetter}
+              </button>
+            ))}
+            <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+              Next download rotates to: <strong style={{ color: '#38bdf8' }}>SET {nextRotatingLetter}</strong>
+            </span>
+          </div>
+        )}
 
         {!selectedQuiz && (
           <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -5444,7 +6263,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
         <div className="form-group" style={{ marginBottom: '0.5rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.5rem' }}>
             <label style={{ margin: 0 }}>
-              Official Answer Key ({answerKey.length} Items) — Click pills below or type A/B/C/D string:
+              Official Answer Key {selectedSetLetter ? `(SET ${selectedSetLetter} • ${answerKey.length} Items)` : `(${answerKey.length} Items)`} — Click pills below or type A/B/C/D string:
             </label>
             <button
               type="button"
@@ -5491,10 +6310,10 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
           <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(15, 23, 42, 0.5)', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
               <span style={{ fontSize: '0.84rem', fontWeight: '600', color: '#38bdf8' }}>
-                📋 Scannable OMR Answer Sheet Preview ({itemCount} Items with 4 Corner Alignment Squares)
+                📋 Scannable OMR Sheet Preview ({selectedSetLetter ? `SET ${selectedSetLetter} • ` : ''}Code #{activeQuizCode} • {itemCount} Items)
               </span>
               <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                Print the downloaded .html file at 100% scale for highest optical scanning accuracy.
+                Top optical barcode auto-identifies Quiz &amp; Set on scan. Print at 100% scale.
               </span>
             </div>
             <div
@@ -5503,7 +6322,10 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
                 __html: buildOmrAnswerSheetSvg({
                   title: activeExamTitle,
                   itemCount,
-                  subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : ''
+                  subtitle: selectedQuiz ? (selectedQuiz.module || 'Comprehensive Board Exam') : '',
+                  quizId: activeQuizKeyId,
+                  omrQuizCode: activeQuizCode,
+                  setLetter: selectedSetLetter || 'A'
                 })
               }}
             />
@@ -5511,18 +6333,42 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
         )}
       </div>
 
-      {/* STEP 2 & 3: LIVE CAMERA / PHOTO SCANNER & INSTANT GRADING WORKSPACE */}
+      {/* STEP 2 & 3: LIVE CAMERA / PHOTO SCANNER & INSTANT AUTO-GRADING WORKSPACE */}
       <div className="glass-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
           <div>
             <h4 style={{ margin: 0, fontSize: '1.05rem', color: '#34d399' }}>
-              2️⃣ Step 2: Scan Student Test Paper / Answer Sheet
+              2️⃣ Step 2: Scan Student Answer Sheet (Auto-Detects Quiz, Set A–Z &amp; Student No.)
             </h4>
             <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Use your device camera or upload a photo of the shaded answer sheet. Drag the 4 cyan corner handles (TL, TR, BR, BL) onto the 4 black squares if manual fine-tuning is needed.
+              Scan any Set A–Z answer sheet — the scanner automatically identifies the Quiz &amp; Set from the top barcode, grades against that Set's Answer Key, reads the shaded Student Number, and moves the score into that student's record.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <label
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                padding: '0.35rem 0.65rem',
+                borderRadius: '8px',
+                background: autoSaveOnScan ? 'rgba(16, 185, 129, 0.14)' : 'rgba(148, 163, 184, 0.12)',
+                border: autoSaveOnScan ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid var(--border-color)',
+                fontSize: '0.78rem',
+                fontWeight: '700',
+                color: autoSaveOnScan ? '#34d399' : 'var(--text-muted)',
+                cursor: 'pointer',
+                margin: 0
+              }}
+              title="When enabled, scanning a paper with a matched Student Number automatically saves the score to that student's official record."
+            >
+              <input
+                type="checkbox"
+                checked={autoSaveOnScan}
+                onChange={e => setAutoSaveOnScan(e.target.checked)}
+              />
+              ⚡ Auto-Save to Student Record
+            </label>
             {!cameraActive ? (
               <button type="button" className="btn-primary" onClick={startCamera}>
                 📷 Start Live Camera
@@ -5545,7 +6391,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
               className="btn-secondary"
               style={{ borderColor: 'rgba(245, 158, 11, 0.5)', color: '#fbbf24' }}
               onClick={loadDemoCompletedPaper}
-              title="Load a sample shaded student answer sheet to test the OMR scanner right now"
+              title="Load a sample shaded student answer sheet (with Quiz+Set Barcode & Student Number) to test auto-grading & auto-recording"
             >
               🧪 Test with Demo Paper
             </button>
@@ -5559,6 +6405,71 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             />
           </div>
         </div>
+
+        {/* AUTO-IDENTIFIED QUIZ & SET BARCODE BANNER */}
+        {hasScannedImage && detectedBarcodeInfo && detectedBarcodeInfo.valid && (
+          <div style={{
+            padding: '0.65rem 0.9rem',
+            marginBottom: '1rem',
+            borderRadius: '8px',
+            background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.45)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.5rem'
+          }}>
+            <div style={{ fontSize: '0.84rem', color: 'var(--text-main)' }}>
+              🎯 <strong>Optical Barcode Auto-Identified:</strong>{' '}
+              <span style={{ color: '#38bdf8', fontWeight: '700' }}>{detectedBarcodeInfo.matchedQuizTitle}</span>
+              {detectedBarcodeInfo.setLetter && (
+                <span className="badge badge-status" style={{ marginLeft: '0.5rem', fontSize: '0.75rem' }}>
+                  SET {detectedBarcodeInfo.setLetter}
+                </span>
+              )}
+              <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                (Quiz Code #{detectedBarcodeInfo.omrQuizCode})
+              </span>
+            </div>
+            <span style={{ fontSize: '0.76rem', fontWeight: '700', color: '#34d399' }}>
+              {detectedBarcodeInfo.setKeyFound ? '✅ Exact Set Answer Key Loaded Automatically' : 'ℹ️ Quiz Matched'}
+            </span>
+          </div>
+        )}
+
+        {/* AUTO-SAVE TO STUDENT RECORD STATUS BANNER */}
+        {autoSaveBanner && (
+          <div style={{
+            padding: '0.75rem 1rem',
+            marginBottom: '1rem',
+            borderRadius: '8px',
+            background: autoSaveBanner.status === 'saved'
+              ? 'rgba(16, 185, 129, 0.16)'
+              : autoSaveBanner.status === 'error'
+                ? 'rgba(239, 68, 68, 0.15)'
+                : 'rgba(245, 158, 11, 0.14)',
+            border: autoSaveBanner.status === 'saved'
+              ? '1px solid rgba(16, 185, 129, 0.55)'
+              : autoSaveBanner.status === 'error'
+                ? '1px solid rgba(239, 68, 68, 0.5)'
+                : '1px solid rgba(245, 158, 11, 0.5)',
+            fontSize: '0.85rem',
+            fontWeight: '600',
+            color: autoSaveBanner.status === 'saved' ? '#34d399' : autoSaveBanner.status === 'error' ? '#f87171' : '#fbbf24'
+          }}>
+            {autoSaveBanner.status === 'saved' ? (
+              <span>
+                ✅ <strong>Score Automatically Moved to Student Record:</strong>{' '}
+                {autoSaveBanner.studentName}{autoSaveBanner.studentNumber ? ` [${autoSaveBanner.studentNumber}]` : ''} —{' '}
+                {autoSaveBanner.quizTitle}{autoSaveBanner.setLetter ? ` (SET ${autoSaveBanner.setLetter})` : ''}:{' '}
+                <strong>{autoSaveBanner.score}/{autoSaveBanner.total} ({autoSaveBanner.percentage}%)</strong>
+              </span>
+            ) : (
+              <span>{autoSaveBanner.status === 'saving' ? '⏳ ' : '⚠️ '}{autoSaveBanner.message}</span>
+            )}
+          </div>
+        )}
 
         {/* LIVE CAMERA VIEWFINDER */}
         {cameraActive && (
@@ -5610,7 +6521,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
                     No Test Paper Scanned Yet
                   </p>
                   <p style={{ fontSize: '0.8rem', maxWidth: '300px', margin: '0 auto' }}>
-                    Click <strong>Start Live Camera</strong>, <strong>Upload Paper Photo</strong>, or <strong>Test with Demo Paper</strong> to scan and auto-grade.
+                    Click <strong>Start Live Camera</strong>, <strong>Upload Paper Photo</strong>, or <strong>Test with Demo Paper</strong> to auto-identify Quiz/Set, grade, and record to the student's account.
                   </p>
                 </div>
               ) : (
@@ -5629,11 +6540,12 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             </div>
             {hasScannedImage && (
               <div style={{ marginTop: '0.45rem', fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', gap: '0.85rem', flexWrap: 'wrap' }}>
-                <span>🟢 Correct Answer</span>
-                <span>🔴 Wrong Answer (Green ring = Key)</span>
-                <span>🟡 Multiple Marks</span>
+                <span>🟩 Quiz+Set Barcode</span>
                 <span>🟣 Scanned Student No.</span>
-                <span>🔵 Drag TL/TR/BR/BL to align</span>
+                <span>🟢 Correct Answer</span>
+                <span>🔴 Wrong Answer</span>
+                <span>🟡 Multiple Marks</span>
+                <span>🔵 Drag TL/TR/BR/BL</span>
               </div>
             )}
           </div>
@@ -5644,7 +6556,9 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             <div className="glass-card" style={{ padding: '1.15rem', marginBottom: '1rem', background: hasScannedImage ? (isPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)') : 'var(--bg-input)', border: hasScannedImage ? (isPassed ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid rgba(239, 68, 68, 0.45)') : '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
                 <div>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Scanned Paper Score</div>
+                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Scanned Score {selectedSetLetter ? `• SET ${selectedSetLetter}` : ''}
+                  </div>
                   <div style={{ fontSize: '2rem', fontWeight: '800', color: hasScannedImage ? (isPassed ? '#34d399' : '#f87171') : 'var(--text-dim)', lineHeight: 1.1 }}>
                     {hasScannedImage ? `${correctCount} / ${itemCount}` : `-- / ${itemCount}`}
                   </div>
@@ -5673,10 +6587,10 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
               </div>
             </div>
 
-            {/* ASSIGN TO STUDENT & SAVE SCORE */}
+            {/* ASSIGN TO STUDENT & MANUAL / RE-SAVE SCORE */}
             <div className="glass-card" style={{ padding: '1rem', marginBottom: '1rem', background: 'var(--bg-input)' }}>
               <div style={{ fontWeight: '700', fontSize: '0.88rem', marginBottom: '0.6rem' }}>
-                💾 Scanned Student Number &amp; Save Score
+                💾 Scanned Student Number &amp; Record Sync
               </div>
               {hasScannedImage && (
                 <div style={{
@@ -5711,7 +6625,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
                 </div>
               )}
               <div className="form-group" style={{ marginBottom: '0.6rem' }}>
-                <label style={{ fontSize: '0.78rem' }}>Select Registered Student Account</label>
+                <label style={{ fontSize: '0.78rem' }}>Registered Student Account</label>
                 <select
                   className="form-control"
                   value={selectedStudentId}
@@ -5750,7 +6664,11 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
                 onClick={handleSaveScannedScore}
                 disabled={isSavingScore || !hasScannedImage}
               >
-                {isSavingScore ? '⏳ Saving to Cloud Database...' : '💾 Save Scanned Score to Student Academic Log'}
+                {isSavingScore
+                  ? '⏳ Saving to Cloud Database...'
+                  : (autoSaveBanner && autoSaveBanner.status === 'saved')
+                    ? '🔄 Save Updated / Corrected Score to Student Record'
+                    : '💾 Save Scanned Score to Student Academic Log'}
               </button>
             </div>
 
@@ -5828,9 +6746,10 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Student Name</th>
-                  <th>Section / School</th>
+                  <th>Student</th>
+                  <th>Student No.</th>
                   <th>Quiz / Exam</th>
+                  <th>Set</th>
                   <th>Score</th>
                   <th>Percentage</th>
                   <th>Status</th>
@@ -5840,9 +6759,13 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, s
               <tbody>
                 {scannedHistory.map(row => (
                   <tr key={row.id}>
-                    <td style={{ fontWeight: '600' }}>{row.studentName}</td>
-                    <td>{row.section}</td>
+                    <td style={{ fontWeight: '600' }}>
+                      {row.studentName}
+                      {row.autoSaved && <span style={{ marginLeft: '0.35rem', fontSize: '0.68rem', color: '#34d399' }}>⚡ Auto</span>}
+                    </td>
+                    <td style={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>{row.studentNumber || '—'}</td>
                     <td>{row.quizTitle}</td>
+                    <td><span className="badge badge-student" style={{ fontSize: '0.72rem' }}>{row.setLetter !== '—' ? `SET ${row.setLetter}` : '—'}</span></td>
                     <td style={{ fontWeight: '700' }}>{row.score} / {row.total}</td>
                     <td style={{ fontWeight: '700', color: row.passed ? 'var(--success)' : 'var(--danger)' }}>{row.percentage}%</td>
                     <td><span className={`badge ${row.passed ? 'badge-status' : 'badge-admin'}`}>{row.passed ? 'PASSED' : 'FAILED'}</span></td>
@@ -6535,8 +7458,18 @@ function AdminView({
                           type="button"
                           className="btn-secondary"
                           style={{ padding: '0.3rem 0.6rem', fontSize: '0.8rem', borderColor: 'rgba(245, 158, 11, 0.45)', color: '#fbbf24' }}
-                          onClick={() => exportOmrAnswerSheetHtml({ title: qz.title, itemCount: Math.min(100, qz.questionCount || 50), subtitle: qz.module || 'Comprehensive Board Exam' })}
-                          title="Admin Only: Generate & Download Printable OMR Scannable Answer Sheet"
+                          onClick={() => {
+                            const activeSet = ensureLatestSetForQuiz(qz);
+                            exportOmrAnswerSheetHtml({
+                              title: qz.title,
+                              itemCount: Math.min(100, (activeSet && activeSet.itemCount) || qz.questionCount || 50),
+                              subtitle: qz.module || 'Comprehensive Board Exam',
+                              quizId: qz.id,
+                              omrQuizCode: (activeSet && activeSet.omrQuizCode) || getQuizOmrCode(qz.id),
+                              setLetter: (activeSet && activeSet.setLetter) || 'A'
+                            });
+                          }}
+                          title="Admin Only: Generate & Download Printable OMR Scannable Answer Sheet (with Quiz & Set Barcode)"
                         >
                           📝 Answer Sheet
                         </button>
@@ -6732,6 +7665,7 @@ function AdminView({
           quizzesList={quizzesList}
           usersList={usersList}
           loadAttempts={loadAttempts}
+          loadUsers={loadUsers}
           showToast={showToast}
         />
       )}
@@ -7533,6 +8467,7 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                   className="btn-secondary"
                   style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', borderColor: 'var(--primary-light)', color: '#38bdf8', fontWeight: '600' }}
                   onClick={() => exportQuizToWordFile({
+                    id: editingQuiz ? editingQuiz.id : undefined,
                     title: title || 'ME Board Evaluation Quiz',
                     description,
                     module: combinedModuleStr,
@@ -7553,6 +8488,7 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                   className="btn-secondary"
                   style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', borderColor: 'rgba(16, 185, 129, 0.5)', color: '#34d399', fontWeight: '600' }}
                   onClick={() => exportQuizToWordFile({
+                    id: editingQuiz ? editingQuiz.id : undefined,
                     title: title || 'ME Board Evaluation Quiz',
                     description,
                     module: combinedModuleStr,
@@ -7572,11 +8508,32 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
                   type="button"
                   className="btn-secondary"
                   style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', borderColor: 'rgba(245, 158, 11, 0.5)', color: '#fbbf24', fontWeight: '600' }}
-                  onClick={() => exportOmrAnswerSheetHtml({
-                    title: title || 'ME Board Evaluation Quiz',
-                    itemCount: Math.min(100, selectionMode === 'manual' ? (specificQuestionIds.length || 50) : (totalRandomQuestions || 50)),
-                    subtitle: combinedModuleStr || 'Comprehensive Board Exam'
-                  })}
+                  onClick={() => {
+                    const draftCfg = {
+                      id: editingQuiz ? editingQuiz.id : undefined,
+                      title: title || 'ME Board Evaluation Quiz',
+                      description,
+                      module: combinedModuleStr,
+                      topics: combinedTopicsStr,
+                      questionCount: selectionMode === 'manual' ? specificQuestionIds.length : totalRandomQuestions,
+                      solvingCount: selectionMode === 'manual' ? pickedBreakdown.solving : solvingCount,
+                      elementCount: selectionMode === 'manual' ? pickedBreakdown.element : elementCount,
+                      durationMins,
+                      passingScorePct,
+                      selectionMode,
+                      specificQuestionIds: selectionMode === 'manual' ? specificQuestionIds : []
+                    };
+                    const activeSet = ensureLatestSetForQuiz(draftCfg);
+                    const stableId = getQuizStableId(draftCfg);
+                    exportOmrAnswerSheetHtml({
+                      title: draftCfg.title,
+                      itemCount: Math.min(100, (activeSet && activeSet.itemCount) || draftCfg.questionCount || 50),
+                      subtitle: combinedModuleStr || 'Comprehensive Board Exam',
+                      quizId: stableId,
+                      omrQuizCode: (activeSet && activeSet.omrQuizCode) || getQuizOmrCode(stableId),
+                      setLetter: (activeSet && activeSet.setLetter) || 'A'
+                    });
+                  }}
                 >
                   📝 Generate OMR Answer Sheet
                 </button>

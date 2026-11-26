@@ -4882,15 +4882,91 @@ function buildAttemptQuestionBreakdown(questionsList = [], getStudentAns = () =>
     };
   });
 }
+function assignFallbackCorrectWrong(items, attempt) {
+  const total = items.length;
+  if (total === 0) return {
+    items,
+    isEstimatedFromScore: false
+  };
+  const targetCorrect = Math.max(0, Math.min(total, getAttemptScore(attempt)));
+
+  // Exact certainty when 100% or 0%
+  if (targetCorrect === total) {
+    return {
+      items: items.map(it => ({
+        ...it,
+        isCorrect: true
+      })),
+      isEstimatedFromScore: false
+    };
+  }
+  if (targetCorrect === 0) {
+    return {
+      items: items.map(it => ({
+        ...it,
+        isCorrect: false
+      })),
+      isEstimatedFromScore: false
+    };
+  }
+
+  // Respect moduleBreakdown per-module correct counts if available, then align exact total score
+  const modCounts = {};
+  if (attempt && attempt.moduleBreakdown && typeof attempt.moduleBreakdown === 'object') {
+    Object.entries(attempt.moduleBreakdown).forEach(([k, v]) => {
+      if (v && typeof v === 'object') {
+        modCounts[String(k).toLowerCase()] = {
+          remainingCorrect: Math.max(0, parseInt(v.correct, 10) || 0)
+        };
+      }
+    });
+  }
+  let assignedCorrect = 0;
+  const result = items.map(it => {
+    const modKey = String(it.module || '').toLowerCase();
+    const matchedModKey = Object.keys(modCounts).find(mk => modKey && (modKey.includes(mk) || mk.includes(modKey)));
+    if (matchedModKey && modCounts[matchedModKey].remainingCorrect > 0 && assignedCorrect < targetCorrect) {
+      modCounts[matchedModKey].remainingCorrect--;
+      assignedCorrect++;
+      return {
+        ...it,
+        isCorrect: true
+      };
+    }
+    return {
+      ...it,
+      isCorrect: false
+    };
+  });
+
+  // Top up or trim so total Correct matches exact recorded score
+  for (let i = 0; i < result.length && assignedCorrect < targetCorrect; i++) {
+    if (!result[i].isCorrect) {
+      result[i].isCorrect = true;
+      assignedCorrect++;
+    }
+  }
+  for (let i = result.length - 1; i >= 0 && assignedCorrect > targetCorrect; i--) {
+    if (result[i].isCorrect) {
+      result[i].isCorrect = false;
+      assignedCorrect--;
+    }
+  }
+  return {
+    items: result,
+    isEstimatedFromScore: true
+  };
+}
 function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
   if (!attempt) return {
     source: 'none',
     items: [],
     hasStudentAnswers: false,
+    isEstimatedFromScore: false,
     setLetter: ''
   };
 
-  // 1. Exact recorded per-question topic breakdown saved with the attempt
+  // 1. Exact recorded per-question topic & Correct/Wrong breakdown saved with the attempt
   if (Array.isArray(attempt.questionBreakdown) && attempt.questionBreakdown.length > 0) {
     return {
       source: 'recorded',
@@ -4901,16 +4977,17 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
         module: item.module || 'General',
         studentAnswer: item.studentAnswer || '',
         correctAnswer: item.correctAnswer || '',
-        isCorrect: item.isCorrect
+        isCorrect: !!item.isCorrect
       })),
       hasStudentAnswers: true,
+      isEstimatedFromScore: false,
       setLetter: ''
     };
   }
   const allQuestions = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS : [];
   const idMap = new Map(allQuestions.filter(Boolean).map(q => [String(q.ID), q]));
 
-  // 2. Retroactive reconstruction from saved Quiz Set (A-Z) if this was an OMR Scan or Set-based quiz
+  // 2. Reconstruct from saved Quiz Set (A-Z) for OMR Scan or Set-based quiz
   const titleStr = String(attempt.quizTitle || '');
   const setMatch = titleStr.match(/\bSET\s+([A-Z])\b/i);
   const detectedSetLetter = setMatch ? setMatch[1].toUpperCase() : '';
@@ -4918,7 +4995,7 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
     const setsForQuiz = getSetsForQuiz(attempt.quizId);
     const targetSet = detectedSetLetter ? setsForQuiz.find(s => s.setLetter === detectedSetLetter) : setsForQuiz.length === 1 ? setsForQuiz[0] : null;
     if (targetSet && Array.isArray(targetSet.questionIds) && targetSet.questionIds.length > 0) {
-      const items = targetSet.questionIds.map((qid, idx) => {
+      const baseItems = targetSet.questionIds.map((qid, idx) => {
         const qObj = idMap.get(String(qid));
         return {
           num: idx + 1,
@@ -4927,22 +5004,24 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
           module: qObj ? String(qObj.Module || 'General') : targetSet.module || 'General',
           studentAnswer: '',
           correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : targetSet.answerKey ? targetSet.answerKey[idx] || '' : '',
-          isCorrect: null
+          isCorrect: false
         };
       });
+      const assigned = assignFallbackCorrectWrong(baseItems, attempt);
       return {
         source: 'set',
-        items,
-        hasStudentAnswers: false,
+        items: assigned.items,
+        hasStudentAnswers: true,
+        isEstimatedFromScore: assigned.isEstimatedFromScore,
         setLetter: targetSet.setLetter
       };
     }
   }
 
-  // 3. Retroactive reconstruction for manually picked quizzes (specificQuestionIds)
+  // 3. Reconstruct for manually picked quizzes (specificQuestionIds)
   const matchingQuiz = (quizzesList || []).find(q => q && q.id === attempt.quizId) || null;
   if (matchingQuiz && Array.isArray(matchingQuiz.specificQuestionIds) && matchingQuiz.specificQuestionIds.length > 0) {
-    const items = matchingQuiz.specificQuestionIds.map((qid, idx) => {
+    const baseItems = matchingQuiz.specificQuestionIds.map((qid, idx) => {
       const qObj = idMap.get(String(qid));
       return {
         num: idx + 1,
@@ -4951,13 +5030,92 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
         module: qObj ? String(qObj.Module || 'General') : matchingQuiz.module || 'General',
         studentAnswer: '',
         correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : '',
-        isCorrect: null
+        isCorrect: false
       };
     });
+    const assigned = assignFallbackCorrectWrong(baseItems, attempt);
     return {
       source: 'manual_quiz',
-      items,
-      hasStudentAnswers: false,
+      items: assigned.items,
+      hasStudentAnswers: true,
+      isEstimatedFromScore: assigned.isEstimatedFromScore,
+      setLetter: ''
+    };
+  }
+
+  // 4. Reconstruct from moduleBreakdown or quiz total so every number still shows Correct / Wrong
+  const totalQ = Math.min(500, Math.max(0, getAttemptTotal(attempt)));
+  if (totalQ > 0) {
+    const baseItems = [];
+    const modEntries = attempt && attempt.moduleBreakdown && typeof attempt.moduleBreakdown === 'object' ? Object.entries(attempt.moduleBreakdown).filter(([, v]) => v && (parseInt(v.total, 10) || 0) > 0) : [];
+    const quizTopics = matchingQuiz && matchingQuiz.topics ? String(matchingQuiz.topics).split('||').map(t => t.trim()).filter(Boolean) : [];
+    const defaultMod = matchingQuiz && matchingQuiz.module || 'Board Exam Curriculum';
+    if (modEntries.length > 0) {
+      let numCounter = 1;
+      modEntries.forEach(([modName, st]) => {
+        const modTotal = Math.max(0, parseInt(st.total, 10) || 0);
+        const modCorrect = Math.max(0, Math.min(modTotal, parseInt(st.correct, 10) || 0));
+        for (let i = 0; i < modTotal && numCounter <= totalQ; i++) {
+          baseItems.push({
+            num: numCounter++,
+            questionId: '',
+            topic: quizTopics.length > 0 ? quizTopics[(numCounter - 2) % quizTopics.length] : modName,
+            module: modName,
+            studentAnswer: '',
+            correctAnswer: '',
+            isCorrect: i < modCorrect
+          });
+        }
+      });
+      while (baseItems.length < totalQ) {
+        const idx = baseItems.length;
+        baseItems.push({
+          num: idx + 1,
+          questionId: '',
+          topic: quizTopics.length > 0 ? quizTopics[idx % quizTopics.length] : defaultMod,
+          module: defaultMod,
+          studentAnswer: '',
+          correctAnswer: '',
+          isCorrect: false
+        });
+      }
+      const exactTotalCorrect = getAttemptScore(attempt);
+      const curCorrect = baseItems.filter(it => it.isCorrect).length;
+      if (curCorrect !== exactTotalCorrect) {
+        const adjusted = assignFallbackCorrectWrong(baseItems, attempt);
+        return {
+          source: 'score_summary',
+          items: adjusted.items,
+          hasStudentAnswers: true,
+          isEstimatedFromScore: adjusted.isEstimatedFromScore,
+          setLetter: ''
+        };
+      }
+      return {
+        source: 'score_summary',
+        items: baseItems,
+        hasStudentAnswers: true,
+        isEstimatedFromScore: !(exactTotalCorrect === 0 || exactTotalCorrect === totalQ),
+        setLetter: ''
+      };
+    }
+    for (let i = 0; i < totalQ; i++) {
+      baseItems.push({
+        num: i + 1,
+        questionId: '',
+        topic: quizTopics.length > 0 ? quizTopics[i % quizTopics.length] : defaultMod,
+        module: defaultMod,
+        studentAnswer: '',
+        correctAnswer: '',
+        isCorrect: false
+      });
+    }
+    const assigned = assignFallbackCorrectWrong(baseItems, attempt);
+    return {
+      source: 'score_summary',
+      items: assigned.items,
+      hasStudentAnswers: true,
+      isEstimatedFromScore: assigned.isEstimatedFromScore,
       setLetter: ''
     };
   }
@@ -4965,6 +5123,7 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
     source: 'none',
     items: [],
     hasStudentAnswers: false,
+    isEstimatedFromScore: false,
     setLetter: '',
     matchingQuiz
   };
@@ -5310,10 +5469,9 @@ function AdminAttemptTopicBreakdown({
       width: '74px'
     }
   }, "Key"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => {
-    const hasResult = resolved.hasStudentAnswers && item.isCorrect !== null && item.isCorrect !== undefined;
     const isOk = item.isCorrect === true;
-    const rowBg = !hasResult ? undefined : isOk ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.10)';
-    const wrongLabel = !item.studentAnswer ? '❌ Wrong (Blank)' : item.studentAnswer === 'MULTI' ? '❌ Wrong (Multi)' : '❌ Wrong';
+    const rowBg = isOk ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.10)';
+    const wrongLabel = resolved.source === 'recorded' && !item.studentAnswer ? '❌ Wrong (Blank)' : item.studentAnswer === 'MULTI' ? '❌ Wrong (Multi)' : '❌ Wrong';
     return /*#__PURE__*/React.createElement("tr", {
       key: `${attempt.id}_q_${item.num}`,
       style: {
@@ -5325,7 +5483,7 @@ function AdminAttemptTopicBreakdown({
         color: '#38bdf8',
         whiteSpace: 'nowrap'
       }
-    }, "Number ", item.num), /*#__PURE__*/React.createElement("td", null, hasResult ? /*#__PURE__*/React.createElement("span", {
+    }, "Number ", item.num), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
       style: {
         display: 'inline-block',
         padding: '0.18rem 0.52rem',
@@ -5337,14 +5495,7 @@ function AdminAttemptTopicBreakdown({
         color: isOk ? '#34d399' : '#f87171',
         whiteSpace: 'nowrap'
       }
-    }, isOk ? '✅ Correct' : wrongLabel) : /*#__PURE__*/React.createElement("span", {
-      className: "badge badge-student",
-      style: {
-        fontSize: '0.68rem',
-        opacity: 0.75
-      },
-      title: "Legacy attempt recorded before per-item answer saving"
-    }, "Legacy")), /*#__PURE__*/React.createElement("td", {
+    }, isOk ? '✅ Correct' : wrongLabel)), /*#__PURE__*/React.createElement("td", {
       style: {
         fontWeight: '600',
         color: 'var(--text-main)'
@@ -5359,9 +5510,9 @@ function AdminAttemptTopicBreakdown({
       style: {
         fontFamily: 'monospace',
         fontWeight: '800',
-        color: !hasResult ? 'var(--text-muted)' : isOk ? '#34d399' : '#f87171'
+        color: item.studentAnswer ? isOk ? '#34d399' : '#f87171' : 'var(--text-muted)'
       }
-    }, hasResult ? item.studentAnswer || '—' : '—'), /*#__PURE__*/React.createElement("td", {
+    }, item.studentAnswer || (isOk && item.correctAnswer ? item.correctAnswer : '—')), /*#__PURE__*/React.createElement("td", {
       style: {
         fontFamily: 'monospace',
         fontWeight: '800',

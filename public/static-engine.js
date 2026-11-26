@@ -695,6 +695,22 @@
     };
   }
 
+  function sanitizeQuestionBreakdown(rawList) {
+    if (!Array.isArray(rawList) || rawList.length === 0) return [];
+    return rawList.slice(0, 500).map((item, idx) => {
+      if (!item || typeof item !== 'object') return null;
+      return {
+        num: Math.max(1, parseInt(item.num, 10) || (idx + 1)),
+        questionId: String(item.questionId || item.id || '').slice(0, 64),
+        topic: String(item.topic || 'General').slice(0, 160),
+        module: String(item.module || 'General').slice(0, 120),
+        studentAnswer: String(item.studentAnswer || '').slice(0, 20),
+        correctAnswer: String(item.correctAnswer || '').slice(0, 20),
+        isCorrect: !!item.isCorrect
+      };
+    }).filter(Boolean);
+  }
+
   function buildValidatedAttemptDoc(id, currentUser, body, overrides = {}) {
     const totalVal = Math.min(500, Math.max(1, parseInt(overrides.totalQuestions !== undefined ? overrides.totalQuestions : extractAttemptTotal(body), 10) || 1));
     const rawScore = parseInt(overrides.score !== undefined ? overrides.score : extractAttemptScore(body), 10) || 0;
@@ -704,6 +720,7 @@
     const timeSecs = Math.min(86400, Math.max(0, parseInt(overrides.timeSpentSeconds !== undefined ? overrides.timeSpentSeconds : (body.timeSpentSeconds || 60), 10) || 60));
 
     const isAdminRecordingForStudent = currentUser && currentUser.role === 'admin' && body && body.studentId && String(body.studentId).trim() !== '';
+    const cleanQuestionBreakdown = sanitizeQuestionBreakdown(overrides.questionBreakdown || (body && body.questionBreakdown));
 
     return {
       id: String(id).slice(0, 128),
@@ -725,7 +742,8 @@
       passed,
       timeSpentSeconds: timeSecs,
       submittedAt: new Date().toISOString(),
-      moduleBreakdown: overrides.moduleBreakdown || body.moduleBreakdown || {}
+      moduleBreakdown: overrides.moduleBreakdown || body.moduleBreakdown || {},
+      ...(cleanQuestionBreakdown.length > 0 ? { questionBreakdown: cleanQuestionBreakdown } : {})
     };
   }
 

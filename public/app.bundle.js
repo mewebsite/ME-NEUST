@@ -2242,6 +2242,7 @@ function App() {
     }).catch(err => showToast('Error launching board simulation: ' + err.message, 'error'));
   };
   const recordQuizAttempt = (score, total, pct, passed, timeSpentSecs) => {
+    const questionBreakdown = buildAttemptQuestionBreakdown(questions, qItem => userAnswers[qItem.ID] || '');
     if (activeQuiz && activeQuiz.isDiagnostic) {
       fetch(`${API_BASE}/api/adaptive/diagnostic/submit`, {
         method: 'POST',
@@ -2252,7 +2253,8 @@ function App() {
         body: JSON.stringify({
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
-          questionDetails: questions
+          questionDetails: questions,
+          questionBreakdown
         })
       }).then(res => res.json()).then(data => {
         console.log('Diagnostic benchmark recorded:', data);
@@ -2270,7 +2272,8 @@ function App() {
         body: JSON.stringify({
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
-          questionDetails: questions
+          questionDetails: questions,
+          questionBreakdown
         })
       }).then(res => res.json()).then(data => {
         console.log('Board simulation attempt recorded:', data);
@@ -2289,7 +2292,8 @@ function App() {
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
           questionDetails: questions,
-          targetModule: activeQuiz.targetModule
+          targetModule: activeQuiz.targetModule,
+          questionBreakdown
         })
       }).then(res => res.json()).then(data => {
         console.log('Smart Quiz attempt recorded & statistics updated:', data);
@@ -2325,7 +2329,8 @@ function App() {
         scorePct: pct,
         passed,
         timeSpentSeconds: timeSpentSecs,
-        moduleBreakdown
+        moduleBreakdown,
+        questionBreakdown
       })
     }).then(res => res.json()).then(data => {
       console.log('Quiz attempt recorded successfully:', data);
@@ -2956,6 +2961,7 @@ function App() {
   }), userDetailModalOpen && selectedUserDetail && /*#__PURE__*/React.createElement(UserDetailModal, {
     user: selectedUserDetail,
     attemptsList: attemptsList,
+    quizzesList: quizzesList,
     onClose: () => {
       setUserDetailModalOpen(false);
       setSelectedUserDetail(null);
@@ -4855,6 +4861,361 @@ function QuizListModal({
   }))));
 }
 
+// ============================================================================
+// PER-QUESTION TOPIC BREAKDOWN HELPERS & ADMIN QUIZ HISTORY INSPECTOR
+// ============================================================================
+function buildAttemptQuestionBreakdown(questionsList = [], getStudentAns = () => '') {
+  if (!Array.isArray(questionsList) || questionsList.length === 0) return [];
+  return questionsList.slice(0, 500).map((qItem, idx) => {
+    const rawStudent = typeof getStudentAns === 'function' ? getStudentAns(qItem, idx) : '';
+    const studentAnswer = String(rawStudent || '').trim().toUpperCase();
+    const correctAnswer = String(qItem && qItem.CorrectAnswer || '').trim().toUpperCase().charAt(0);
+    const isCorrect = !!(studentAnswer && studentAnswer !== 'MULTI' && correctAnswer && studentAnswer === correctAnswer);
+    return {
+      num: idx + 1,
+      questionId: String(qItem && qItem.ID || ''),
+      topic: getCanonicalTopic(qItem),
+      module: String(qItem && qItem.Module || 'General'),
+      studentAnswer,
+      correctAnswer,
+      isCorrect
+    };
+  });
+}
+function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
+  if (!attempt) return {
+    source: 'none',
+    items: [],
+    hasStudentAnswers: false,
+    setLetter: ''
+  };
+
+  // 1. Exact recorded per-question topic breakdown saved with the attempt
+  if (Array.isArray(attempt.questionBreakdown) && attempt.questionBreakdown.length > 0) {
+    return {
+      source: 'recorded',
+      items: attempt.questionBreakdown.map((item, idx) => ({
+        num: item.num || idx + 1,
+        questionId: String(item.questionId || ''),
+        topic: item.topic || 'General',
+        module: item.module || 'General',
+        studentAnswer: item.studentAnswer || '',
+        correctAnswer: item.correctAnswer || '',
+        isCorrect: item.isCorrect
+      })),
+      hasStudentAnswers: true,
+      setLetter: ''
+    };
+  }
+  const allQuestions = typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS) ? window.INITIAL_QUESTIONS : [];
+  const idMap = new Map(allQuestions.filter(Boolean).map(q => [String(q.ID), q]));
+
+  // 2. Retroactive reconstruction from saved Quiz Set (A-Z) if this was an OMR Scan or Set-based quiz
+  const titleStr = String(attempt.quizTitle || '');
+  const setMatch = titleStr.match(/\bSET\s+([A-Z])\b/i);
+  const detectedSetLetter = setMatch ? setMatch[1].toUpperCase() : '';
+  if (attempt.quizId) {
+    const setsForQuiz = getSetsForQuiz(attempt.quizId);
+    const targetSet = detectedSetLetter ? setsForQuiz.find(s => s.setLetter === detectedSetLetter) : setsForQuiz.length === 1 ? setsForQuiz[0] : null;
+    if (targetSet && Array.isArray(targetSet.questionIds) && targetSet.questionIds.length > 0) {
+      const items = targetSet.questionIds.map((qid, idx) => {
+        const qObj = idMap.get(String(qid));
+        return {
+          num: idx + 1,
+          questionId: String(qid),
+          topic: qObj ? getCanonicalTopic(qObj) : 'General',
+          module: qObj ? String(qObj.Module || 'General') : targetSet.module || 'General',
+          studentAnswer: '',
+          correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : targetSet.answerKey ? targetSet.answerKey[idx] || '' : '',
+          isCorrect: null
+        };
+      });
+      return {
+        source: 'set',
+        items,
+        hasStudentAnswers: false,
+        setLetter: targetSet.setLetter
+      };
+    }
+  }
+
+  // 3. Retroactive reconstruction for manually picked quizzes (specificQuestionIds)
+  const matchingQuiz = (quizzesList || []).find(q => q && q.id === attempt.quizId) || null;
+  if (matchingQuiz && Array.isArray(matchingQuiz.specificQuestionIds) && matchingQuiz.specificQuestionIds.length > 0) {
+    const items = matchingQuiz.specificQuestionIds.map((qid, idx) => {
+      const qObj = idMap.get(String(qid));
+      return {
+        num: idx + 1,
+        questionId: String(qid),
+        topic: qObj ? getCanonicalTopic(qObj) : 'General',
+        module: qObj ? String(qObj.Module || 'General') : matchingQuiz.module || 'General',
+        studentAnswer: '',
+        correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : '',
+        isCorrect: null
+      };
+    });
+    return {
+      source: 'manual_quiz',
+      items,
+      hasStudentAnswers: false,
+      setLetter: ''
+    };
+  }
+  return {
+    source: 'none',
+    items: [],
+    hasStudentAnswers: false,
+    setLetter: '',
+    matchingQuiz
+  };
+}
+function AdminAttemptTopicBreakdown({
+  attempt,
+  quizzesList = []
+}) {
+  const [resultFilter, setResultFilter] = useState('all'); // 'all' | 'wrong' | 'correct'
+  const resolved = React.useMemo(() => resolveAttemptQuestionTopics(attempt, quizzesList), [attempt, quizzesList]);
+  const topicSummary = React.useMemo(() => {
+    const map = {};
+    resolved.items.forEach(item => {
+      const t = item.topic || 'General';
+      if (!map[t]) map[t] = {
+        topic: t,
+        total: 0,
+        correct: 0
+      };
+      map[t].total++;
+      if (item.isCorrect === true) map[t].correct++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [resolved.items]);
+  const visibleItems = React.useMemo(() => {
+    if (!resolved.hasStudentAnswers || resultFilter === 'all') return resolved.items;
+    if (resultFilter === 'correct') return resolved.items.filter(i => i.isCorrect === true);
+    return resolved.items.filter(i => i.isCorrect !== true);
+  }, [resolved.items, resolved.hasStudentAnswers, resultFilter]);
+  const correctTotal = resolved.items.filter(i => i.isCorrect === true).length;
+  const wrongTotal = resolved.items.length - correctTotal;
+  const shortModLabel = modStr => {
+    const m = String(modStr || '');
+    const match = m.match(/Module\s*\d+/i);
+    return match ? match[0] : m.length > 24 ? m.slice(0, 22) + '…' : m || 'General';
+  };
+  if (resolved.items.length === 0) {
+    const modEntries = attempt && attempt.moduleBreakdown && typeof attempt.moduleBreakdown === 'object' ? Object.entries(attempt.moduleBreakdown).filter(([, v]) => v && (v.total > 0 || v.correct > 0)) : [];
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: '0.85rem 1rem',
+        background: 'rgba(15, 23, 42, 0.55)',
+        borderRadius: '8px',
+        border: '1px solid rgba(56, 189, 248, 0.25)'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: '0.82rem',
+        fontWeight: '700',
+        color: '#38bdf8',
+        marginBottom: '0.35rem'
+      }
+    }, "\uD83D\uDCDA Per-Question Topic Log Not Recorded on Legacy Attempt"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: '0.78rem',
+        color: 'var(--text-muted)',
+        margin: '0 0 0.5rem 0'
+      }
+    }, "This older quiz attempt was submitted before per-question topic logging was enabled. All new online quizzes and OMR scanned papers automatically record the exact topic for every question number (#1 to #N)."), modEntries.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.4rem',
+        marginTop: '0.4rem'
+      }
+    }, modEntries.map(([modName, st]) => {
+      const pct = st.total > 0 ? Math.round(st.correct / st.total * 100) : 0;
+      return /*#__PURE__*/React.createElement("span", {
+        key: modName,
+        className: "badge badge-student",
+        style: {
+          fontSize: '0.72rem'
+        }
+      }, modName, ": ", st.correct, "/", st.total, " (", pct, "%)");
+    })));
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: '0.9rem 1rem',
+      background: 'rgba(15, 23, 42, 0.6)',
+      borderRadius: '8px',
+      border: '1px solid rgba(56, 189, 248, 0.35)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: '0.5rem',
+      marginBottom: '0.65rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.86rem',
+      fontWeight: '700',
+      color: '#38bdf8'
+    }
+  }, "\uD83D\uDCDA Topic per Question Number (", resolved.items.length, " Questions)"), resolved.source === 'set' && /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-student",
+    style: {
+      marginLeft: '0.5rem',
+      fontSize: '0.7rem'
+    }
+  }, "From Saved SET ", resolved.setLetter), resolved.source === 'manual_quiz' && /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-student",
+    style: {
+      marginLeft: '0.5rem',
+      fontSize: '0.7rem'
+    }
+  }, "From Quiz Item List")), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: '0.35rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.18rem 0.55rem',
+      fontSize: '0.73rem',
+      borderColor: resultFilter === 'all' ? '#38bdf8' : undefined,
+      color: resultFilter === 'all' ? '#38bdf8' : undefined
+    },
+    onClick: () => setResultFilter('all')
+  }, "All (", resolved.items.length, ")"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.18rem 0.55rem',
+      fontSize: '0.73rem',
+      borderColor: resultFilter === 'wrong' ? '#f87171' : undefined,
+      color: resultFilter === 'wrong' ? '#f87171' : undefined
+    },
+    onClick: () => setResultFilter('wrong')
+  }, "\u274C Wrong (", wrongTotal, ")"), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.18rem 0.55rem',
+      fontSize: '0.73rem',
+      borderColor: resultFilter === 'correct' ? '#34d399' : undefined,
+      color: resultFilter === 'correct' ? '#34d399' : undefined
+    },
+    onClick: () => setResultFilter('correct')
+  }, "\u2705 Correct (", correctTotal, ")"))), topicSummary.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '0.4rem',
+      marginBottom: '0.75rem'
+    }
+  }, topicSummary.map(ts => {
+    const pct = ts.total > 0 ? Math.round(ts.correct / ts.total * 100) : 0;
+    const accent = !resolved.hasStudentAnswers ? {
+      bg: 'rgba(56, 189, 248, 0.12)',
+      bd: 'rgba(56, 189, 248, 0.35)',
+      fg: '#38bdf8'
+    } : pct >= 75 ? {
+      bg: 'rgba(16, 185, 129, 0.14)',
+      bd: 'rgba(16, 185, 129, 0.4)',
+      fg: '#34d399'
+    } : pct >= 50 ? {
+      bg: 'rgba(245, 158, 11, 0.14)',
+      bd: 'rgba(245, 158, 11, 0.4)',
+      fg: '#fbbf24'
+    } : {
+      bg: 'rgba(239, 68, 68, 0.14)',
+      bd: 'rgba(239, 68, 68, 0.4)',
+      fg: '#f87171'
+    };
+    return /*#__PURE__*/React.createElement("span", {
+      key: ts.topic,
+      style: {
+        padding: '0.22rem 0.55rem',
+        borderRadius: '999px',
+        fontSize: '0.73rem',
+        fontWeight: '600',
+        background: accent.bg,
+        border: `1px solid ${accent.bd}`,
+        color: accent.fg
+      }
+    }, ts.topic, ": ", resolved.hasStudentAnswers ? `${ts.correct}/${ts.total} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`);
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxHeight: '260px',
+      overflowY: 'auto',
+      borderRadius: '6px',
+      border: '1px solid var(--border-color)'
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "data-table",
+    style: {
+      marginBottom: 0,
+      fontSize: '0.79rem'
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+    style: {
+      width: '58px'
+    }
+  }, "Q#"), /*#__PURE__*/React.createElement("th", null, "Topic"), /*#__PURE__*/React.createElement("th", null, "Module"), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("th", {
+    style: {
+      width: '90px'
+    }
+  }, "Student"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      width: '72px'
+    }
+  }, "Key"), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("th", {
+    style: {
+      width: '92px'
+    }
+  }, "Result"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => /*#__PURE__*/React.createElement("tr", {
+    key: `${attempt.id}_q_${item.num}`
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontWeight: '800',
+      fontFamily: 'monospace',
+      color: '#38bdf8'
+    }
+  }, "#", item.num), /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontWeight: '600',
+      color: 'var(--text-main)'
+    }
+  }, item.topic), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-student",
+    style: {
+      fontSize: '0.68rem'
+    },
+    title: item.module
+  }, shortModLabel(item.module))), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontFamily: 'monospace',
+      fontWeight: '700'
+    }
+  }, item.studentAnswer || '—'), /*#__PURE__*/React.createElement("td", {
+    style: {
+      fontFamily: 'monospace',
+      fontWeight: '700',
+      color: 'var(--primary-light)'
+    }
+  }, item.correctAnswer || '—'), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+    className: `badge ${item.isCorrect ? 'badge-status' : 'badge-admin'}`,
+    style: {
+      fontSize: '0.68rem'
+    }
+  }, item.isCorrect ? '✅ Correct' : '❌ Wrong'))))))));
+}
+
 // QUIZ RESULTS & STUDENT SCORE LOGS MODAL (SUPPORTS BOTH ADMIN AUDIT & STUDENT SCORE HISTORY)
 function QuizResultsModal({
   attempts,
@@ -4865,6 +5226,7 @@ function QuizResultsModal({
   user
 }) {
   const isStudent = user && user.role !== 'admin';
+  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const relevantAttempts = isStudent ? attempts.filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())) : attempts;
   const filteredAttempts = selectedQuizFilter ? relevantAttempts.filter(a => a.quizId === selectedQuizFilter) : relevantAttempts;
   const totalAttempts = filteredAttempts.length;
@@ -4979,48 +5341,72 @@ function QuizResultsModal({
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("th", null, "Student Name"), !isStudent && /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Assessment / Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => /*#__PURE__*/React.createElement("tr", {
-    key: att.id
-  }, !isStudent && /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '600'
-    }
-  }, att.studentName, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: '0.75rem',
-      color: 'var(--text-dim)'
-    }
-  }, att.studentEmail)), !isStudent && /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
-    style: {
-      maxWidth: isStudent ? '320px' : '240px',
-      fontSize: '0.85rem',
-      fontWeight: isStudent ? '600' : 'normal'
-    }
-  }, att.quizTitle), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '700'
-    }
-  }, getAttemptScore(att), " / ", getAttemptTotal(att)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '700',
-      color: att.passed ? 'var(--success)' : 'var(--danger)'
-    }
-  }, getAttemptPercentage(att), "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-    className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
-  }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontSize: '0.8rem',
-      color: 'var(--text-muted)'
-    }
-  }, att.submittedAt))))))));
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("th", null, "Student Name"), !isStudent && /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Assessment / Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), !isStudent && /*#__PURE__*/React.createElement("th", null, "Topics per Q#"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => {
+    const isExpanded = !isStudent && expandedAttemptId === att.id;
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: att.id
+    }, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '600'
+      }
+    }, att.studentName, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: '0.75rem',
+        color: 'var(--text-dim)'
+      }
+    }, att.studentEmail)), !isStudent && /*#__PURE__*/React.createElement("td", null, att.school || 'NEUST'), /*#__PURE__*/React.createElement("td", {
+      style: {
+        maxWidth: isStudent ? '320px' : '240px',
+        fontSize: '0.85rem',
+        fontWeight: isStudent ? '600' : 'normal'
+      }
+    }, att.quizTitle), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '700'
+      }
+    }, getAttemptScore(att), " / ", getAttemptTotal(att)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '700',
+        color: att.passed ? 'var(--success)' : 'var(--danger)'
+      }
+    }, getAttemptPercentage(att), "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
+    }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontSize: '0.8rem',
+        color: 'var(--text-muted)'
+      }
+    }, att.submittedAt), !isStudent && /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.24rem 0.6rem',
+        fontSize: '0.74rem',
+        borderColor: isExpanded ? '#38bdf8' : undefined,
+        color: isExpanded ? '#38bdf8' : undefined
+      },
+      onClick: () => setExpandedAttemptId(isExpanded ? null : att.id)
+    }, isExpanded ? '🔼 Hide Topics' : '📋 View Topics'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 9,
+      style: {
+        padding: '0.5rem 0.75rem',
+        background: 'rgba(2, 6, 23, 0.35)'
+      }
+    }, /*#__PURE__*/React.createElement(AdminAttemptTopicBreakdown, {
+      attempt: att,
+      quizzesList: quizzes
+    }))));
+  }))))));
 }
 
 // ADMIN COMPLETE USER MASTER DATA & ACADEMIC RECORD MODAL
 function UserDetailModal({
   user,
   attemptsList = [],
+  quizzesList = [],
   onClose
 }) {
+  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const userAttempts = user.attempts && user.attempts.length > 0 ? user.attempts : (attemptsList || []).filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase()));
   const passedCount = userAttempts.filter(a => a.passed).length;
   const failedCount = userAttempts.length - passedCount;
@@ -5244,34 +5630,64 @@ function UserDetailModal({
   }, "This student has not attempted any faculty board quizzes yet.") : /*#__PURE__*/React.createElement("div", {
     className: "table-responsive",
     style: {
-      maxHeight: '35vh',
+      maxHeight: '48vh',
       overflowY: 'auto'
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"))), /*#__PURE__*/React.createElement("tbody", null, attempts.map(att => /*#__PURE__*/React.createElement("tr", {
-    key: att.id
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '600'
-    }
-  }, att.quizTitle), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '700'
-    }
-  }, getAttemptScore(att), " / ", getAttemptTotal(att)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '700',
-      color: att.passed ? 'var(--success)' : 'var(--danger)'
-    }
-  }, getAttemptPercentage(att), "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-    className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
-  }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontSize: '0.8rem',
-      color: 'var(--text-muted)'
-    }
-  }, att.submittedAt))))))));
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), /*#__PURE__*/React.createElement("th", null, "Topics per Q#"))), /*#__PURE__*/React.createElement("tbody", null, attempts.map(att => {
+    const isExpanded = expandedAttemptId === att.id;
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: att.id
+    }, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        cursor: 'pointer'
+      },
+      onClick: () => setExpandedAttemptId(isExpanded ? null : att.id),
+      title: "Click to inspect the Topic per Question Number for this quiz"
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '600'
+      }
+    }, att.quizTitle), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '700'
+      }
+    }, getAttemptScore(att), " / ", getAttemptTotal(att)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '700',
+        color: att.passed ? 'var(--success)' : 'var(--danger)'
+      }
+    }, getAttemptPercentage(att), "%"), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: `badge ${att.passed ? 'badge-status' : 'badge-admin'}`
+    }, att.passed ? 'PASSED' : 'FAILED')), /*#__PURE__*/React.createElement("td", null, formatTime(att.timeSpentSeconds)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontSize: '0.8rem',
+        color: 'var(--text-muted)'
+      }
+    }, att.submittedAt), /*#__PURE__*/React.createElement("td", {
+      onClick: e => e.stopPropagation()
+    }, /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "btn-secondary",
+      style: {
+        padding: '0.24rem 0.6rem',
+        fontSize: '0.74rem',
+        borderColor: isExpanded ? '#38bdf8' : undefined,
+        color: isExpanded ? '#38bdf8' : undefined
+      },
+      onClick: () => setExpandedAttemptId(isExpanded ? null : att.id)
+    }, isExpanded ? '🔼 Hide Topics' : '📋 View Topics'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 7,
+      style: {
+        padding: '0.5rem 0.75rem',
+        background: 'rgba(2, 6, 23, 0.35)'
+      }
+    }, /*#__PURE__*/React.createElement(AdminAttemptTopicBreakdown, {
+      attempt: att,
+      quizzesList: quizzesList
+    }))));
+  }))))));
 }
 
 // AUTH MODAL COMPONENT
@@ -6617,6 +7033,7 @@ function AdminOmrScannerView({
     totalVal = 50,
     pctVal = 0,
     passedVal = false,
+    questionBreakdown = [],
     isAuto = false
   }) => {
     const finalName = chosenStudent ? chosenStudent.fullName : fallbackName.trim() || (scannedNum ? `Student #${scannedNum}` : '');
@@ -6644,7 +7061,10 @@ function AdminOmrScannerView({
       totalQuestions: totalVal,
       percentage: pctVal,
       passed: passedVal,
-      timeSpentSeconds: 60
+      timeSpentSeconds: 60,
+      ...(Array.isArray(questionBreakdown) && questionBreakdown.length > 0 ? {
+        questionBreakdown
+      } : {})
     };
     try {
       const res = await fetch(`${API_BASE}/api/attempts`, {
@@ -6969,9 +7389,27 @@ function AdminOmrScannerView({
       setMatchedStudentInfo(null);
     }
 
-    // 3. AUTOMATICALLY MOVE SCORE TO MATCHED STUDENT'S RECORD
+    // 3. AUTOMATICALLY MOVE SCORE TO MATCHED STUDENT'S RECORD (WITH PER-QUESTION TOPICS)
     if (autoSaveOnScan && matchedStudent && foundCount >= 3 && !autoSavedScanIdsRef.current.has(scanSessionId)) {
       autoSavedScanIdsRef.current.add(scanSessionId);
+      const setRecForBreakdown = effQuiz && effSetLetter ? getSetsForQuiz(effQuiz.id).find(s => s.setLetter === effSetLetter) : barcode && barcode.valid ? getStoredQuizSets().find(s => s.omrQuizCode === barcode.omrQuizCode && s.setLetter === effSetLetter) : null;
+      const orderedQsForBreakdown = setRecForBreakdown ? resolveQuestionsForExistingSet(effQuiz || {}, setRecForBreakdown) : effQuiz ? resolveQuestionsForQuizExport(effQuiz) : [];
+      const omrQuestionBreakdown = Array.from({
+        length: effItemCount
+      }, (_, idx) => {
+        const qObj = orderedQsForBreakdown[idx] || null;
+        const detAns = initialScan.answerResults && initialScan.answerResults[idx] ? initialScan.answerResults[idx].detected || '' : '';
+        const kAns = effAnswerKey[idx] || (qObj ? String(qObj.CorrectAnswer || 'A').trim().toUpperCase().charAt(0) : 'A');
+        return {
+          num: idx + 1,
+          questionId: qObj ? String(qObj.ID || '') : '',
+          topic: qObj ? getCanonicalTopic(qObj) : effQuiz && effQuiz.module ? effQuiz.module : 'General',
+          module: qObj ? String(qObj.Module || 'General') : effQuiz ? String(effQuiz.module || 'General') : 'General',
+          studentAnswer: detAns,
+          correctAnswer: kAns,
+          isCorrect: !!(detAns && detAns !== 'MULTI' && detAns === kAns)
+        };
+      });
       persistScoreToStudentRecord({
         chosenStudent: matchedStudent,
         scannedNum: detectedNumFormatted,
@@ -6982,6 +7420,7 @@ function AdminOmrScannerView({
         totalVal: effItemCount,
         pctVal: initialPct,
         passedVal: initialPassed,
+        questionBreakdown: omrQuestionBreakdown,
         isAuto: true
       });
     } else if (autoSaveOnScan && !matchedStudent) {
@@ -7189,6 +7628,19 @@ function AdminOmrScannerView({
       return;
     }
     const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId) || null;
+    const orderedQsManual = activeSetRecord ? resolveQuestionsForExistingSet(selectedQuiz || {}, activeSetRecord) : selectedQuiz ? resolveQuestionsForQuizExport(selectedQuiz) : [];
+    const manualQuestionBreakdown = gradedItems.map((gi, idx) => {
+      const qObj = orderedQsManual[idx] || null;
+      return {
+        num: gi.itemNum,
+        questionId: qObj ? String(qObj.ID || '') : '',
+        topic: qObj ? getCanonicalTopic(qObj) : selectedQuiz && selectedQuiz.module ? selectedQuiz.module : 'General',
+        module: qObj ? String(qObj.Module || 'General') : selectedQuiz ? String(selectedQuiz.module || 'General') : 'General',
+        studentAnswer: gi.finalAns || '',
+        correctAnswer: gi.keyAns || 'A',
+        isCorrect: !!gi.isCorrect
+      };
+    });
     await persistScoreToStudentRecord({
       chosenStudent,
       fallbackName: manualStudentName,
@@ -7201,6 +7653,7 @@ function AdminOmrScannerView({
       totalVal: itemCount,
       pctVal: scorePct,
       passedVal: isPassed,
+      questionBreakdown: manualQuestionBreakdown,
       isAuto: false
     });
   };

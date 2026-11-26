@@ -81,6 +81,7 @@ rules_version = '2';
 //      - school: string (optional, length 0..250)
 //      - timeSpentSeconds: int (optional, range 0..86400)
 //      - moduleBreakdown: map (optional, keys <= 20)
+//      - questionBreakdown: list (optional, size <= 500) - ordered per-question topic and answer breakdown
 //
 // 6. Collection: /questions/{questionId}
 //    Document ID: Question bank item ID (ID == questionId)
@@ -354,7 +355,8 @@ service cloud.firestore {
                'passed',
                'timeSpentSeconds',
                'submittedAt',
-               'moduleBreakdown'
+               'moduleBreakdown',
+               'questionBreakdown'
              ]) &&
              data.id is string &&
              data.id == attemptId &&
@@ -389,7 +391,9 @@ service cloud.firestore {
              isValidOptionalString('school', 0, 250) &&
              isValidOptionalInt('timeSpentSeconds', 0, 86400) &&
              (!('moduleBreakdown' in data) ||
-              (data.moduleBreakdown is map && data.moduleBreakdown.keys().size() <= 20));
+              (data.moduleBreakdown is map && data.moduleBreakdown.keys().size() <= 20)) &&
+             (!('questionBreakdown' in data) ||
+              (data.questionBreakdown is list && data.questionBreakdown.size() <= 500));
     }
 
     function validQuestionDoc(questionId) {

@@ -864,7 +864,8 @@ app.post('/api/attempts', authenticateToken, async (req, res) => {
     passed: !!passed,
     timeSpentSeconds: parseInt(timeSpentSeconds) || 0,
     submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-    moduleBreakdown: req.body.moduleBreakdown || null
+    moduleBreakdown: req.body.moduleBreakdown || null,
+    ...(Array.isArray(req.body.questionBreakdown) && req.body.questionBreakdown.length > 0 ? { questionBreakdown: req.body.questionBreakdown.slice(0, 500) } : {})
   };
 
   attempts.unshift(newAttempt);
@@ -1068,7 +1069,8 @@ app.post('/api/adaptive/diagnostic/submit', authenticateToken, async (req, res) 
     passed,
     timeSpentSeconds: parseInt(timeSpentSeconds) || 0,
     submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-    moduleBreakdown
+    moduleBreakdown,
+    ...(Array.isArray(req.body.questionBreakdown) && req.body.questionBreakdown.length > 0 ? { questionBreakdown: req.body.questionBreakdown.slice(0, 500) } : {})
   };
 
   attempts.unshift(attemptRecord);
@@ -1156,7 +1158,8 @@ app.post('/api/adaptive/simulation/submit', authenticateToken, async (req, res) 
     passed,
     timeSpentSeconds: parseInt(timeSpentSeconds) || 0,
     submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-    moduleBreakdown
+    moduleBreakdown,
+    ...(Array.isArray(req.body.questionBreakdown) && req.body.questionBreakdown.length > 0 ? { questionBreakdown: req.body.questionBreakdown.slice(0, 500) } : {})
   };
 
   attempts.unshift(attemptRecord);
@@ -1256,7 +1259,8 @@ app.post('/api/adaptive/smart-quiz/submit', authenticateToken, async (req, res) 
     passed,
     timeSpentSeconds: parseInt(timeSpentSeconds) || 0,
     submittedAt: new Date().toISOString().replace('T', ' ').substring(0, 19),
-    moduleBreakdown
+    moduleBreakdown,
+    ...(Array.isArray(req.body.questionBreakdown) && req.body.questionBreakdown.length > 0 ? { questionBreakdown: req.body.questionBreakdown.slice(0, 500) } : {})
   };
 
   attempts.unshift(attemptRecord);

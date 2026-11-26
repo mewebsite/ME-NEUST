@@ -2209,6 +2209,8 @@ function App() {
   };
 
   const recordQuizAttempt = (score, total, pct, passed, timeSpentSecs) => {
+    const questionBreakdown = buildAttemptQuestionBreakdown(questions, (qItem) => userAnswers[qItem.ID] || '');
+
     if (activeQuiz && activeQuiz.isDiagnostic) {
       fetch(`${API_BASE}/api/adaptive/diagnostic/submit`, {
         method: 'POST',
@@ -2219,7 +2221,8 @@ function App() {
         body: JSON.stringify({
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
-          questionDetails: questions
+          questionDetails: questions,
+          questionBreakdown
         })
       })
       .then(res => res.json())
@@ -2241,7 +2244,8 @@ function App() {
         body: JSON.stringify({
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
-          questionDetails: questions
+          questionDetails: questions,
+          questionBreakdown
         })
       })
       .then(res => res.json())
@@ -2264,7 +2268,8 @@ function App() {
           userAnswers,
           timeSpentSeconds: timeSpentSecs,
           questionDetails: questions,
-          targetModule: activeQuiz.targetModule
+          targetModule: activeQuiz.targetModule,
+          questionBreakdown
         })
       })
       .then(res => res.json())
@@ -2302,7 +2307,8 @@ function App() {
         scorePct: pct,
         passed,
         timeSpentSeconds: timeSpentSecs,
-        moduleBreakdown
+        moduleBreakdown,
+        questionBreakdown
       })
     })
     .then(res => res.json())
@@ -2925,6 +2931,7 @@ function App() {
         <UserDetailModal 
           user={selectedUserDetail} 
           attemptsList={attemptsList}
+          quizzesList={quizzesList}
           onClose={() => {
             setUserDetailModalOpen(false);
             setSelectedUserDetail(null);
@@ -4088,9 +4095,305 @@ function QuizListModal({
   );
 }
 
+// ============================================================================
+// PER-QUESTION TOPIC BREAKDOWN HELPERS & ADMIN QUIZ HISTORY INSPECTOR
+// ============================================================================
+function buildAttemptQuestionBreakdown(questionsList = [], getStudentAns = () => '') {
+  if (!Array.isArray(questionsList) || questionsList.length === 0) return [];
+  return questionsList.slice(0, 500).map((qItem, idx) => {
+    const rawStudent = typeof getStudentAns === 'function' ? getStudentAns(qItem, idx) : '';
+    const studentAnswer = String(rawStudent || '').trim().toUpperCase();
+    const correctAnswer = String((qItem && qItem.CorrectAnswer) || '').trim().toUpperCase().charAt(0);
+    const isCorrect = !!(studentAnswer && studentAnswer !== 'MULTI' && correctAnswer && studentAnswer === correctAnswer);
+    return {
+      num: idx + 1,
+      questionId: String((qItem && qItem.ID) || ''),
+      topic: getCanonicalTopic(qItem),
+      module: String((qItem && qItem.Module) || 'General'),
+      studentAnswer,
+      correctAnswer,
+      isCorrect
+    };
+  });
+}
+
+function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
+  if (!attempt) return { source: 'none', items: [], hasStudentAnswers: false, setLetter: '' };
+
+  // 1. Exact recorded per-question topic breakdown saved with the attempt
+  if (Array.isArray(attempt.questionBreakdown) && attempt.questionBreakdown.length > 0) {
+    return {
+      source: 'recorded',
+      items: attempt.questionBreakdown.map((item, idx) => ({
+        num: item.num || (idx + 1),
+        questionId: String(item.questionId || ''),
+        topic: item.topic || 'General',
+        module: item.module || 'General',
+        studentAnswer: item.studentAnswer || '',
+        correctAnswer: item.correctAnswer || '',
+        isCorrect: item.isCorrect
+      })),
+      hasStudentAnswers: true,
+      setLetter: ''
+    };
+  }
+
+  const allQuestions = (typeof window !== 'undefined' && Array.isArray(window.INITIAL_QUESTIONS))
+    ? window.INITIAL_QUESTIONS
+    : [];
+  const idMap = new Map(allQuestions.filter(Boolean).map(q => [String(q.ID), q]));
+
+  // 2. Retroactive reconstruction from saved Quiz Set (A-Z) if this was an OMR Scan or Set-based quiz
+  const titleStr = String(attempt.quizTitle || '');
+  const setMatch = titleStr.match(/\bSET\s+([A-Z])\b/i);
+  const detectedSetLetter = setMatch ? setMatch[1].toUpperCase() : '';
+  if (attempt.quizId) {
+    const setsForQuiz = getSetsForQuiz(attempt.quizId);
+    const targetSet = detectedSetLetter
+      ? setsForQuiz.find(s => s.setLetter === detectedSetLetter)
+      : (setsForQuiz.length === 1 ? setsForQuiz[0] : null);
+    if (targetSet && Array.isArray(targetSet.questionIds) && targetSet.questionIds.length > 0) {
+      const items = targetSet.questionIds.map((qid, idx) => {
+        const qObj = idMap.get(String(qid));
+        return {
+          num: idx + 1,
+          questionId: String(qid),
+          topic: qObj ? getCanonicalTopic(qObj) : 'General',
+          module: qObj ? String(qObj.Module || 'General') : (targetSet.module || 'General'),
+          studentAnswer: '',
+          correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : (targetSet.answerKey ? (targetSet.answerKey[idx] || '') : ''),
+          isCorrect: null
+        };
+      });
+      return { source: 'set', items, hasStudentAnswers: false, setLetter: targetSet.setLetter };
+    }
+  }
+
+  // 3. Retroactive reconstruction for manually picked quizzes (specificQuestionIds)
+  const matchingQuiz = (quizzesList || []).find(q => q && q.id === attempt.quizId) || null;
+  if (matchingQuiz && Array.isArray(matchingQuiz.specificQuestionIds) && matchingQuiz.specificQuestionIds.length > 0) {
+    const items = matchingQuiz.specificQuestionIds.map((qid, idx) => {
+      const qObj = idMap.get(String(qid));
+      return {
+        num: idx + 1,
+        questionId: String(qid),
+        topic: qObj ? getCanonicalTopic(qObj) : 'General',
+        module: qObj ? String(qObj.Module || 'General') : (matchingQuiz.module || 'General'),
+        studentAnswer: '',
+        correctAnswer: qObj ? String(qObj.CorrectAnswer || '').trim().toUpperCase().charAt(0) : '',
+        isCorrect: null
+      };
+    });
+    return { source: 'manual_quiz', items, hasStudentAnswers: false, setLetter: '' };
+  }
+
+  return { source: 'none', items: [], hasStudentAnswers: false, setLetter: '', matchingQuiz };
+}
+
+function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
+  const [resultFilter, setResultFilter] = useState('all'); // 'all' | 'wrong' | 'correct'
+  const resolved = React.useMemo(() => resolveAttemptQuestionTopics(attempt, quizzesList), [attempt, quizzesList]);
+
+  const topicSummary = React.useMemo(() => {
+    const map = {};
+    resolved.items.forEach(item => {
+      const t = item.topic || 'General';
+      if (!map[t]) map[t] = { topic: t, total: 0, correct: 0 };
+      map[t].total++;
+      if (item.isCorrect === true) map[t].correct++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [resolved.items]);
+
+  const visibleItems = React.useMemo(() => {
+    if (!resolved.hasStudentAnswers || resultFilter === 'all') return resolved.items;
+    if (resultFilter === 'correct') return resolved.items.filter(i => i.isCorrect === true);
+    return resolved.items.filter(i => i.isCorrect !== true);
+  }, [resolved.items, resolved.hasStudentAnswers, resultFilter]);
+
+  const correctTotal = resolved.items.filter(i => i.isCorrect === true).length;
+  const wrongTotal = resolved.items.length - correctTotal;
+
+  const shortModLabel = (modStr) => {
+    const m = String(modStr || '');
+    const match = m.match(/Module\s*\d+/i);
+    return match ? match[0] : (m.length > 24 ? m.slice(0, 22) + '…' : m || 'General');
+  };
+
+  if (resolved.items.length === 0) {
+    const modEntries = attempt && attempt.moduleBreakdown && typeof attempt.moduleBreakdown === 'object'
+      ? Object.entries(attempt.moduleBreakdown).filter(([, v]) => v && (v.total > 0 || v.correct > 0))
+      : [];
+    return (
+      <div style={{ padding: '0.85rem 1rem', background: 'rgba(15, 23, 42, 0.55)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
+        <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#38bdf8', marginBottom: '0.35rem' }}>
+          📚 Per-Question Topic Log Not Recorded on Legacy Attempt
+        </div>
+        <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem 0' }}>
+          This older quiz attempt was submitted before per-question topic logging was enabled. All new online quizzes and OMR scanned papers automatically record the exact topic for every question number (#1 to #N).
+        </p>
+        {modEntries.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
+            {modEntries.map(([modName, st]) => {
+              const pct = st.total > 0 ? Math.round((st.correct / st.total) * 100) : 0;
+              return (
+                <span key={modName} className="badge badge-student" style={{ fontSize: '0.72rem' }}>
+                  {modName}: {st.correct}/{st.total} ({pct}%)
+                </span>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '0.9rem 1rem', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.65rem' }}>
+        <div>
+          <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#38bdf8' }}>
+            📚 Topic per Question Number ({resolved.items.length} Questions)
+          </span>
+          {resolved.source === 'set' && (
+            <span className="badge badge-student" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
+              From Saved SET {resolved.setLetter}
+            </span>
+          )}
+          {resolved.source === 'manual_quiz' && (
+            <span className="badge badge-student" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
+              From Quiz Item List
+            </span>
+          )}
+        </div>
+        {resolved.hasStudentAnswers && (
+          <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{
+                padding: '0.18rem 0.55rem',
+                fontSize: '0.73rem',
+                borderColor: resultFilter === 'all' ? '#38bdf8' : undefined,
+                color: resultFilter === 'all' ? '#38bdf8' : undefined
+              }}
+              onClick={() => setResultFilter('all')}
+            >
+              All ({resolved.items.length})
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{
+                padding: '0.18rem 0.55rem',
+                fontSize: '0.73rem',
+                borderColor: resultFilter === 'wrong' ? '#f87171' : undefined,
+                color: resultFilter === 'wrong' ? '#f87171' : undefined
+              }}
+              onClick={() => setResultFilter('wrong')}
+            >
+              ❌ Wrong ({wrongTotal})
+            </button>
+            <button
+              type="button"
+              className="btn-secondary"
+              style={{
+                padding: '0.18rem 0.55rem',
+                fontSize: '0.73rem',
+                borderColor: resultFilter === 'correct' ? '#34d399' : undefined,
+                color: resultFilter === 'correct' ? '#34d399' : undefined
+              }}
+              onClick={() => setResultFilter('correct')}
+            >
+              ✅ Correct ({correctTotal})
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* TOPIC SUMMARY CHIPS */}
+      {topicSummary.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.75rem' }}>
+          {topicSummary.map(ts => {
+            const pct = ts.total > 0 ? Math.round((ts.correct / ts.total) * 100) : 0;
+            const accent = !resolved.hasStudentAnswers
+              ? { bg: 'rgba(56, 189, 248, 0.12)', bd: 'rgba(56, 189, 248, 0.35)', fg: '#38bdf8' }
+              : pct >= 75
+                ? { bg: 'rgba(16, 185, 129, 0.14)', bd: 'rgba(16, 185, 129, 0.4)', fg: '#34d399' }
+                : pct >= 50
+                  ? { bg: 'rgba(245, 158, 11, 0.14)', bd: 'rgba(245, 158, 11, 0.4)', fg: '#fbbf24' }
+                  : { bg: 'rgba(239, 68, 68, 0.14)', bd: 'rgba(239, 68, 68, 0.4)', fg: '#f87171' };
+            return (
+              <span
+                key={ts.topic}
+                style={{
+                  padding: '0.22rem 0.55rem',
+                  borderRadius: '999px',
+                  fontSize: '0.73rem',
+                  fontWeight: '600',
+                  background: accent.bg,
+                  border: `1px solid ${accent.bd}`,
+                  color: accent.fg
+                }}
+              >
+                {ts.topic}: {resolved.hasStudentAnswers ? `${ts.correct}/${ts.total} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`}
+              </span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* QUESTION NUMBER -> TOPIC TABLE */}
+      <div style={{ maxHeight: '260px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+        <table className="data-table" style={{ marginBottom: 0, fontSize: '0.79rem' }}>
+          <thead>
+            <tr>
+              <th style={{ width: '58px' }}>Q#</th>
+              <th>Topic</th>
+              <th>Module</th>
+              {resolved.hasStudentAnswers && <th style={{ width: '90px' }}>Student</th>}
+              <th style={{ width: '72px' }}>Key</th>
+              {resolved.hasStudentAnswers && <th style={{ width: '92px' }}>Result</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleItems.map(item => (
+              <tr key={`${attempt.id}_q_${item.num}`}>
+                <td style={{ fontWeight: '800', fontFamily: 'monospace', color: '#38bdf8' }}>#{item.num}</td>
+                <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>{item.topic}</td>
+                <td>
+                  <span className="badge badge-student" style={{ fontSize: '0.68rem' }} title={item.module}>
+                    {shortModLabel(item.module)}
+                  </span>
+                </td>
+                {resolved.hasStudentAnswers && (
+                  <td style={{ fontFamily: 'monospace', fontWeight: '700' }}>
+                    {item.studentAnswer || '—'}
+                  </td>
+                )}
+                <td style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--primary-light)' }}>
+                  {item.correctAnswer || '—'}
+                </td>
+                {resolved.hasStudentAnswers && (
+                  <td>
+                    <span className={`badge ${item.isCorrect ? 'badge-status' : 'badge-admin'}`} style={{ fontSize: '0.68rem' }}>
+                      {item.isCorrect ? '✅ Correct' : '❌ Wrong'}
+                    </span>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // QUIZ RESULTS & STUDENT SCORE LOGS MODAL (SUPPORTS BOTH ADMIN AUDIT & STUDENT SCORE HISTORY)
 function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQuizFilter, onClose, user }) {
   const isStudent = user && user.role !== 'admin';
+  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const relevantAttempts = isStudent
     ? attempts.filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())))
     : attempts;
@@ -4198,34 +4501,59 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
                   <th>Status</th>
                   <th>Time Taken</th>
                   <th>Submitted At</th>
+                  {!isStudent && <th>Topics per Q#</th>}
                 </tr>
               </thead>
               <tbody>
-                {filteredAttempts.map(att => (
-                  <tr key={att.id}>
-                    {!isStudent && (
-                      <td style={{ fontWeight: '600' }}>
-                        {att.studentName}
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
-                      </td>
-                    )}
-                    {!isStudent && <td>{att.school || 'NEUST'}</td>}
-                    <td style={{ maxWidth: isStudent ? '320px' : '240px', fontSize: '0.85rem', fontWeight: isStudent ? '600' : 'normal' }}>
-                      {att.quizTitle}
-                    </td>
-                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
-                    <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {getAttemptPercentage(att)}%
-                    </td>
-                    <td>
-                      <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
-                        {att.passed ? 'PASSED' : 'FAILED'}
-                      </span>
-                    </td>
-                    <td>{formatTime(att.timeSpentSeconds)}</td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
-                  </tr>
-                ))}
+                {filteredAttempts.map(att => {
+                  const isExpanded = !isStudent && expandedAttemptId === att.id;
+                  return (
+                    <React.Fragment key={att.id}>
+                      <tr>
+                        {!isStudent && (
+                          <td style={{ fontWeight: '600' }}>
+                            {att.studentName}
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{att.studentEmail}</div>
+                          </td>
+                        )}
+                        {!isStudent && <td>{att.school || 'NEUST'}</td>}
+                        <td style={{ maxWidth: isStudent ? '320px' : '240px', fontSize: '0.85rem', fontWeight: isStudent ? '600' : 'normal' }}>
+                          {att.quizTitle}
+                        </td>
+                        <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
+                        <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
+                          {getAttemptPercentage(att)}%
+                        </td>
+                        <td>
+                          <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
+                            {att.passed ? 'PASSED' : 'FAILED'}
+                          </span>
+                        </td>
+                        <td>{formatTime(att.timeSpentSeconds)}</td>
+                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
+                        {!isStudent && (
+                          <td>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              style={{ padding: '0.24rem 0.6rem', fontSize: '0.74rem', borderColor: isExpanded ? '#38bdf8' : undefined, color: isExpanded ? '#38bdf8' : undefined }}
+                              onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
+                            >
+                              {isExpanded ? '🔼 Hide Topics' : '📋 View Topics'}
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={9} style={{ padding: '0.5rem 0.75rem', background: 'rgba(2, 6, 23, 0.35)' }}>
+                            <AdminAttemptTopicBreakdown attempt={att} quizzesList={quizzes} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -4236,7 +4564,8 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
 }
 
 // ADMIN COMPLETE USER MASTER DATA & ACADEMIC RECORD MODAL
-function UserDetailModal({ user, attemptsList = [], onClose }) {
+function UserDetailModal({ user, attemptsList = [], quizzesList = [], onClose }) {
+  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
   const userAttempts = (user.attempts && user.attempts.length > 0)
     ? user.attempts
     : (attemptsList || []).filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())));
@@ -4346,7 +4675,7 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
             This student has not attempted any faculty board quizzes yet.
           </div>
         ) : (
-          <div className="table-responsive" style={{ maxHeight: '35vh', overflowY: 'auto' }}>
+          <div className="table-responsive" style={{ maxHeight: '48vh', overflowY: 'auto' }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -4356,25 +4685,52 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
                   <th>Status</th>
                   <th>Time Taken</th>
                   <th>Submitted At</th>
+                  <th>Topics per Q#</th>
                 </tr>
               </thead>
               <tbody>
-                {attempts.map(att => (
-                  <tr key={att.id}>
-                    <td style={{ fontWeight: '600' }}>{att.quizTitle}</td>
-                    <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
-                    <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
-                      {getAttemptPercentage(att)}%
-                    </td>
-                    <td>
-                      <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
-                        {att.passed ? 'PASSED' : 'FAILED'}
-                      </span>
-                    </td>
-                    <td>{formatTime(att.timeSpentSeconds)}</td>
-                    <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
-                  </tr>
-                ))}
+                {attempts.map(att => {
+                  const isExpanded = expandedAttemptId === att.id;
+                  return (
+                    <React.Fragment key={att.id}>
+                      <tr
+                        style={{ cursor: 'pointer' }}
+                        onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
+                        title="Click to inspect the Topic per Question Number for this quiz"
+                      >
+                        <td style={{ fontWeight: '600' }}>{att.quizTitle}</td>
+                        <td style={{ fontWeight: '700' }}>{getAttemptScore(att)} / {getAttemptTotal(att)}</td>
+                        <td style={{ fontWeight: '700', color: att.passed ? 'var(--success)' : 'var(--danger)' }}>
+                          {getAttemptPercentage(att)}%
+                        </td>
+                        <td>
+                          <span className={`badge ${att.passed ? 'badge-status' : 'badge-admin'}`}>
+                            {att.passed ? 'PASSED' : 'FAILED'}
+                          </span>
+                        </td>
+                        <td>{formatTime(att.timeSpentSeconds)}</td>
+                        <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{att.submittedAt}</td>
+                        <td onClick={e => e.stopPropagation()}>
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{ padding: '0.24rem 0.6rem', fontSize: '0.74rem', borderColor: isExpanded ? '#38bdf8' : undefined, color: isExpanded ? '#38bdf8' : undefined }}
+                            onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
+                          >
+                            {isExpanded ? '🔼 Hide Topics' : '📋 View Topics'}
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={7} style={{ padding: '0.5rem 0.75rem', background: 'rgba(2, 6, 23, 0.35)' }}>
+                            <AdminAttemptTopicBreakdown attempt={att} quizzesList={quizzesList} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -5425,6 +5781,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
     totalVal = 50,
     pctVal = 0,
     passedVal = false,
+    questionBreakdown = [],
     isAuto = false
   }) => {
     const finalName = chosenStudent
@@ -5458,7 +5815,8 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
       totalQuestions: totalVal,
       percentage: pctVal,
       passed: passedVal,
-      timeSpentSeconds: 60
+      timeSpentSeconds: 60,
+      ...(Array.isArray(questionBreakdown) && questionBreakdown.length > 0 ? { questionBreakdown } : {})
     };
 
     try {
@@ -5789,9 +6147,29 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
       setMatchedStudentInfo(null);
     }
 
-    // 3. AUTOMATICALLY MOVE SCORE TO MATCHED STUDENT'S RECORD
+    // 3. AUTOMATICALLY MOVE SCORE TO MATCHED STUDENT'S RECORD (WITH PER-QUESTION TOPICS)
     if (autoSaveOnScan && matchedStudent && foundCount >= 3 && !autoSavedScanIdsRef.current.has(scanSessionId)) {
       autoSavedScanIdsRef.current.add(scanSessionId);
+      const setRecForBreakdown = (effQuiz && effSetLetter)
+        ? getSetsForQuiz(effQuiz.id).find(s => s.setLetter === effSetLetter)
+        : (barcode && barcode.valid ? getStoredQuizSets().find(s => s.omrQuizCode === barcode.omrQuizCode && s.setLetter === effSetLetter) : null);
+      const orderedQsForBreakdown = setRecForBreakdown
+        ? resolveQuestionsForExistingSet(effQuiz || {}, setRecForBreakdown)
+        : (effQuiz ? resolveQuestionsForQuizExport(effQuiz) : []);
+      const omrQuestionBreakdown = Array.from({ length: effItemCount }, (_, idx) => {
+        const qObj = orderedQsForBreakdown[idx] || null;
+        const detAns = (initialScan.answerResults && initialScan.answerResults[idx]) ? (initialScan.answerResults[idx].detected || '') : '';
+        const kAns = effAnswerKey[idx] || (qObj ? String(qObj.CorrectAnswer || 'A').trim().toUpperCase().charAt(0) : 'A');
+        return {
+          num: idx + 1,
+          questionId: qObj ? String(qObj.ID || '') : '',
+          topic: qObj ? getCanonicalTopic(qObj) : (effQuiz && effQuiz.module ? effQuiz.module : 'General'),
+          module: qObj ? String(qObj.Module || 'General') : (effQuiz ? String(effQuiz.module || 'General') : 'General'),
+          studentAnswer: detAns,
+          correctAnswer: kAns,
+          isCorrect: !!(detAns && detAns !== 'MULTI' && detAns === kAns)
+        };
+      });
       persistScoreToStudentRecord({
         chosenStudent: matchedStudent,
         scannedNum: detectedNumFormatted,
@@ -5802,6 +6180,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
         totalVal: effItemCount,
         pctVal: initialPct,
         passedVal: initialPassed,
+        questionBreakdown: omrQuestionBreakdown,
         isAuto: true
       });
     } else if (autoSaveOnScan && !matchedStudent) {
@@ -6010,6 +6389,21 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
       return;
     }
     const chosenStudent = studentsOnly.find(s => s.id === selectedStudentId) || null;
+    const orderedQsManual = activeSetRecord
+      ? resolveQuestionsForExistingSet(selectedQuiz || {}, activeSetRecord)
+      : (selectedQuiz ? resolveQuestionsForQuizExport(selectedQuiz) : []);
+    const manualQuestionBreakdown = gradedItems.map((gi, idx) => {
+      const qObj = orderedQsManual[idx] || null;
+      return {
+        num: gi.itemNum,
+        questionId: qObj ? String(qObj.ID || '') : '',
+        topic: qObj ? getCanonicalTopic(qObj) : (selectedQuiz && selectedQuiz.module ? selectedQuiz.module : 'General'),
+        module: qObj ? String(qObj.Module || 'General') : (selectedQuiz ? String(selectedQuiz.module || 'General') : 'General'),
+        studentAnswer: gi.finalAns || '',
+        correctAnswer: gi.keyAns || 'A',
+        isCorrect: !!gi.isCorrect
+      };
+    });
     await persistScoreToStudentRecord({
       chosenStudent,
       fallbackName: manualStudentName,
@@ -6022,6 +6416,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
       totalVal: itemCount,
       pctVal: scorePct,
       passedVal: isPassed,
+      questionBreakdown: manualQuestionBreakdown,
       isAuto: false
     });
   };

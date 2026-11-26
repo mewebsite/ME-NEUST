@@ -7150,12 +7150,25 @@ function AdminOmrScannerView({
 
   // Camera & Scanner State
   const videoRef = React.useRef(null);
+  const liveOverlayCanvasRef = React.useRef(null);
+  const probeCanvasRef = React.useRef(null);
   const scanCanvasRef = React.useRef(null);
   const sourceCanvasRef = React.useRef(null);
   const fileInputRef = React.useRef(null);
   const autoSavedScanIdsRef = React.useRef(new Set());
   const skipEffectKeyLoadRef = React.useRef(false);
+  const loadImageOntoScannerRef = React.useRef(null);
+  const stableBarcodeLockRef = React.useRef({
+    sig: '',
+    count: 0
+  });
+  const batchCooldownUntilRef = React.useRef(0);
   const [cameraActive, setCameraActive] = useState(false);
+  const [autoCaptureOnDetect, setAutoCaptureOnDetect] = useState(true);
+  const [continuousBatchScan, setContinuousBatchScan] = useState(false);
+  const [liveScanStatus, setLiveScanStatus] = useState('Align all 4 black corner squares & top barcode inside frame');
+  const [liveBarcodeLocked, setLiveBarcodeLocked] = useState(false);
+  const [cameraFlash, setCameraFlash] = useState(false);
   const [streamObj, setStreamObj] = useState(null);
   const [hasScannedImage, setHasScannedImage] = useState(false);
   const [corners, setCorners] = useState(null); // [TL, TR, BR, BL]
@@ -7293,13 +7306,41 @@ function AdminOmrScannerView({
       setAnswerKey(next);
     }
   };
-  const stopCamera = () => {
+  const playAutoCaptureChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, ctx.currentTime + 0.09);
+      gain.gain.setValueAtTime(0.14, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+      setTimeout(() => {
+        try {
+          ctx.close();
+        } catch (e) {}
+      }, 250);
+    } catch (e) {}
+  };
+  const stopCamera = React.useCallback(() => {
     if (streamObj) {
       streamObj.getTracks().forEach(t => t.stop());
       setStreamObj(null);
     }
+    stableBarcodeLockRef.current = {
+      sig: '',
+      count: 0
+    };
+    setLiveBarcodeLocked(false);
     setCameraActive(false);
-  };
+  }, [streamObj]);
   useEffect(() => {
     return () => {
       if (streamObj) streamObj.getTracks().forEach(t => t.stop());
@@ -7325,6 +7366,13 @@ function AdminOmrScannerView({
         },
         audio: false
       });
+      stableBarcodeLockRef.current = {
+        sig: '',
+        count: 0
+      };
+      batchCooldownUntilRef.current = 0;
+      setLiveBarcodeLocked(false);
+      setLiveScanStatus('🔍 Point camera at Answer Sheet — auto-captures when barcode & 4 corners lock');
       setStreamObj(stream);
       setCameraActive(true);
       setTimeout(() => {
@@ -7751,9 +7799,192 @@ function AdminOmrScannerView({
       showToast?.(foundCount === 4 ? `Scanned ${effTitle}${effSetLetter ? ` (SET ${effSetLetter})` : ''}: ${initialCorrect}/${effItemCount} (${initialPct}%).` : `Auto-aligned ${foundCount}/4 corner markers. Drag cyan handles onto the black squares if needed.`, foundCount === 4 ? 'success' : 'info');
     }
   };
+  loadImageOntoScannerRef.current = loadImageOntoScanner;
+
+  // REAL-TIME LIVE CAMERA BARCODE / QR AUTO-CAPTURE LOOP
+  useEffect(() => {
+    if (!cameraActive || !autoCaptureOnDetect) {
+      if (liveOverlayCanvasRef.current) {
+        const ctx = liveOverlayCanvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, liveOverlayCanvasRef.current.width, liveOverlayCanvasRef.current.height);
+      }
+      setLiveBarcodeLocked(false);
+      return;
+    }
+    let cancelled = false;
+    let processing = false;
+    const isSaneQuad = (pts, w, h) => {
+      if (!pts || pts.length !== 4) return false;
+      const [tl, tr, br, bl] = pts;
+      const topW = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+      const botW = Math.hypot(br.x - bl.x, br.y - bl.y);
+      const leftH = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+      const rightH = Math.hypot(br.x - tr.x, br.y - tr.y);
+      if (topW < w * 0.22 || botW < w * 0.22 || leftH < h * 0.25 || rightH < h * 0.25) return false;
+      if (tl.x >= tr.x || bl.x >= br.x || tl.y >= bl.y || tr.y >= br.y) return false;
+      const ratioW = Math.max(topW, botW) / Math.max(1, Math.min(topW, botW));
+      const ratioH = Math.max(leftH, rightH) / Math.max(1, Math.min(leftH, rightH));
+      return ratioW <= 1.65 && ratioH <= 1.65;
+    };
+    const tick = () => {
+      if (cancelled || processing) return;
+      const vid = videoRef.current;
+      if (!vid || vid.readyState < 2 || !vid.videoWidth || !vid.videoHeight) return;
+      const now = Date.now();
+      if (now < batchCooldownUntilRef.current) {
+        const secsLeft = ((batchCooldownUntilRef.current - now) / 1000).toFixed(1);
+        setLiveScanStatus(`✅ Paper captured! Slide next paper in (${secsLeft}s)...`);
+        return;
+      }
+      processing = true;
+      try {
+        const maxProbe = 540;
+        const scale = Math.min(1, maxProbe / Math.max(vid.videoWidth, vid.videoHeight));
+        const pw = Math.max(160, Math.round(vid.videoWidth * scale));
+        const ph = Math.max(160, Math.round(vid.videoHeight * scale));
+        if (!probeCanvasRef.current) {
+          probeCanvasRef.current = document.createElement('canvas');
+        }
+        const pCanvas = probeCanvasRef.current;
+        if (pCanvas.width !== pw || pCanvas.height !== ph) {
+          pCanvas.width = pw;
+          pCanvas.height = ph;
+        }
+        const pCtx = pCanvas.getContext('2d', {
+          willReadFrequently: true
+        });
+        pCtx.drawImage(vid, 0, 0, pw, ph);
+        const pImg = pCtx.getImageData(0, 0, pw, ph);
+        const pCorners = detectOmrFiducialCorners(pImg);
+        const foundCount = pCorners.filter(c => c.detected).length;
+        const sane = isSaneQuad(pCorners, pw, ph);
+        let barcode = {
+          valid: false
+        };
+        if (foundCount === 4 && sane) {
+          barcode = decodeOmrBarcodeFromImageData(pImg, pCorners);
+        }
+
+        // Draw live AR tracking overlay onto liveOverlayCanvasRef
+        const ov = liveOverlayCanvasRef.current;
+        if (ov) {
+          if (ov.width !== pw || ov.height !== ph) {
+            ov.width = pw;
+            ov.height = ph;
+          }
+          const oCtx = ov.getContext('2d');
+          oCtx.clearRect(0, 0, pw, ph);
+          if (foundCount >= 2 && sane) {
+            oCtx.save();
+            oCtx.strokeStyle = barcode.valid ? '#10b981' : 'rgba(56, 189, 248, 0.85)';
+            oCtx.lineWidth = barcode.valid ? 3 : 2;
+            oCtx.setLineDash(barcode.valid ? [] : [6, 5]);
+            oCtx.beginPath();
+            oCtx.moveTo(pCorners[0].x, pCorners[0].y);
+            oCtx.lineTo(pCorners[1].x, pCorners[1].y);
+            oCtx.lineTo(pCorners[2].x, pCorners[2].y);
+            oCtx.lineTo(pCorners[3].x, pCorners[3].y);
+            oCtx.closePath();
+            oCtx.stroke();
+            oCtx.setLineDash([]);
+
+            // Highlight 4 corner markers
+            pCorners.forEach(pt => {
+              oCtx.beginPath();
+              oCtx.arc(pt.x, pt.y, 7, 0, Math.PI * 2);
+              oCtx.fillStyle = pt.detected ? barcode.valid ? '#10b981' : '#38bdf8' : 'rgba(245, 158, 11, 0.65)';
+              oCtx.fill();
+              oCtx.lineWidth = 2;
+              oCtx.strokeStyle = '#ffffff';
+              oCtx.stroke();
+            });
+
+            // Highlight locked optical barcode strip in emerald green
+            if (barcode.valid && barcode.samples && barcode.samples.length === 27) {
+              const s0 = barcode.samples[0];
+              const sLast = barcode.samples[26];
+              const mx = (s0.x + sLast.x) / 2;
+              const my = (s0.y + sLast.y) / 2;
+              const len = Math.hypot(sLast.x - s0.x, sLast.y - s0.y);
+              const ang = Math.atan2(sLast.y - s0.y, sLast.x - s0.x);
+              oCtx.save();
+              oCtx.translate(mx, my);
+              oCtx.rotate(ang);
+              oCtx.fillStyle = 'rgba(16, 185, 129, 0.28)';
+              oCtx.strokeStyle = '#10b981';
+              oCtx.lineWidth = 2.5;
+              oCtx.fillRect(-len / 2 - 5, -9, len + 10, 18);
+              oCtx.strokeRect(-len / 2 - 5, -9, len + 10, 18);
+              oCtx.restore();
+            }
+            oCtx.restore();
+          }
+        }
+
+        // Check steady 2-frame lock on valid optical Quiz+Set barcode -> AUTOMATIC CAPTURE!
+        if (barcode.valid && barcode.omrQuizCode > 0) {
+          const sig = `${barcode.omrQuizCode}:${barcode.setLetter || ''}`;
+          if (stableBarcodeLockRef.current.sig === sig) {
+            stableBarcodeLockRef.current.count += 1;
+          } else {
+            stableBarcodeLockRef.current = {
+              sig,
+              count: 1
+            };
+          }
+          setLiveBarcodeLocked(true);
+          const matchedQz = quizzesList.find(q => getQuizOmrCode(q.id) === barcode.omrQuizCode);
+          const qzLabel = matchedQz ? matchedQz.title.slice(0, 32) : `Quiz #${barcode.omrQuizCode}`;
+          const setTag = barcode.setLetter ? ` • SET ${barcode.setLetter}` : '';
+          if (stableBarcodeLockRef.current.count >= 2) {
+            // AUTO-CAPTURE FULL-RES VIDEO FRAME!
+            stableBarcodeLockRef.current = {
+              sig: '',
+              count: 0
+            };
+            setLiveScanStatus(`✅ Barcode Locked (${qzLabel}${setTag}) — Auto-Captured!`);
+            playAutoCaptureChime();
+            setCameraFlash(true);
+            setTimeout(() => setCameraFlash(false), 200);
+            if (loadImageOntoScannerRef.current) {
+              loadImageOntoScannerRef.current(vid, vid.videoWidth, vid.videoHeight);
+            }
+            if (continuousBatchScan) {
+              batchCooldownUntilRef.current = Date.now() + 2800;
+            } else {
+              stopCamera();
+            }
+          } else {
+            setLiveScanStatus(`🎯 Barcode Detected (${qzLabel}${setTag}) — Hold steady to auto-capture...`);
+          }
+        } else {
+          stableBarcodeLockRef.current = {
+            sig: '',
+            count: 0
+          };
+          setLiveBarcodeLocked(false);
+          if (foundCount === 4 && sane) {
+            setLiveScanStatus('📐 4/4 Corners aligned — Reading top optical barcode...');
+          } else {
+            setLiveScanStatus(`🔍 Scanning... (${foundCount}/4 corner markers detected — keep sheet flat & well-lit)`);
+          }
+        }
+      } catch (e) {
+        // Ignore transient probe errors
+      } finally {
+        processing = false;
+      }
+    };
+    const timer = setInterval(tick, 220);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [cameraActive, autoCaptureOnDetect, continuousBatchScan, quizzesList, stopCamera]);
   const captureFromCamera = () => {
     const vid = videoRef.current;
     if (!vid || !vid.videoWidth) return;
+    playAutoCaptureChime();
     loadImageOntoScanner(vid, vid.videoWidth, vid.videoHeight);
     stopCamera();
   };
@@ -8449,6 +8680,26 @@ function AdminOmrScannerView({
       gap: '0.4rem',
       padding: '0.35rem 0.65rem',
       borderRadius: '8px',
+      background: autoCaptureOnDetect ? 'rgba(56, 189, 248, 0.14)' : 'rgba(148, 163, 184, 0.12)',
+      border: autoCaptureOnDetect ? '1px solid rgba(56, 189, 248, 0.45)' : '1px solid var(--border-color)',
+      fontSize: '0.78rem',
+      fontWeight: '700',
+      color: autoCaptureOnDetect ? '#38bdf8' : 'var(--text-muted)',
+      cursor: 'pointer',
+      margin: 0
+    },
+    title: "When enabled, the live camera automatically captures and grades as soon as it locks onto the sheet's optical barcode & 4 corner markers."
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: autoCaptureOnDetect,
+    onChange: e => setAutoCaptureOnDetect(e.target.checked)
+  }), "\uD83C\uDFAF Auto-Capture on Barcode"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.4rem',
+      padding: '0.35rem 0.65rem',
+      borderRadius: '8px',
       background: autoSaveOnScan ? 'rgba(16, 185, 129, 0.14)' : 'rgba(148, 163, 184, 0.12)',
       border: autoSaveOnScan ? '1px solid rgba(16, 185, 129, 0.45)' : '1px solid var(--border-color)',
       fontSize: '0.78rem',
@@ -8466,11 +8717,31 @@ function AdminOmrScannerView({
     type: "button",
     className: "btn-primary",
     onClick: startCamera
-  }, "\uD83D\uDCF7 Start Live Camera") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCF7 Start Live Auto-Scanner") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.35rem',
+      padding: '0.32rem 0.6rem',
+      borderRadius: '8px',
+      background: continuousBatchScan ? 'rgba(168, 85, 247, 0.16)' : 'rgba(148, 163, 184, 0.12)',
+      border: continuousBatchScan ? '1px solid rgba(168, 85, 247, 0.5)' : '1px solid var(--border-color)',
+      fontSize: '0.76rem',
+      fontWeight: '700',
+      color: continuousBatchScan ? '#c084fc' : 'var(--text-muted)',
+      cursor: 'pointer',
+      margin: 0
+    },
+    title: "Keep camera open between papers for hands-free batch scanning"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: continuousBatchScan,
+    onChange: e => setContinuousBatchScan(e.target.checked)
+  }), "\uD83D\uDD01 Batch Mode"), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-success",
     onClick: captureFromCamera
-  }, "\uD83D\uDCF8 Capture & Grade Paper"), /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCF8 Manual Capture"), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-danger",
     onClick: stopCamera
@@ -8551,12 +8822,14 @@ function AdminOmrScannerView({
   }, autoSaveBanner.status === 'saved' ? /*#__PURE__*/React.createElement("span", null, "\u2705 ", /*#__PURE__*/React.createElement("strong", null, "Score Automatically Moved to Student Record:"), ' ', autoSaveBanner.studentName, autoSaveBanner.studentNumber ? ` [${autoSaveBanner.studentNumber}]` : '', " \u2014", ' ', autoSaveBanner.quizTitle, autoSaveBanner.setLetter ? ` (SET ${autoSaveBanner.setLetter})` : '', ":", ' ', /*#__PURE__*/React.createElement("strong", null, autoSaveBanner.score, "/", autoSaveBanner.total, " (", autoSaveBanner.percentage, "%)")) : /*#__PURE__*/React.createElement("span", null, autoSaveBanner.status === 'saving' ? '⏳ ' : '⚠️ ', autoSaveBanner.message)), cameraActive && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'relative',
-      maxWidth: '580px',
+      maxWidth: '600px',
       margin: '0 auto 1.25rem auto',
       borderRadius: '12px',
       overflow: 'hidden',
-      border: '2px solid #34d399',
-      background: '#000'
+      border: liveBarcodeLocked ? '3px solid #10b981' : '2px solid #38bdf8',
+      boxShadow: liveBarcodeLocked ? '0 0 24px rgba(16, 185, 129, 0.45)' : '0 8px 24px rgba(0,0,0,0.35)',
+      background: '#000',
+      transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
     }
   }, /*#__PURE__*/React.createElement("video", {
     ref: videoRef,
@@ -8566,28 +8839,57 @@ function AdminOmrScannerView({
       width: '100%',
       display: 'block'
     }
+  }), /*#__PURE__*/React.createElement("canvas", {
+    ref: liveOverlayCanvasRef,
+    style: {
+      position: 'absolute',
+      inset: 0,
+      width: '100%',
+      height: '100%',
+      pointerEvents: 'none'
+    }
+  }), cameraFlash && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'absolute',
+      inset: 0,
+      background: 'rgba(255,255,255,0.75)',
+      pointerEvents: 'none'
+    }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
-      inset: '8% 8%',
-      border: '2px dashed rgba(52, 211, 153, 0.85)',
-      borderRadius: '6px',
+      inset: '7% 7%',
+      border: liveBarcodeLocked ? '2px solid rgba(16, 185, 129, 0.95)' : '2px dashed rgba(56, 189, 248, 0.75)',
+      borderRadius: '8px',
       pointerEvents: 'none',
       display: 'flex',
-      alignItems: 'flex-end',
-      justifyContent: 'center',
-      paddingBottom: '0.6rem'
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '0.55rem'
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      background: 'rgba(0,0,0,0.7)',
-      color: '#34d399',
-      padding: '0.25rem 0.7rem',
+      background: liveBarcodeLocked ? 'rgba(16, 185, 129, 0.92)' : 'rgba(15, 23, 42, 0.82)',
+      color: '#ffffff',
+      padding: '0.25rem 0.75rem',
+      borderRadius: '999px',
+      fontSize: '0.76rem',
+      fontWeight: '700',
+      letterSpacing: '0.3px'
+    }
+  }, autoCaptureOnDetect ? liveBarcodeLocked ? '🎯 BARCODE LOCKED — AUTO-CAPTURING!' : '📡 AUTO-CAPTURE ACTIVE (BARCODE + 4 CORNERS)' : '📷 MANUAL CAPTURE MODE'), /*#__PURE__*/React.createElement("span", {
+    style: {
+      background: 'rgba(0,0,0,0.78)',
+      color: liveBarcodeLocked ? '#34d399' : '#e2e8f0',
+      padding: '0.3rem 0.8rem',
       borderRadius: '999px',
       fontSize: '0.78rem',
-      fontWeight: '600'
+      fontWeight: '600',
+      textAlign: 'center',
+      maxWidth: '94%'
     }
-  }, "Align all 4 black corner squares inside this frame"))), /*#__PURE__*/React.createElement("div", {
+  }, liveScanStatus))), /*#__PURE__*/React.createElement("div", {
     className: "grid-2col",
     style: {
       gap: '1.25rem',

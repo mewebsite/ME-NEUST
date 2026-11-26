@@ -4974,6 +4974,7 @@ function AdminAttemptTopicBreakdown({
   quizzesList = []
 }) {
   const [resultFilter, setResultFilter] = useState('all'); // 'all' | 'wrong' | 'correct'
+  const [highlightedNum, setHighlightedNum] = useState(null);
   const resolved = React.useMemo(() => resolveAttemptQuestionTopics(attempt, quizzesList), [attempt, quizzesList]);
   const topicSummary = React.useMemo(() => {
     const map = {};
@@ -4990,12 +4991,18 @@ function AdminAttemptTopicBreakdown({
     return Object.values(map).sort((a, b) => b.total - a.total);
   }, [resolved.items]);
   const visibleItems = React.useMemo(() => {
-    if (!resolved.hasStudentAnswers || resultFilter === 'all') return resolved.items;
-    if (resultFilter === 'correct') return resolved.items.filter(i => i.isCorrect === true);
-    return resolved.items.filter(i => i.isCorrect !== true);
-  }, [resolved.items, resolved.hasStudentAnswers, resultFilter]);
-  const correctTotal = resolved.items.filter(i => i.isCorrect === true).length;
-  const wrongTotal = resolved.items.length - correctTotal;
+    let list = resolved.items;
+    if (resolved.hasStudentAnswers && resultFilter !== 'all') {
+      list = resultFilter === 'correct' ? list.filter(i => i.isCorrect === true) : list.filter(i => i.isCorrect !== true);
+    }
+    if (highlightedNum !== null) {
+      return list.filter(i => i.num === highlightedNum);
+    }
+    return list;
+  }, [resolved.items, resolved.hasStudentAnswers, resultFilter, highlightedNum]);
+  const correctTotal = resolved.hasStudentAnswers ? resolved.items.filter(i => i.isCorrect === true).length : getAttemptScore(attempt);
+  const totalItemsCount = resolved.items.length > 0 ? resolved.items.length : getAttemptTotal(attempt);
+  const wrongTotal = Math.max(0, totalItemsCount - correctTotal);
   const shortModLabel = modStr => {
     const m = String(modStr || '');
     const match = m.match(/Module\s*\d+/i);
@@ -5012,18 +5019,47 @@ function AdminAttemptTopicBreakdown({
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+        marginBottom: '0.45rem'
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
         fontSize: '0.82rem',
         fontWeight: '700',
-        color: '#38bdf8',
-        marginBottom: '0.35rem'
+        color: '#38bdf8'
       }
-    }, "\uD83D\uDCDA Per-Question Topic Log Not Recorded on Legacy Attempt"), /*#__PURE__*/React.createElement("p", {
+    }, "\uD83D\uDCDA Per-Question Topic & Correct/Wrong Log Not Recorded on Legacy Attempt"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        gap: '0.4rem',
+        fontSize: '0.75rem',
+        fontWeight: '700'
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '0.18rem 0.5rem',
+        borderRadius: '6px',
+        background: 'rgba(16, 185, 129, 0.16)',
+        color: '#34d399'
+      }
+    }, "\u2705 Correct: ", correctTotal), /*#__PURE__*/React.createElement("span", {
+      style: {
+        padding: '0.18rem 0.5rem',
+        borderRadius: '6px',
+        background: 'rgba(239, 68, 68, 0.16)',
+        color: '#f87171'
+      }
+    }, "\u274C Wrong: ", wrongTotal))), /*#__PURE__*/React.createElement("p", {
       style: {
         fontSize: '0.78rem',
         color: 'var(--text-muted)',
         margin: '0 0 0.5rem 0'
       }
-    }, "This older quiz attempt was submitted before per-question topic logging was enabled. All new online quizzes and OMR scanned papers automatically record the exact topic for every question number (#1 to #N)."), modEntries.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, "This older quiz attempt was submitted before per-question logging was enabled. All new online quizzes and OMR scanned papers automatically save the exact Topic and Correct/Wrong status for every question number (#1 to #N)."), modEntries.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: 'flex',
         flexWrap: 'wrap',
@@ -5038,13 +5074,13 @@ function AdminAttemptTopicBreakdown({
         style: {
           fontSize: '0.72rem'
         }
-      }, modName, ": ", st.correct, "/", st.total, " (", pct, "%)");
+      }, modName, ": \u2705 ", st.correct, " / \u274C ", Math.max(0, st.total - st.correct), " (", pct, "%)");
     })));
   }
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: '0.9rem 1rem',
-      background: 'rgba(15, 23, 42, 0.6)',
+      padding: '0.95rem 1rem',
+      background: 'rgba(15, 23, 42, 0.65)',
       borderRadius: '8px',
       border: '1px solid rgba(56, 189, 248, 0.35)'
     }
@@ -5055,27 +5091,52 @@ function AdminAttemptTopicBreakdown({
       alignItems: 'center',
       flexWrap: 'wrap',
       gap: '0.5rem',
-      marginBottom: '0.65rem'
+      marginBottom: '0.7rem'
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: '0.86rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      flexWrap: 'wrap'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.88rem',
       fontWeight: '700',
       color: '#38bdf8'
     }
-  }, "\uD83D\uDCDA Topic per Question Number (", resolved.items.length, " Questions)"), resolved.source === 'set' && /*#__PURE__*/React.createElement("span", {
+  }, "\uD83D\uDCDA Topic & Correct/Wrong per Question Number (", resolved.items.length, " Questions)"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: '0.18rem 0.55rem',
+      borderRadius: '999px',
+      fontSize: '0.73rem',
+      fontWeight: '700',
+      background: 'rgba(16, 185, 129, 0.18)',
+      border: '1px solid rgba(16, 185, 129, 0.45)',
+      color: '#34d399'
+    }
+  }, "\u2705 ", correctTotal, " Correct"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: '0.18rem 0.55rem',
+      borderRadius: '999px',
+      fontSize: '0.73rem',
+      fontWeight: '700',
+      background: 'rgba(239, 68, 68, 0.18)',
+      border: '1px solid rgba(239, 68, 68, 0.45)',
+      color: '#f87171'
+    }
+  }, "\u274C ", wrongTotal, " Wrong"), resolved.source === 'set' && /*#__PURE__*/React.createElement("span", {
     className: "badge badge-student",
     style: {
-      marginLeft: '0.5rem',
       fontSize: '0.7rem'
     }
-  }, "From Saved SET ", resolved.setLetter), resolved.source === 'manual_quiz' && /*#__PURE__*/React.createElement("span", {
+  }, "Saved SET ", resolved.setLetter), resolved.source === 'manual_quiz' && /*#__PURE__*/React.createElement("span", {
     className: "badge badge-student",
     style: {
-      marginLeft: '0.5rem',
       fontSize: '0.7rem'
     }
-  }, "From Quiz Item List")), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("div", {
+  }, "Quiz Item List")), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: '0.35rem',
@@ -5085,33 +5146,102 @@ function AdminAttemptTopicBreakdown({
     type: "button",
     className: "btn-secondary",
     style: {
-      padding: '0.18rem 0.55rem',
+      padding: '0.2rem 0.6rem',
       fontSize: '0.73rem',
-      borderColor: resultFilter === 'all' ? '#38bdf8' : undefined,
-      color: resultFilter === 'all' ? '#38bdf8' : undefined
+      borderColor: resultFilter === 'all' && highlightedNum === null ? '#38bdf8' : undefined,
+      color: resultFilter === 'all' && highlightedNum === null ? '#38bdf8' : undefined
     },
-    onClick: () => setResultFilter('all')
+    onClick: () => {
+      setResultFilter('all');
+      setHighlightedNum(null);
+    }
   }, "All (", resolved.items.length, ")"), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-secondary",
     style: {
-      padding: '0.18rem 0.55rem',
+      padding: '0.2rem 0.6rem',
       fontSize: '0.73rem',
       borderColor: resultFilter === 'wrong' ? '#f87171' : undefined,
       color: resultFilter === 'wrong' ? '#f87171' : undefined
     },
-    onClick: () => setResultFilter('wrong')
+    onClick: () => {
+      setResultFilter('wrong');
+      setHighlightedNum(null);
+    }
   }, "\u274C Wrong (", wrongTotal, ")"), /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-secondary",
     style: {
-      padding: '0.18rem 0.55rem',
+      padding: '0.2rem 0.6rem',
       fontSize: '0.73rem',
       borderColor: resultFilter === 'correct' ? '#34d399' : undefined,
       color: resultFilter === 'correct' ? '#34d399' : undefined
     },
-    onClick: () => setResultFilter('correct')
-  }, "\u2705 Correct (", correctTotal, ")"))), topicSummary.length > 0 && /*#__PURE__*/React.createElement("div", {
+    onClick: () => {
+      setResultFilter('correct');
+      setHighlightedNum(null);
+    }
+  }, "\u2705 Correct (", correctTotal, ")"))), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: '0.75rem',
+      padding: '0.55rem 0.65rem',
+      background: 'rgba(2, 6, 23, 0.45)',
+      borderRadius: '6px',
+      border: '1px solid var(--border-color)'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '0.4rem'
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: '0.72rem',
+      fontWeight: '700',
+      color: 'var(--text-muted)',
+      textTransform: 'uppercase',
+      letterSpacing: '0.4px'
+    }
+  }, "Correct & Wrong Map per Question Number (Click any # to filter)"), highlightedNum !== null && /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    className: "btn-secondary",
+    style: {
+      padding: '0.1rem 0.45rem',
+      fontSize: '0.68rem'
+    },
+    onClick: () => setHighlightedNum(null)
+  }, "Show All Numbers")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: '0.3rem',
+      maxHeight: '92px',
+      overflowY: 'auto'
+    }
+  }, resolved.items.map(item => {
+    const isSelected = highlightedNum === item.num;
+    const isOk = item.isCorrect === true;
+    const ansLabel = item.studentAnswer ? item.studentAnswer : '—';
+    return /*#__PURE__*/React.createElement("button", {
+      key: `${attempt.id}_pill_${item.num}`,
+      type: "button",
+      onClick: () => setHighlightedNum(isSelected ? null : item.num),
+      title: `#${item.num} (${item.topic}): Student=${ansLabel}, Key=${item.correctAnswer || '—'} → ${isOk ? 'CORRECT' : 'WRONG'}`,
+      style: {
+        padding: '0.18rem 0.42rem',
+        borderRadius: '5px',
+        fontSize: '0.72rem',
+        fontFamily: 'monospace',
+        fontWeight: '700',
+        cursor: 'pointer',
+        background: isOk ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)',
+        border: isSelected ? '2px solid #38bdf8' : isOk ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
+        color: isOk ? '#34d399' : '#f87171'
+      }
+    }, "#", item.num, " ", isOk ? '✅' : '❌');
+  }))), topicSummary.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       flexWrap: 'wrap',
@@ -5148,10 +5278,10 @@ function AdminAttemptTopicBreakdown({
         border: `1px solid ${accent.bd}`,
         color: accent.fg
       }
-    }, ts.topic, ": ", resolved.hasStudentAnswers ? `${ts.correct}/${ts.total} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`);
+    }, ts.topic, ": ", resolved.hasStudentAnswers ? `✅${ts.correct} ❌${ts.total - ts.correct} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`);
   })), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxHeight: '260px',
+      maxHeight: '280px',
       overflowY: 'auto',
       borderRadius: '6px',
       border: '1px solid var(--border-color)'
@@ -5164,56 +5294,80 @@ function AdminAttemptTopicBreakdown({
     }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '58px'
+      width: '56px'
     }
-  }, "Q#"), /*#__PURE__*/React.createElement("th", null, "Topic"), /*#__PURE__*/React.createElement("th", null, "Module"), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("th", {
+  }, "Q#"), /*#__PURE__*/React.createElement("th", null, "Topic"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '90px'
+      width: '88px'
     }
-  }, "Student"), /*#__PURE__*/React.createElement("th", {
+  }, "Student Ans"), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '72px'
+      width: '80px'
     }
-  }, "Key"), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("th", {
+  }, "Correct Key"), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '92px'
+      width: '112px'
     }
-  }, "Result"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => /*#__PURE__*/React.createElement("tr", {
-    key: `${attempt.id}_q_${item.num}`
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '800',
-      fontFamily: 'monospace',
-      color: '#38bdf8'
-    }
-  }, "#", item.num), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontWeight: '600',
-      color: 'var(--text-main)'
-    }
-  }, item.topic), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-    className: "badge badge-student",
-    style: {
-      fontSize: '0.68rem'
-    },
-    title: item.module
-  }, shortModLabel(item.module))), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontFamily: 'monospace',
-      fontWeight: '700'
-    }
-  }, item.studentAnswer || '—'), /*#__PURE__*/React.createElement("td", {
-    style: {
-      fontFamily: 'monospace',
-      fontWeight: '700',
-      color: 'var(--primary-light)'
-    }
-  }, item.correctAnswer || '—'), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
-    className: `badge ${item.isCorrect ? 'badge-status' : 'badge-admin'}`,
-    style: {
-      fontSize: '0.68rem'
-    }
-  }, item.isCorrect ? '✅ Correct' : '❌ Wrong'))))))));
+  }, "Correct / Wrong"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => {
+    const hasResult = resolved.hasStudentAnswers && item.isCorrect !== null && item.isCorrect !== undefined;
+    const isOk = item.isCorrect === true;
+    const rowBg = !hasResult ? undefined : isOk ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.10)';
+    const wrongLabel = !item.studentAnswer ? '❌ WRONG (Blank)' : item.studentAnswer === 'MULTI' ? '❌ WRONG (Multi)' : '❌ WRONG';
+    return /*#__PURE__*/React.createElement("tr", {
+      key: `${attempt.id}_q_${item.num}`,
+      style: {
+        background: rowBg
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '800',
+        fontFamily: 'monospace',
+        color: '#38bdf8'
+      }
+    }, "#", item.num), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontWeight: '600',
+        color: 'var(--text-main)'
+      }
+    }, item.topic), /*#__PURE__*/React.createElement("td", null, /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-student",
+      style: {
+        fontSize: '0.68rem'
+      },
+      title: item.module
+    }, shortModLabel(item.module))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontFamily: 'monospace',
+        fontWeight: '800',
+        color: !hasResult ? 'var(--text-muted)' : isOk ? '#34d399' : '#f87171'
+      }
+    }, hasResult ? item.studentAnswer || '—' : '—'), /*#__PURE__*/React.createElement("td", {
+      style: {
+        fontFamily: 'monospace',
+        fontWeight: '800',
+        color: 'var(--primary-light)'
+      }
+    }, item.correctAnswer || '—'), /*#__PURE__*/React.createElement("td", null, hasResult ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: 'inline-block',
+        padding: '0.18rem 0.5rem',
+        borderRadius: '999px',
+        fontSize: '0.7rem',
+        fontWeight: '800',
+        background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
+        border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
+        color: isOk ? '#34d399' : '#f87171',
+        whiteSpace: 'nowrap'
+      }
+    }, isOk ? '✅ CORRECT' : wrongLabel) : /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-student",
+      style: {
+        fontSize: '0.68rem',
+        opacity: 0.75
+      },
+      title: "Legacy attempt recorded before per-item answer saving"
+    }, "Legacy")));
+  })))));
 }
 
 // QUIZ RESULTS & STUDENT SCORE LOGS MODAL (SUPPORTS BOTH ADMIN AUDIT & STUDENT SCORE HISTORY)
@@ -5341,7 +5495,7 @@ function QuizResultsModal({
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("th", null, "Student Name"), !isStudent && /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Assessment / Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), !isStudent && /*#__PURE__*/React.createElement("th", null, "Topics per Q#"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, !isStudent && /*#__PURE__*/React.createElement("th", null, "Student Name"), !isStudent && /*#__PURE__*/React.createElement("th", null, "School / University"), /*#__PURE__*/React.createElement("th", null, "Assessment / Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), !isStudent && /*#__PURE__*/React.createElement("th", null, "Topics & Correct/Wrong"))), /*#__PURE__*/React.createElement("tbody", null, filteredAttempts.map(att => {
     const isExpanded = !isStudent && expandedAttemptId === att.id;
     return /*#__PURE__*/React.createElement(React.Fragment, {
       key: att.id
@@ -5386,7 +5540,7 @@ function QuizResultsModal({
         color: isExpanded ? '#38bdf8' : undefined
       },
       onClick: () => setExpandedAttemptId(isExpanded ? null : att.id)
-    }, isExpanded ? '🔼 Hide Topics' : '📋 View Topics'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, isExpanded ? '🔼 Hide Details' : '📋 Topics & ✓/✗'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 9,
       style: {
         padding: '0.5rem 0.75rem',
@@ -5635,7 +5789,7 @@ function UserDetailModal({
     }
   }, /*#__PURE__*/React.createElement("table", {
     className: "data-table"
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), /*#__PURE__*/React.createElement("th", null, "Topics per Q#"))), /*#__PURE__*/React.createElement("tbody", null, attempts.map(att => {
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", null, "Quiz Title"), /*#__PURE__*/React.createElement("th", null, "Score"), /*#__PURE__*/React.createElement("th", null, "Percentage"), /*#__PURE__*/React.createElement("th", null, "Status"), /*#__PURE__*/React.createElement("th", null, "Time Taken"), /*#__PURE__*/React.createElement("th", null, "Submitted At"), /*#__PURE__*/React.createElement("th", null, "Topics & Correct/Wrong"))), /*#__PURE__*/React.createElement("tbody", null, attempts.map(att => {
     const isExpanded = expandedAttemptId === att.id;
     return /*#__PURE__*/React.createElement(React.Fragment, {
       key: att.id
@@ -5677,7 +5831,7 @@ function UserDetailModal({
         color: isExpanded ? '#38bdf8' : undefined
       },
       onClick: () => setExpandedAttemptId(isExpanded ? null : att.id)
-    }, isExpanded ? '🔼 Hide Topics' : '📋 View Topics'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    }, isExpanded ? '🔼 Hide Details' : '📋 Topics & ✓/✗'))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
       colSpan: 7,
       style: {
         padding: '0.5rem 0.75rem',

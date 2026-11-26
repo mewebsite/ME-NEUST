@@ -4192,6 +4192,7 @@ function resolveAttemptQuestionTopics(attempt, quizzesList = []) {
 
 function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
   const [resultFilter, setResultFilter] = useState('all'); // 'all' | 'wrong' | 'correct'
+  const [highlightedNum, setHighlightedNum] = useState(null);
   const resolved = React.useMemo(() => resolveAttemptQuestionTopics(attempt, quizzesList), [attempt, quizzesList]);
 
   const topicSummary = React.useMemo(() => {
@@ -4206,13 +4207,23 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
   }, [resolved.items]);
 
   const visibleItems = React.useMemo(() => {
-    if (!resolved.hasStudentAnswers || resultFilter === 'all') return resolved.items;
-    if (resultFilter === 'correct') return resolved.items.filter(i => i.isCorrect === true);
-    return resolved.items.filter(i => i.isCorrect !== true);
-  }, [resolved.items, resolved.hasStudentAnswers, resultFilter]);
+    let list = resolved.items;
+    if (resolved.hasStudentAnswers && resultFilter !== 'all') {
+      list = resultFilter === 'correct'
+        ? list.filter(i => i.isCorrect === true)
+        : list.filter(i => i.isCorrect !== true);
+    }
+    if (highlightedNum !== null) {
+      return list.filter(i => i.num === highlightedNum);
+    }
+    return list;
+  }, [resolved.items, resolved.hasStudentAnswers, resultFilter, highlightedNum]);
 
-  const correctTotal = resolved.items.filter(i => i.isCorrect === true).length;
-  const wrongTotal = resolved.items.length - correctTotal;
+  const correctTotal = resolved.hasStudentAnswers
+    ? resolved.items.filter(i => i.isCorrect === true).length
+    : getAttemptScore(attempt);
+  const totalItemsCount = resolved.items.length > 0 ? resolved.items.length : getAttemptTotal(attempt);
+  const wrongTotal = Math.max(0, totalItemsCount - correctTotal);
 
   const shortModLabel = (modStr) => {
     const m = String(modStr || '');
@@ -4226,11 +4237,17 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
       : [];
     return (
       <div style={{ padding: '0.85rem 1rem', background: 'rgba(15, 23, 42, 0.55)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.25)' }}>
-        <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#38bdf8', marginBottom: '0.35rem' }}>
-          📚 Per-Question Topic Log Not Recorded on Legacy Attempt
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.45rem' }}>
+          <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#38bdf8' }}>
+            📚 Per-Question Topic &amp; Correct/Wrong Log Not Recorded on Legacy Attempt
+          </div>
+          <div style={{ display: 'flex', gap: '0.4rem', fontSize: '0.75rem', fontWeight: '700' }}>
+            <span style={{ padding: '0.18rem 0.5rem', borderRadius: '6px', background: 'rgba(16, 185, 129, 0.16)', color: '#34d399' }}>✅ Correct: {correctTotal}</span>
+            <span style={{ padding: '0.18rem 0.5rem', borderRadius: '6px', background: 'rgba(239, 68, 68, 0.16)', color: '#f87171' }}>❌ Wrong: {wrongTotal}</span>
+          </div>
         </div>
         <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0 0 0.5rem 0' }}>
-          This older quiz attempt was submitted before per-question topic logging was enabled. All new online quizzes and OMR scanned papers automatically record the exact topic for every question number (#1 to #N).
+          This older quiz attempt was submitted before per-question logging was enabled. All new online quizzes and OMR scanned papers automatically save the exact Topic and Correct/Wrong status for every question number (#1 to #N).
         </p>
         {modEntries.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.4rem' }}>
@@ -4238,7 +4255,7 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
               const pct = st.total > 0 ? Math.round((st.correct / st.total) * 100) : 0;
               return (
                 <span key={modName} className="badge badge-student" style={{ fontSize: '0.72rem' }}>
-                  {modName}: {st.correct}/{st.total} ({pct}%)
+                  {modName}: ✅ {st.correct} / ❌ {Math.max(0, st.total - st.correct)} ({pct}%)
                 </span>
               );
             })}
@@ -4249,20 +4266,27 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
   }
 
   return (
-    <div style={{ padding: '0.9rem 1rem', background: 'rgba(15, 23, 42, 0.6)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.65rem' }}>
-        <div>
-          <span style={{ fontSize: '0.86rem', fontWeight: '700', color: '#38bdf8' }}>
-            📚 Topic per Question Number ({resolved.items.length} Questions)
+    <div style={{ padding: '0.95rem 1rem', background: 'rgba(15, 23, 42, 0.65)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.35)' }}>
+      {/* HEADER + CORRECT/WRONG SUMMARY COUNTERS & FILTERS */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.7rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.88rem', fontWeight: '700', color: '#38bdf8' }}>
+            📚 Topic &amp; Correct/Wrong per Question Number ({resolved.items.length} Questions)
+          </span>
+          <span style={{ padding: '0.18rem 0.55rem', borderRadius: '999px', fontSize: '0.73rem', fontWeight: '700', background: 'rgba(16, 185, 129, 0.18)', border: '1px solid rgba(16, 185, 129, 0.45)', color: '#34d399' }}>
+            ✅ {correctTotal} Correct
+          </span>
+          <span style={{ padding: '0.18rem 0.55rem', borderRadius: '999px', fontSize: '0.73rem', fontWeight: '700', background: 'rgba(239, 68, 68, 0.18)', border: '1px solid rgba(239, 68, 68, 0.45)', color: '#f87171' }}>
+            ❌ {wrongTotal} Wrong
           </span>
           {resolved.source === 'set' && (
-            <span className="badge badge-student" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
-              From Saved SET {resolved.setLetter}
+            <span className="badge badge-student" style={{ fontSize: '0.7rem' }}>
+              Saved SET {resolved.setLetter}
             </span>
           )}
           {resolved.source === 'manual_quiz' && (
-            <span className="badge badge-student" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
-              From Quiz Item List
+            <span className="badge badge-student" style={{ fontSize: '0.7rem' }}>
+              Quiz Item List
             </span>
           )}
         </div>
@@ -4272,12 +4296,12 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
               type="button"
               className="btn-secondary"
               style={{
-                padding: '0.18rem 0.55rem',
+                padding: '0.2rem 0.6rem',
                 fontSize: '0.73rem',
-                borderColor: resultFilter === 'all' ? '#38bdf8' : undefined,
-                color: resultFilter === 'all' ? '#38bdf8' : undefined
+                borderColor: (resultFilter === 'all' && highlightedNum === null) ? '#38bdf8' : undefined,
+                color: (resultFilter === 'all' && highlightedNum === null) ? '#38bdf8' : undefined
               }}
-              onClick={() => setResultFilter('all')}
+              onClick={() => { setResultFilter('all'); setHighlightedNum(null); }}
             >
               All ({resolved.items.length})
             </button>
@@ -4285,12 +4309,12 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
               type="button"
               className="btn-secondary"
               style={{
-                padding: '0.18rem 0.55rem',
+                padding: '0.2rem 0.6rem',
                 fontSize: '0.73rem',
                 borderColor: resultFilter === 'wrong' ? '#f87171' : undefined,
                 color: resultFilter === 'wrong' ? '#f87171' : undefined
               }}
-              onClick={() => setResultFilter('wrong')}
+              onClick={() => { setResultFilter('wrong'); setHighlightedNum(null); }}
             >
               ❌ Wrong ({wrongTotal})
             </button>
@@ -4298,18 +4322,69 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
               type="button"
               className="btn-secondary"
               style={{
-                padding: '0.18rem 0.55rem',
+                padding: '0.2rem 0.6rem',
                 fontSize: '0.73rem',
                 borderColor: resultFilter === 'correct' ? '#34d399' : undefined,
                 color: resultFilter === 'correct' ? '#34d399' : undefined
               }}
-              onClick={() => setResultFilter('correct')}
+              onClick={() => { setResultFilter('correct'); setHighlightedNum(null); }}
             >
               ✅ Correct ({correctTotal})
             </button>
           </div>
         )}
       </div>
+
+      {/* QUICK VISUAL CORRECT / WRONG PER QUESTION NUMBER GRID (#1..#N) */}
+      {resolved.hasStudentAnswers && (
+        <div style={{ marginBottom: '0.75rem', padding: '0.55rem 0.65rem', background: 'rgba(2, 6, 23, 0.45)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              Correct &amp; Wrong Map per Question Number (Click any # to filter)
+            </span>
+            {highlightedNum !== null && (
+              <button
+                type="button"
+                className="btn-secondary"
+                style={{ padding: '0.1rem 0.45rem', fontSize: '0.68rem' }}
+                onClick={() => setHighlightedNum(null)}
+              >
+                Show All Numbers
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxHeight: '92px', overflowY: 'auto' }}>
+            {resolved.items.map(item => {
+              const isSelected = highlightedNum === item.num;
+              const isOk = item.isCorrect === true;
+              const ansLabel = item.studentAnswer ? item.studentAnswer : '—';
+              return (
+                <button
+                  key={`${attempt.id}_pill_${item.num}`}
+                  type="button"
+                  onClick={() => setHighlightedNum(isSelected ? null : item.num)}
+                  title={`#${item.num} (${item.topic}): Student=${ansLabel}, Key=${item.correctAnswer || '—'} → ${isOk ? 'CORRECT' : 'WRONG'}`}
+                  style={{
+                    padding: '0.18rem 0.42rem',
+                    borderRadius: '5px',
+                    fontSize: '0.72rem',
+                    fontFamily: 'monospace',
+                    fontWeight: '700',
+                    cursor: 'pointer',
+                    background: isOk ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)',
+                    border: isSelected
+                      ? '2px solid #38bdf8'
+                      : (isOk ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)'),
+                    color: isOk ? '#34d399' : '#f87171'
+                  }}
+                >
+                  #{item.num} {isOk ? '✅' : '❌'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* TOPIC SUMMARY CHIPS */}
       {topicSummary.length > 0 && (
@@ -4336,53 +4411,81 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
                   color: accent.fg
                 }}
               >
-                {ts.topic}: {resolved.hasStudentAnswers ? `${ts.correct}/${ts.total} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`}
+                {ts.topic}: {resolved.hasStudentAnswers ? `✅${ts.correct} ❌${ts.total - ts.correct} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`}
               </span>
             );
           })}
         </div>
       )}
 
-      {/* QUESTION NUMBER -> TOPIC TABLE */}
-      <div style={{ maxHeight: '260px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+      {/* QUESTION NUMBER -> TOPIC + CORRECT/WRONG TABLE */}
+      <div style={{ maxHeight: '280px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
         <table className="data-table" style={{ marginBottom: 0, fontSize: '0.79rem' }}>
           <thead>
             <tr>
-              <th style={{ width: '58px' }}>Q#</th>
+              <th style={{ width: '56px' }}>Q#</th>
               <th>Topic</th>
               <th>Module</th>
-              {resolved.hasStudentAnswers && <th style={{ width: '90px' }}>Student</th>}
-              <th style={{ width: '72px' }}>Key</th>
-              {resolved.hasStudentAnswers && <th style={{ width: '92px' }}>Result</th>}
+              <th style={{ width: '88px' }}>Student Ans</th>
+              <th style={{ width: '80px' }}>Correct Key</th>
+              <th style={{ width: '112px' }}>Correct / Wrong</th>
             </tr>
           </thead>
           <tbody>
-            {visibleItems.map(item => (
-              <tr key={`${attempt.id}_q_${item.num}`}>
-                <td style={{ fontWeight: '800', fontFamily: 'monospace', color: '#38bdf8' }}>#{item.num}</td>
-                <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>{item.topic}</td>
-                <td>
-                  <span className="badge badge-student" style={{ fontSize: '0.68rem' }} title={item.module}>
-                    {shortModLabel(item.module)}
-                  </span>
-                </td>
-                {resolved.hasStudentAnswers && (
-                  <td style={{ fontFamily: 'monospace', fontWeight: '700' }}>
-                    {item.studentAnswer || '—'}
-                  </td>
-                )}
-                <td style={{ fontFamily: 'monospace', fontWeight: '700', color: 'var(--primary-light)' }}>
-                  {item.correctAnswer || '—'}
-                </td>
-                {resolved.hasStudentAnswers && (
+            {visibleItems.map(item => {
+              const hasResult = resolved.hasStudentAnswers && item.isCorrect !== null && item.isCorrect !== undefined;
+              const isOk = item.isCorrect === true;
+              const rowBg = !hasResult
+                ? undefined
+                : isOk
+                  ? 'rgba(16, 185, 129, 0.08)'
+                  : 'rgba(239, 68, 68, 0.10)';
+              const wrongLabel = !item.studentAnswer
+                ? '❌ WRONG (Blank)'
+                : item.studentAnswer === 'MULTI'
+                  ? '❌ WRONG (Multi)'
+                  : '❌ WRONG';
+              return (
+                <tr key={`${attempt.id}_q_${item.num}`} style={{ background: rowBg }}>
+                  <td style={{ fontWeight: '800', fontFamily: 'monospace', color: '#38bdf8' }}>#{item.num}</td>
+                  <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>{item.topic}</td>
                   <td>
-                    <span className={`badge ${item.isCorrect ? 'badge-status' : 'badge-admin'}`} style={{ fontSize: '0.68rem' }}>
-                      {item.isCorrect ? '✅ Correct' : '❌ Wrong'}
+                    <span className="badge badge-student" style={{ fontSize: '0.68rem' }} title={item.module}>
+                      {shortModLabel(item.module)}
                     </span>
                   </td>
-                )}
-              </tr>
-            ))}
+                  <td style={{ fontFamily: 'monospace', fontWeight: '800', color: !hasResult ? 'var(--text-muted)' : (isOk ? '#34d399' : '#f87171') }}>
+                    {hasResult ? (item.studentAnswer || '—') : '—'}
+                  </td>
+                  <td style={{ fontFamily: 'monospace', fontWeight: '800', color: 'var(--primary-light)' }}>
+                    {item.correctAnswer || '—'}
+                  </td>
+                  <td>
+                    {hasResult ? (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.18rem 0.5rem',
+                          borderRadius: '999px',
+                          fontSize: '0.7rem',
+                          fontWeight: '800',
+                          background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
+                          border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
+                          color: isOk ? '#34d399' : '#f87171',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {isOk ? '✅ CORRECT' : wrongLabel}
+                      </span>
+                    ) : (
+                      <span className="badge badge-student" style={{ fontSize: '0.68rem', opacity: 0.75 }} title="Legacy attempt recorded before per-item answer saving">
+                        Legacy
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -4501,7 +4604,7 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
                   <th>Status</th>
                   <th>Time Taken</th>
                   <th>Submitted At</th>
-                  {!isStudent && <th>Topics per Q#</th>}
+                  {!isStudent && <th>Topics &amp; Correct/Wrong</th>}
                 </tr>
               </thead>
               <tbody>
@@ -4539,7 +4642,7 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
                               style={{ padding: '0.24rem 0.6rem', fontSize: '0.74rem', borderColor: isExpanded ? '#38bdf8' : undefined, color: isExpanded ? '#38bdf8' : undefined }}
                               onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
                             >
-                              {isExpanded ? '🔼 Hide Topics' : '📋 View Topics'}
+                              {isExpanded ? '🔼 Hide Details' : '📋 Topics & ✓/✗'}
                             </button>
                           </td>
                         )}
@@ -4685,7 +4788,7 @@ function UserDetailModal({ user, attemptsList = [], quizzesList = [], onClose })
                   <th>Status</th>
                   <th>Time Taken</th>
                   <th>Submitted At</th>
-                  <th>Topics per Q#</th>
+                  <th>Topics &amp; Correct/Wrong</th>
                 </tr>
               </thead>
               <tbody>
@@ -4717,7 +4820,7 @@ function UserDetailModal({ user, attemptsList = [], quizzesList = [], onClose })
                             style={{ padding: '0.24rem 0.6rem', fontSize: '0.74rem', borderColor: isExpanded ? '#38bdf8' : undefined, color: isExpanded ? '#38bdf8' : undefined }}
                             onClick={() => setExpandedAttemptId(isExpanded ? null : att.id)}
                           >
-                            {isExpanded ? '🔼 Hide Topics' : '📋 View Topics'}
+                            {isExpanded ? '🔼 Hide Details' : '📋 Topics & ✓/✗'}
                           </button>
                         </td>
                       </tr>

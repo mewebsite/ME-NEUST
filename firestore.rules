@@ -17,6 +17,7 @@ rules_version = '2';
 //      - status: string (required, immutable for non-admins, enum ['pending', 'active', 'deactivated', 'rejected'])
 //      - school: string (optional, length 0..250) - affiliated institution
 //      - studentNumber: string (optional, length 0..60) - university student ID number
+//      - section: string (optional, length 0..60) - student year and section
 //      - createdDate: string (optional, immutable for non-admins, length 0..40) - ISO creation date string
 //      - targetExamDate: string (optional, length 0..40) - target board exam date string
 //      - diagnosticCompleted: bool (optional) - whether initial diagnostic assessment was completed
@@ -213,6 +214,7 @@ service cloud.firestore {
                'status',
                'school',
                'studentNumber',
+               'section',
                'createdDate',
                'targetExamDate',
                'diagnosticCompleted',
@@ -238,6 +240,7 @@ service cloud.firestore {
              data.status in ['pending', 'active', 'deactivated', 'rejected'] &&
              isValidOptionalString('school', 0, 250) &&
              isValidOptionalString('studentNumber', 0, 60) &&
+             isValidOptionalString('section', 0, 60) &&
              isValidOptionalString('createdDate', 0, 40) &&
              isValidOptionalString('targetExamDate', 0, 40) &&
              isValidOptionalBool('diagnosticCompleted') &&
@@ -515,6 +518,7 @@ service cloud.firestore {
           'fullName',
           'school',
           'studentNumber',
+          'section',
           'targetExamDate',
           'diagnosticCompleted',
           'diagnosticScore',

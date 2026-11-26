@@ -5106,6 +5106,18 @@ function UserDetailModal({
       color: 'var(--text-dim)',
       textTransform: 'uppercase'
     }
+  }, "Student Section"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: '700',
+      fontSize: '0.95rem',
+      color: '#38bdf8'
+    }
+  }, user.section || 'Not Provided')), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: '0.75rem',
+      color: 'var(--text-dim)',
+      textTransform: 'uppercase'
+    }
   }, "Account ID"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontWeight: '600',
@@ -5332,6 +5344,11 @@ function AuthModal({
     placeholder: "Engr. Juan Dela Cruz",
     required: true
   })), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
+    style: {
+      gap: '0.75rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Student Number"), /*#__PURE__*/React.createElement("input", {
     type: "text",
@@ -5340,7 +5357,16 @@ function AuthModal({
     placeholder: "e.g. 2022-001234",
     maxLength: "60",
     required: true
-  }))), /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "form-group"
+  }, /*#__PURE__*/React.createElement("label", null, "Student Section"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    name: "section",
+    className: "form-control",
+    placeholder: "e.g. BSME 4A",
+    maxLength: "60",
+    required: true
+  })))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Email Address"), /*#__PURE__*/React.createElement("input", {
     type: "email",
@@ -8047,7 +8073,7 @@ function AdminOmrScannerView({
   }, "-- Or Enter Walk-In Student Name Below --"), studentsOnly.map(st => /*#__PURE__*/React.createElement("option", {
     key: st.id,
     value: st.id
-  }, st.fullName, st.studentNumber ? ` [${st.studentNumber}]` : '', " (", st.email, ")")))), !selectedStudentId && /*#__PURE__*/React.createElement("div", {
+  }, st.fullName, st.studentNumber ? ` [${st.studentNumber}]` : '', st.section ? ` (${st.section})` : '', " \u2014 ", st.email)))), !selectedStudentId && /*#__PURE__*/React.createElement("div", {
     className: "grid-2col",
     style: {
       gap: '0.5rem',
@@ -8401,8 +8427,9 @@ function AdminView({
       const matchEmail = u.email && u.email.toLowerCase().includes(term);
       const matchSchool = u.school && u.school.toLowerCase().includes(term);
       const matchStudentNo = u.studentNumber && String(u.studentNumber).toLowerCase().includes(term);
+      const matchSection = u.section && String(u.section).toLowerCase().includes(term);
       const matchId = u.id && u.id.toLowerCase().includes(term);
-      return matchName || matchEmail || matchSchool || matchStudentNo || matchId;
+      return matchName || matchEmail || matchSchool || matchStudentNo || matchSection || matchId;
     }
     return true;
   });
@@ -8744,7 +8771,12 @@ function AdminView({
       style: {
         fontSize: '0.7rem'
       }
-    }, "ID No: ", u.studentNumber), /*#__PURE__*/React.createElement("span", {
+    }, "ID No: ", u.studentNumber), u.section && /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-status",
+      style: {
+        fontSize: '0.7rem'
+      }
+    }, "Section: ", u.section), /*#__PURE__*/React.createElement("span", {
       className: "badge badge-student",
       style: {
         fontSize: '0.68rem'
@@ -8924,7 +8956,12 @@ function AdminView({
     style: {
       fontSize: '0.72rem'
     }
-  }, "Student No: ", u.studentNumber), /*#__PURE__*/React.createElement("span", {
+  }, "Student No: ", u.studentNumber), u.section && /*#__PURE__*/React.createElement("span", {
+    className: "badge badge-status",
+    style: {
+      fontSize: '0.72rem'
+    }
+  }, "Section: ", u.section), /*#__PURE__*/React.createElement("span", {
     className: "badge badge-student",
     style: {
       fontSize: '0.68rem'
@@ -10479,6 +10516,7 @@ function ProfileModal({
 }) {
   const [fullName, setFullName] = useState(user.fullName || '');
   const [studentNumber, setStudentNumber] = useState(user.studentNumber || '');
+  const [section, setSection] = useState(user.section || '');
   const [school, setSchool] = useState(user.school || '');
   const [targetExamDate, setTargetExamDate] = useState(user.targetExamDate || '2026-10-15');
   const [newPassword, setNewPassword] = useState('');
@@ -10496,6 +10534,7 @@ function ProfileModal({
       body: JSON.stringify({
         fullName,
         studentNumber,
+        section,
         school,
         targetExamDate,
         newPassword: newPassword || undefined
@@ -10549,6 +10588,11 @@ function ProfileModal({
     onChange: e => setFullName(e.target.value),
     required: true
   })), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
+    style: {
+      gap: '0.75rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Student Number"), /*#__PURE__*/React.createElement("input", {
     type: "text",
@@ -10558,6 +10602,15 @@ function ProfileModal({
     value: studentNumber,
     onChange: e => setStudentNumber(e.target.value)
   })), /*#__PURE__*/React.createElement("div", {
+    className: "form-group"
+  }, /*#__PURE__*/React.createElement("label", null, "Student Section"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    className: "form-control",
+    placeholder: "e.g. BSME 4A",
+    maxLength: "60",
+    value: section,
+    onChange: e => setSection(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "University / School"), /*#__PURE__*/React.createElement("input", {
     type: "text",
@@ -10610,6 +10663,7 @@ function UserModal({
   const isEdit = !!editingUser;
   const [fullName, setFullName] = useState(editingUser?.fullName || '');
   const [studentNumber, setStudentNumber] = useState(editingUser?.studentNumber || '');
+  const [section, setSection] = useState(editingUser?.section || '');
   const [email, setEmail] = useState(editingUser?.email || '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState(editingUser?.role || 'student');
@@ -10625,6 +10679,7 @@ function UserModal({
     const body = {
       fullName,
       studentNumber,
+      section,
       role: 'student',
       status,
       school,
@@ -10682,6 +10737,11 @@ function UserModal({
     onChange: e => setFullName(e.target.value),
     required: true
   })), /*#__PURE__*/React.createElement("div", {
+    className: "grid-2col",
+    style: {
+      gap: '0.75rem'
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Student Number"), /*#__PURE__*/React.createElement("input", {
     type: "text",
@@ -10691,7 +10751,17 @@ function UserModal({
     value: studentNumber,
     onChange: e => setStudentNumber(e.target.value),
     required: !isEdit
-  })), !isEdit && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "form-group"
+  }, /*#__PURE__*/React.createElement("label", null, "Student Section"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    className: "form-control",
+    placeholder: "e.g. BSME 4A",
+    maxLength: "60",
+    value: section,
+    onChange: e => setSection(e.target.value),
+    required: !isEdit
+  }))), !isEdit && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "form-group"
   }, /*#__PURE__*/React.createElement("label", null, "Email Address"), /*#__PURE__*/React.createElement("input", {
     type: "email",

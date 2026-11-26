@@ -4285,6 +4285,10 @@ function UserDetailModal({ user, attemptsList = [], onClose }) {
             <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#fbbf24' }}>{user.studentNumber || 'Not Provided'}</div>
           </div>
           <div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Student Section</div>
+            <div style={{ fontWeight: '700', fontSize: '0.95rem', color: '#38bdf8' }}>{user.section || 'Not Provided'}</div>
+          </div>
+          <div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)', textTransform: 'uppercase' }}>Account ID</div>
             <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{user.id}</div>
           </div>
@@ -4422,9 +4426,15 @@ function AuthModal({ authModal, setAuthModal, handleAuthSubmit }) {
                 <label>Full Name</label>
                 <input type="text" name="fullName" className="form-control" placeholder="Engr. Juan Dela Cruz" required />
               </div>
-              <div className="form-group">
-                <label>Student Number</label>
-                <input type="text" name="studentNumber" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" required />
+              <div className="grid-2col" style={{ gap: '0.75rem' }}>
+                <div className="form-group">
+                  <label>Student Number</label>
+                  <input type="text" name="studentNumber" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" required />
+                </div>
+                <div className="form-group">
+                  <label>Student Section</label>
+                  <input type="text" name="section" className="form-control" placeholder="e.g. BSME 4A" maxLength="60" required />
+                </div>
               </div>
             </>
           )}
@@ -6634,7 +6644,7 @@ function AdminOmrScannerView({ quizzesList = [], usersList = [], loadAttempts, l
                   <option value="">-- Or Enter Walk-In Student Name Below --</option>
                   {studentsOnly.map(st => (
                     <option key={st.id} value={st.id}>
-                      {st.fullName}{st.studentNumber ? ` [${st.studentNumber}]` : ''} ({st.email})
+                      {st.fullName}{st.studentNumber ? ` [${st.studentNumber}]` : ''}{st.section ? ` (${st.section})` : ''} — {st.email}
                     </option>
                   ))}
                 </select>
@@ -6975,8 +6985,9 @@ function AdminView({
       const matchEmail = u.email && u.email.toLowerCase().includes(term);
       const matchSchool = u.school && u.school.toLowerCase().includes(term);
       const matchStudentNo = u.studentNumber && String(u.studentNumber).toLowerCase().includes(term);
+      const matchSection = u.section && String(u.section).toLowerCase().includes(term);
       const matchId = u.id && u.id.toLowerCase().includes(term);
-      return matchName || matchEmail || matchSchool || matchStudentNo || matchId;
+      return matchName || matchEmail || matchSchool || matchStudentNo || matchSection || matchId;
     }
     return true;
   });
@@ -7214,6 +7225,9 @@ function AdminView({
                             {u.studentNumber && (
                               <span className="badge badge-admin" style={{ fontSize: '0.7rem' }}>ID No: {u.studentNumber}</span>
                             )}
+                            {u.section && (
+                              <span className="badge badge-status" style={{ fontSize: '0.7rem' }}>Section: {u.section}</span>
+                            )}
                             <span className="badge badge-student" style={{ fontSize: '0.68rem' }}>{u.id}</span>
                           </div>
                         </td>
@@ -7338,6 +7352,9 @@ function AdminView({
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
                           {u.studentNumber && (
                             <span className="badge badge-admin" style={{ fontSize: '0.72rem' }}>Student No: {u.studentNumber}</span>
+                          )}
+                          {u.section && (
+                            <span className="badge badge-status" style={{ fontSize: '0.72rem' }}>Section: {u.section}</span>
                           )}
                           <span className="badge badge-student" style={{ fontSize: '0.68rem' }}>{u.id}</span>
                         </div>
@@ -8557,6 +8574,7 @@ function QuizEditorModal({ editingQuiz, onClose, onSaved }) {
 function ProfileModal({ user, setUser, onClose }) {
   const [fullName, setFullName] = useState(user.fullName || '');
   const [studentNumber, setStudentNumber] = useState(user.studentNumber || '');
+  const [section, setSection] = useState(user.section || '');
   const [school, setSchool] = useState(user.school || '');
   const [targetExamDate, setTargetExamDate] = useState(user.targetExamDate || '2026-10-15');
   const [newPassword, setNewPassword] = useState('');
@@ -8572,7 +8590,7 @@ function ProfileModal({ user, setUser, onClose }) {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ fullName, studentNumber, school, targetExamDate, newPassword: newPassword || undefined })
+      body: JSON.stringify({ fullName, studentNumber, section, school, targetExamDate, newPassword: newPassword || undefined })
     })
     .then(res => res.json())
     .then(data => {
@@ -8604,9 +8622,15 @@ function ProfileModal({ user, setUser, onClose }) {
             <label>Full Name</label>
             <input type="text" className="form-control" value={fullName} onChange={e => setFullName(e.target.value)} required />
           </div>
-          <div className="form-group">
-            <label>Student Number</label>
-            <input type="text" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" value={studentNumber} onChange={e => setStudentNumber(e.target.value)} />
+          <div className="grid-2col" style={{ gap: '0.75rem' }}>
+            <div className="form-group">
+              <label>Student Number</label>
+              <input type="text" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" value={studentNumber} onChange={e => setStudentNumber(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Student Section</label>
+              <input type="text" className="form-control" placeholder="e.g. BSME 4A" maxLength="60" value={section} onChange={e => setSection(e.target.value)} />
+            </div>
           </div>
           <div className="form-group">
             <label>University / School</label>
@@ -8636,6 +8660,7 @@ function UserModal({ editingUser, onClose, onSaved }) {
   const isEdit = !!editingUser;
   const [fullName, setFullName] = useState(editingUser?.fullName || '');
   const [studentNumber, setStudentNumber] = useState(editingUser?.studentNumber || '');
+  const [section, setSection] = useState(editingUser?.section || '');
   const [email, setEmail] = useState(editingUser?.email || '');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState(editingUser?.role || 'student');
@@ -8650,7 +8675,7 @@ function UserModal({ editingUser, onClose, onSaved }) {
     const url = isEdit ? `${API_BASE}/api/users/${editingUser.id}` : `${API_BASE}/api/users`;
     const method = isEdit ? 'PUT' : 'POST';
 
-    const body = { fullName, studentNumber, role: 'student', status, school, targetExamDate };
+    const body = { fullName, studentNumber, section, role: 'student', status, school, targetExamDate };
     if (!isEdit) {
       body.email = email;
       body.password = password;
@@ -8692,9 +8717,15 @@ function UserModal({ editingUser, onClose, onSaved }) {
             <label>Full Name</label>
             <input type="text" className="form-control" value={fullName} onChange={e => setFullName(e.target.value)} required />
           </div>
-          <div className="form-group">
-            <label>Student Number</label>
-            <input type="text" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" value={studentNumber} onChange={e => setStudentNumber(e.target.value)} required={!isEdit} />
+          <div className="grid-2col" style={{ gap: '0.75rem' }}>
+            <div className="form-group">
+              <label>Student Number</label>
+              <input type="text" className="form-control" placeholder="e.g. 2022-001234" maxLength="60" value={studentNumber} onChange={e => setStudentNumber(e.target.value)} required={!isEdit} />
+            </div>
+            <div className="form-group">
+              <label>Student Section</label>
+              <input type="text" className="form-control" placeholder="e.g. BSME 4A" maxLength="60" value={section} onChange={e => setSection(e.target.value)} required={!isEdit} />
+            </div>
           </div>
           {!isEdit && (
             <>

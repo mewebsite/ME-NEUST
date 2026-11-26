@@ -4335,50 +4335,50 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
         )}
       </div>
 
-      {/* QUICK VISUAL CORRECT / WRONG PER QUESTION NUMBER GRID (#1..#N) */}
+      {/* QUICK VISUAL CORRECT / WRONG PER QUESTION NUMBER GRID (Number 1: Correct, Number 2: Wrong, ...) */}
       {resolved.hasStudentAnswers && (
-        <div style={{ marginBottom: '0.75rem', padding: '0.55rem 0.65rem', background: 'rgba(2, 6, 23, 0.45)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-              Correct &amp; Wrong Map per Question Number (Click any # to filter)
+        <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.7rem', background: 'rgba(2, 6, 23, 0.45)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+            <span style={{ fontSize: '0.74rem', fontWeight: '700', color: 'var(--text-main)', letterSpacing: '0.3px' }}>
+              📌 Result per Number (Click any number to inspect its topic &amp; answer)
             </span>
             {highlightedNum !== null && (
               <button
                 type="button"
                 className="btn-secondary"
-                style={{ padding: '0.1rem 0.45rem', fontSize: '0.68rem' }}
+                style={{ padding: '0.12rem 0.5rem', fontSize: '0.68rem' }}
                 onClick={() => setHighlightedNum(null)}
               >
                 Show All Numbers
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxHeight: '92px', overflowY: 'auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxHeight: '135px', overflowY: 'auto' }}>
             {resolved.items.map(item => {
               const isSelected = highlightedNum === item.num;
               const isOk = item.isCorrect === true;
-              const ansLabel = item.studentAnswer ? item.studentAnswer : '—';
+              const ansLabel = item.studentAnswer ? item.studentAnswer : 'Blank';
               return (
                 <button
                   key={`${attempt.id}_pill_${item.num}`}
                   type="button"
                   onClick={() => setHighlightedNum(isSelected ? null : item.num)}
-                  title={`#${item.num} (${item.topic}): Student=${ansLabel}, Key=${item.correctAnswer || '—'} → ${isOk ? 'CORRECT' : 'WRONG'}`}
+                  title={`Number ${item.num}: ${isOk ? 'Correct' : 'Wrong'} | Topic: ${item.topic} | Student: ${ansLabel} | Key: ${item.correctAnswer || '—'}`}
                   style={{
-                    padding: '0.18rem 0.42rem',
-                    borderRadius: '5px',
-                    fontSize: '0.72rem',
-                    fontFamily: 'monospace',
+                    padding: '0.24rem 0.55rem',
+                    borderRadius: '6px',
+                    fontSize: '0.74rem',
                     fontWeight: '700',
                     cursor: 'pointer',
                     background: isOk ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)',
                     border: isSelected
                       ? '2px solid #38bdf8'
                       : (isOk ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)'),
-                    color: isOk ? '#34d399' : '#f87171'
+                    color: isOk ? '#34d399' : '#f87171',
+                    whiteSpace: 'nowrap'
                   }}
                 >
-                  #{item.num} {isOk ? '✅' : '❌'}
+                  Number {item.num}: {isOk ? 'Correct ✅' : 'Wrong ❌'}
                 </button>
               );
             })}
@@ -4418,17 +4418,17 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
         </div>
       )}
 
-      {/* QUESTION NUMBER -> TOPIC + CORRECT/WRONG TABLE */}
-      <div style={{ maxHeight: '280px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
-        <table className="data-table" style={{ marginBottom: 0, fontSize: '0.79rem' }}>
+      {/* QUESTION NUMBER -> CORRECT/WRONG + TOPIC TABLE */}
+      <div style={{ maxHeight: '290px', overflowY: 'auto', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+        <table className="data-table" style={{ marginBottom: 0, fontSize: '0.8rem' }}>
           <thead>
             <tr>
-              <th style={{ width: '56px' }}>Q#</th>
+              <th style={{ width: '96px' }}>Question No.</th>
+              <th style={{ width: '122px' }}>Result</th>
               <th>Topic</th>
               <th>Module</th>
-              <th style={{ width: '88px' }}>Student Ans</th>
-              <th style={{ width: '80px' }}>Correct Key</th>
-              <th style={{ width: '112px' }}>Correct / Wrong</th>
+              <th style={{ width: '84px' }}>Student</th>
+              <th style={{ width: '74px' }}>Key</th>
             </tr>
           </thead>
           <tbody>
@@ -4441,13 +4441,36 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
                   ? 'rgba(16, 185, 129, 0.08)'
                   : 'rgba(239, 68, 68, 0.10)';
               const wrongLabel = !item.studentAnswer
-                ? '❌ WRONG (Blank)'
+                ? '❌ Wrong (Blank)'
                 : item.studentAnswer === 'MULTI'
-                  ? '❌ WRONG (Multi)'
-                  : '❌ WRONG';
+                  ? '❌ Wrong (Multi)'
+                  : '❌ Wrong';
               return (
                 <tr key={`${attempt.id}_q_${item.num}`} style={{ background: rowBg }}>
-                  <td style={{ fontWeight: '800', fontFamily: 'monospace', color: '#38bdf8' }}>#{item.num}</td>
+                  <td style={{ fontWeight: '800', color: '#38bdf8', whiteSpace: 'nowrap' }}>Number {item.num}</td>
+                  <td>
+                    {hasResult ? (
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.18rem 0.52rem',
+                          borderRadius: '999px',
+                          fontSize: '0.72rem',
+                          fontWeight: '800',
+                          background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
+                          border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
+                          color: isOk ? '#34d399' : '#f87171',
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {isOk ? '✅ Correct' : wrongLabel}
+                      </span>
+                    ) : (
+                      <span className="badge badge-student" style={{ fontSize: '0.68rem', opacity: 0.75 }} title="Legacy attempt recorded before per-item answer saving">
+                        Legacy
+                      </span>
+                    )}
+                  </td>
                   <td style={{ fontWeight: '600', color: 'var(--text-main)' }}>{item.topic}</td>
                   <td>
                     <span className="badge badge-student" style={{ fontSize: '0.68rem' }} title={item.module}>
@@ -4459,29 +4482,6 @@ function AdminAttemptTopicBreakdown({ attempt, quizzesList = [] }) {
                   </td>
                   <td style={{ fontFamily: 'monospace', fontWeight: '800', color: 'var(--primary-light)' }}>
                     {item.correctAnswer || '—'}
-                  </td>
-                  <td>
-                    {hasResult ? (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '0.18rem 0.5rem',
-                          borderRadius: '999px',
-                          fontSize: '0.7rem',
-                          fontWeight: '800',
-                          background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
-                          border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
-                          color: isOk ? '#34d399' : '#f87171',
-                          whiteSpace: 'nowrap'
-                        }}
-                      >
-                        {isOk ? '✅ CORRECT' : wrongLabel}
-                      </span>
-                    ) : (
-                      <span className="badge badge-student" style={{ fontSize: '0.68rem', opacity: 0.75 }} title="Legacy attempt recorded before per-item answer saving">
-                        Legacy
-                      </span>
-                    )}
                   </td>
                 </tr>
               );
@@ -4668,10 +4668,21 @@ function QuizResultsModal({ attempts, quizzes, selectedQuizFilter, setSelectedQu
 
 // ADMIN COMPLETE USER MASTER DATA & ACADEMIC RECORD MODAL
 function UserDetailModal({ user, attemptsList = [], quizzesList = [], onClose }) {
-  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
-  const userAttempts = (user.attempts && user.attempts.length > 0)
-    ? user.attempts
-    : (attemptsList || []).filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())));
+  const userAttempts = React.useMemo(() => {
+    const byId = new Map();
+    const fromGlobal = (attemptsList || []).filter(a => a && (a.studentId === user.id || (user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase())));
+    const fromUser = Array.isArray(user.attempts) ? user.attempts : [];
+    [...fromUser, ...fromGlobal].forEach(a => {
+      if (!a || !a.id) return;
+      const prev = byId.get(a.id);
+      if (!prev || (!prev.questionBreakdown && a.questionBreakdown)) {
+        byId.set(a.id, a);
+      }
+    });
+    return Array.from(byId.values()).sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+  }, [user, attemptsList]);
+
+  const [expandedAttemptId, setExpandedAttemptId] = useState(() => (userAttempts[0] ? userAttempts[0].id : null));
 
   const passedCount = userAttempts.filter(a => a.passed).length;
   const failedCount = userAttempts.length - passedCount;

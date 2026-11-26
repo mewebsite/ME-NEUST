@@ -4,7 +4,7 @@
  * while ensuring Firebase Auth and Cloud Firestore traffic always goes directly to Google servers.
  */
 
-const CACHE_NAME = 'me-boardprep-cache-v2.9.6';
+const CACHE_NAME = 'me-boardprep-cache-v2.9.7';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

@@ -5184,7 +5184,7 @@ function AdminAttemptTopicBreakdown({
   }, "\u2705 Correct (", correctTotal, ")"))), resolved.hasStudentAnswers && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: '0.75rem',
-      padding: '0.55rem 0.65rem',
+      padding: '0.6rem 0.7rem',
       background: 'rgba(2, 6, 23, 0.45)',
       borderRadius: '6px',
       border: '1px solid var(--border-color)'
@@ -5194,21 +5194,22 @@ function AdminAttemptTopicBreakdown({
       display: 'flex',
       justifyContent: 'space-between',
       alignItems: 'center',
-      marginBottom: '0.4rem'
+      marginBottom: '0.45rem',
+      flexWrap: 'wrap',
+      gap: '0.4rem'
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
-      fontSize: '0.72rem',
+      fontSize: '0.74rem',
       fontWeight: '700',
-      color: 'var(--text-muted)',
-      textTransform: 'uppercase',
-      letterSpacing: '0.4px'
+      color: 'var(--text-main)',
+      letterSpacing: '0.3px'
     }
-  }, "Correct & Wrong Map per Question Number (Click any # to filter)"), highlightedNum !== null && /*#__PURE__*/React.createElement("button", {
+  }, "\uD83D\uDCCC Result per Number (Click any number to inspect its topic & answer)"), highlightedNum !== null && /*#__PURE__*/React.createElement("button", {
     type: "button",
     className: "btn-secondary",
     style: {
-      padding: '0.1rem 0.45rem',
+      padding: '0.12rem 0.5rem',
       fontSize: '0.68rem'
     },
     onClick: () => setHighlightedNum(null)
@@ -5216,31 +5217,31 @@ function AdminAttemptTopicBreakdown({
     style: {
       display: 'flex',
       flexWrap: 'wrap',
-      gap: '0.3rem',
-      maxHeight: '92px',
+      gap: '0.35rem',
+      maxHeight: '135px',
       overflowY: 'auto'
     }
   }, resolved.items.map(item => {
     const isSelected = highlightedNum === item.num;
     const isOk = item.isCorrect === true;
-    const ansLabel = item.studentAnswer ? item.studentAnswer : '—';
+    const ansLabel = item.studentAnswer ? item.studentAnswer : 'Blank';
     return /*#__PURE__*/React.createElement("button", {
       key: `${attempt.id}_pill_${item.num}`,
       type: "button",
       onClick: () => setHighlightedNum(isSelected ? null : item.num),
-      title: `#${item.num} (${item.topic}): Student=${ansLabel}, Key=${item.correctAnswer || '—'} → ${isOk ? 'CORRECT' : 'WRONG'}`,
+      title: `Number ${item.num}: ${isOk ? 'Correct' : 'Wrong'} | Topic: ${item.topic} | Student: ${ansLabel} | Key: ${item.correctAnswer || '—'}`,
       style: {
-        padding: '0.18rem 0.42rem',
-        borderRadius: '5px',
-        fontSize: '0.72rem',
-        fontFamily: 'monospace',
+        padding: '0.24rem 0.55rem',
+        borderRadius: '6px',
+        fontSize: '0.74rem',
         fontWeight: '700',
         cursor: 'pointer',
         background: isOk ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)',
         border: isSelected ? '2px solid #38bdf8' : isOk ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(239, 68, 68, 0.5)',
-        color: isOk ? '#34d399' : '#f87171'
+        color: isOk ? '#34d399' : '#f87171',
+        whiteSpace: 'nowrap'
       }
-    }, "#", item.num, " ", isOk ? '✅' : '❌');
+    }, "Number ", item.num, ": ", isOk ? 'Correct ✅' : 'Wrong ❌');
   }))), topicSummary.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
@@ -5281,7 +5282,7 @@ function AdminAttemptTopicBreakdown({
     }, ts.topic, ": ", resolved.hasStudentAnswers ? `✅${ts.correct} ❌${ts.total - ts.correct} (${pct}%)` : `${ts.total} Q${ts.total > 1 ? 's' : ''}`);
   })), /*#__PURE__*/React.createElement("div", {
     style: {
-      maxHeight: '280px',
+      maxHeight: '290px',
       overflowY: 'auto',
       borderRadius: '6px',
       border: '1px solid var(--border-color)'
@@ -5290,29 +5291,29 @@ function AdminAttemptTopicBreakdown({
     className: "data-table",
     style: {
       marginBottom: 0,
-      fontSize: '0.79rem'
+      fontSize: '0.8rem'
     }
   }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '56px'
+      width: '96px'
     }
-  }, "Q#"), /*#__PURE__*/React.createElement("th", null, "Topic"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", {
+  }, "Question No."), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '88px'
+      width: '122px'
     }
-  }, "Student Ans"), /*#__PURE__*/React.createElement("th", {
+  }, "Result"), /*#__PURE__*/React.createElement("th", null, "Topic"), /*#__PURE__*/React.createElement("th", null, "Module"), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '80px'
+      width: '84px'
     }
-  }, "Correct Key"), /*#__PURE__*/React.createElement("th", {
+  }, "Student"), /*#__PURE__*/React.createElement("th", {
     style: {
-      width: '112px'
+      width: '74px'
     }
-  }, "Correct / Wrong"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => {
+  }, "Key"))), /*#__PURE__*/React.createElement("tbody", null, visibleItems.map(item => {
     const hasResult = resolved.hasStudentAnswers && item.isCorrect !== null && item.isCorrect !== undefined;
     const isOk = item.isCorrect === true;
     const rowBg = !hasResult ? undefined : isOk ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.10)';
-    const wrongLabel = !item.studentAnswer ? '❌ WRONG (Blank)' : item.studentAnswer === 'MULTI' ? '❌ WRONG (Multi)' : '❌ WRONG';
+    const wrongLabel = !item.studentAnswer ? '❌ Wrong (Blank)' : item.studentAnswer === 'MULTI' ? '❌ Wrong (Multi)' : '❌ Wrong';
     return /*#__PURE__*/React.createElement("tr", {
       key: `${attempt.id}_q_${item.num}`,
       style: {
@@ -5321,10 +5322,29 @@ function AdminAttemptTopicBreakdown({
     }, /*#__PURE__*/React.createElement("td", {
       style: {
         fontWeight: '800',
-        fontFamily: 'monospace',
-        color: '#38bdf8'
+        color: '#38bdf8',
+        whiteSpace: 'nowrap'
       }
-    }, "#", item.num), /*#__PURE__*/React.createElement("td", {
+    }, "Number ", item.num), /*#__PURE__*/React.createElement("td", null, hasResult ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: 'inline-block',
+        padding: '0.18rem 0.52rem',
+        borderRadius: '999px',
+        fontSize: '0.72rem',
+        fontWeight: '800',
+        background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
+        border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
+        color: isOk ? '#34d399' : '#f87171',
+        whiteSpace: 'nowrap'
+      }
+    }, isOk ? '✅ Correct' : wrongLabel) : /*#__PURE__*/React.createElement("span", {
+      className: "badge badge-student",
+      style: {
+        fontSize: '0.68rem',
+        opacity: 0.75
+      },
+      title: "Legacy attempt recorded before per-item answer saving"
+    }, "Legacy")), /*#__PURE__*/React.createElement("td", {
       style: {
         fontWeight: '600',
         color: 'var(--text-main)'
@@ -5347,26 +5367,7 @@ function AdminAttemptTopicBreakdown({
         fontWeight: '800',
         color: 'var(--primary-light)'
       }
-    }, item.correctAnswer || '—'), /*#__PURE__*/React.createElement("td", null, hasResult ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        display: 'inline-block',
-        padding: '0.18rem 0.5rem',
-        borderRadius: '999px',
-        fontSize: '0.7rem',
-        fontWeight: '800',
-        background: isOk ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.22)',
-        border: isOk ? '1px solid rgba(16, 185, 129, 0.55)' : '1px solid rgba(239, 68, 68, 0.55)',
-        color: isOk ? '#34d399' : '#f87171',
-        whiteSpace: 'nowrap'
-      }
-    }, isOk ? '✅ CORRECT' : wrongLabel) : /*#__PURE__*/React.createElement("span", {
-      className: "badge badge-student",
-      style: {
-        fontSize: '0.68rem',
-        opacity: 0.75
-      },
-      title: "Legacy attempt recorded before per-item answer saving"
-    }, "Legacy")));
+    }, item.correctAnswer || '—'));
   })))));
 }
 
@@ -5560,8 +5561,20 @@ function UserDetailModal({
   quizzesList = [],
   onClose
 }) {
-  const [expandedAttemptId, setExpandedAttemptId] = useState(null);
-  const userAttempts = user.attempts && user.attempts.length > 0 ? user.attempts : (attemptsList || []).filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase()));
+  const userAttempts = React.useMemo(() => {
+    const byId = new Map();
+    const fromGlobal = (attemptsList || []).filter(a => a && (a.studentId === user.id || user.email && a.studentEmail && user.email.toLowerCase() === a.studentEmail.toLowerCase()));
+    const fromUser = Array.isArray(user.attempts) ? user.attempts : [];
+    [...fromUser, ...fromGlobal].forEach(a => {
+      if (!a || !a.id) return;
+      const prev = byId.get(a.id);
+      if (!prev || !prev.questionBreakdown && a.questionBreakdown) {
+        byId.set(a.id, a);
+      }
+    });
+    return Array.from(byId.values()).sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0));
+  }, [user, attemptsList]);
+  const [expandedAttemptId, setExpandedAttemptId] = useState(() => userAttempts[0] ? userAttempts[0].id : null);
   const passedCount = userAttempts.filter(a => a.passed).length;
   const failedCount = userAttempts.length - passedCount;
   const avgScore = userAttempts.length > 0 ? Math.round(userAttempts.reduce((acc, a) => acc + getAttemptPercentage(a), 0) / userAttempts.length) : 0;
